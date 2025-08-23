@@ -1,5 +1,12 @@
-export type IvrQuestion = { key: string; label: string; type?: "text" | "textarea" };
-export const IVR_QUESTIONS: IvrQuestion[] = [
-  { key: "org", label: "Organization (optional)" },
-  { key: "reason", label: "What do you need help with?", type: "textarea" },
-];
+export type Profile = {
+  name?: string;
+  email?: string;
+  phone?: string; // <— added/ensured
+};
+
+// (Optional) central prompts — keep if you already have similar constants
+export const IVR_QUESTIONS = {
+  askName: "Could you please provide your full name?",
+  askEmail: "Could you please provide your best email address?",
+  askPhone: "Could you please provide a phone number we can reach you on?",
+};
