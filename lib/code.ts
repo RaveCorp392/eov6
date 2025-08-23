@@ -1,4 +1,10 @@
-export const defaultCodeLength: number = Number(process.env.NEXT_PUBLIC_CODE_LENGTH ?? 6);
+import { Timestamp } from 'firebase/firestore';
+
+export const defaultCodeLength: number = Number.isFinite(
+  Number(process.env.NEXT_PUBLIC_CODE_LENGTH)
+)
+  ? Number(process.env.NEXT_PUBLIC_CODE_LENGTH)
+  : 6;
 
 export function randomCode(len: number = defaultCodeLength): string {
   let s = '';
@@ -6,8 +12,14 @@ export function randomCode(len: number = defaultCodeLength): string {
   return s;
 }
 
-export function expiryInHours(h: number) {
+export function expiryInHours(h: number): Timestamp {
   const d = new Date();
   d.setHours(d.getHours() + h);
-  return d as any;
+  return Timestamp.fromDate(d);
 }
+
+export type Msg = {
+  text: string;
+  from: 'caller' | 'agent';
+  at: Timestamp;
+};
