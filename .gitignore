@@ -4,3 +4,8 @@ node_modules
 .env*
 dist
 *.log
+
+# local scratch
+PATCH_NOTES.md
+*.bak
+
