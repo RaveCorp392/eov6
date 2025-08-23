@@ -1,10 +1,11 @@
 // lib/code.ts
-import { Timestamp, serverTimestamp } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 
-export const defaultCodeLength: number =
-  Number.isFinite(Number(process.env.NEXT_PUBLIC_CODE_LENGTH))
-    ? Number(process.env.NEXT_PUBLIC_CODE_LENGTH)
-    : 6;
+export const defaultCodeLength: number = Number.isFinite(
+  Number(process.env.NEXT_PUBLIC_CODE_LENGTH)
+)
+  ? Number(process.env.NEXT_PUBLIC_CODE_LENGTH)
+  : 6;
 
 export function randomCode(len: number = defaultCodeLength): string {
   let s = "";
@@ -12,15 +13,14 @@ export function randomCode(len: number = defaultCodeLength): string {
   return s;
 }
 
-export function expiryInHours(h: number) {
+export function expiryInHours(h: number): Timestamp {
   const d = new Date();
   d.setHours(d.getHours() + h);
-  return Timestamp.fromDate(d); // always a Firestore Timestamp
+  return Timestamp.fromDate(d);
 }
 
 export type Msg = {
   text: string;
   from: "caller" | "agent";
-  at: Timestamp;          // serverTimestamp on write
-  expiresAt: Timestamp;   // for TTL and rules
+  at: Timestamp;
 };

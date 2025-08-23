@@ -1,1 +1,172 @@
-'use client';import {useEffect,useState} from 'react';import {useParams} from 'next/navigation';import ChatWindow from '@/components/ChatWindow';import {db,isFirebaseReady} from '@/lib/firebase';import {doc,onSnapshot,collection,addDoc,serverTimestamp,setDoc} from 'firebase/firestore';import {expiryInHours} from '@/lib/code';type Profile={name?:string;email?:string;phone?:string};export default function AgentS(){const {code}=useParams<{code:string}>();const using=isFirebaseReady();const[profile,setProfile]=useState<Profile>({});const invite=`https://eov6.com/s/${code}`;useEffect(()=>{if(!using)return;const ref=doc(db,'sessions',code);return onSnapshot(ref,snap=>setProfile((snap.data()?.profile)||{}))},[code,using]);async function ask(type:'name'|'email'|'phone'){if(!using)return;const text=type==='name'?'Could you please provide your full name?':type==='email'?'Could you please provide your best email address?':'Could you please provide a phone number we can reach you on?';await addDoc(collection(db,'sessions',code,'messages'),{role:'agent',text,ts:serverTimestamp(),expiresAt:expiryInHours(1)} as any)}async function save(k:keyof Profile,v:string){if(!using)return;const next={...(profile||{}),[k]:v};setProfile(next);await setDoc(doc(db,'sessions',code),{profile:next},{merge:true})}return(<main className='space-y-4'><div className='rounded-xl border p-3 text-sm'>Session <b>{code}</b> • Share with caller:<button className='ml-2 rounded-md border px-2 py-1 text-xs' onClick={()=>navigator.clipboard.writeText(invite)} title={invite}>Copy invite</button><span className='ml-2 text-xs text-gray-500'>{invite}</span></div><div className='grid grid-cols-1 gap-2 sm:grid-cols-3'><input className='rounded-xl border px-3 py-2' placeholder='Full name' defaultValue={profile?.name||''} onBlur={e=>save('name',e.target.value)}/><input className='rounded-xl border px-3 py-2' placeholder='Email' type='email' defaultValue={profile?.email||''} onBlur={e=>save('email',e.target.value)}/><input className='rounded-xl border px-3 py-2' placeholder='Phone' type='tel' defaultValue={profile?.phone||''} onBlur={e=>save('phone',e.target.value)}/></div><ChatWindow role='agent' code={code}/><div className='grid grid-cols-1 gap-2 sm:grid-cols-3'><button className='rounded-xl border px-3 py-2' onClick={()=>ask('name')}>Ask name</button><button className='rounded-xl border px-3 py-2' onClick={()=>ask('email')}>Ask email</button><button className='rounded-xl border px-3 py-2' onClick={()=>ask('phone')}>Ask phone</button></div><button className='w-full rounded-xl bg-red-600 px-4 py-3 text-white'>End session</button></main>)}
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+} from "firebase/firestore";
+import { db, serverTimestamp } from "@/lib/firebase";
+import { Msg } from "@/lib/code";
+
+type Params = { params: { code: string } };
+
+export default function AgentSession({ params }: Params) {
+  const code = params.code;
+
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [name, setName] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+  const [phone, setPhone] = useState<string>("");
+  const [closed, setClosed] = useState(false);
+
+  const sessRef = useMemo(() => doc(db, "sessions", code), [code]);
+  const msgsRef = useMemo(
+    () => collection(db, "sessions", code, "messages"),
+    [code]
+  );
+
+  useEffect(() => {
+    const unsubHeader = onSnapshot(sessRef, (snap) => {
+      const d = snap.data() as any | undefined;
+      if (d) {
+        setName(d.name ?? "");
+        setEmail(d.email ?? "");
+        setPhone(d.phone ?? "");
+        setClosed(Boolean(d.closed));
+      }
+    });
+
+    const unsubMsgs = onSnapshot(
+      query(msgsRef, orderBy("at", "asc")),
+      (snap) => {
+        const rows: Msg[] = [];
+        snap.forEach((doc) => {
+          const data = doc.data() as any;
+          if (data?.text && data?.from && data?.at) {
+            rows.push({
+              text: data.text,
+              from: data.from,
+              at: data.at,
+            });
+          }
+        });
+        setMessages(rows);
+      }
+    );
+
+    return () => {
+      unsubHeader();
+      unsubMsgs();
+    };
+  }, [sessRef, msgsRef]);
+
+  async function send(text: string) {
+    const t = text.trim();
+    if (!t || closed) return;
+    await addDoc(msgsRef, {
+      text: t,
+      from: "agent",
+      at: serverTimestamp(),
+    });
+  }
+
+  async function endForBoth() {
+    await updateDoc(sessRef, {
+      closed: true,
+      closedAt: serverTimestamp(),
+    });
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl p-4 space-y-3">
+      <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+        <span>
+          Session <b>{code}</b>
+        </span>
+        <span className="rounded bg-gray-100 px-2 py-1">{name || "—"}</span>
+        <span className="rounded bg-gray-100 px-2 py-1">
+          {email || "—"}
+        </span>
+        <span className="rounded bg-gray-100 px-2 py-1">{phone || "—"}</span>
+        {closed && (
+          <span className="text-red-600 font-semibold">
+            (Session closed)
+          </span>
+        )}
+      </div>
+
+      <div className="border rounded-lg p-4 h-[420px] overflow-y-auto bg-white">
+        {messages.map((m, i) => (
+          <div
+            key={i}
+            className={`mb-2 max-w-[80%] ${
+              m.from === "agent" ? "ml-auto text-right" : ""
+            }`}
+          >
+            <div
+              className={`inline-block rounded-lg px-3 py-2 ${
+                m.from === "agent" ? "bg-emerald-100" : "bg-gray-100"
+              }`}
+            >
+              {m.text}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          className="flex-1 rounded border px-3 py-2"
+          placeholder="Type a message"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={closed}
+        />
+        <button
+          onClick={() => send(input).then(() => setInput(""))}
+          disabled={closed}
+          className="rounded bg-emerald-600 text-white px-4 py-2 disabled:opacity-50"
+        >
+          Send
+        </button>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => send("Could you please provide your full name?")}
+          disabled={closed}
+          className="rounded bg-gray-100 px-3 py-2"
+        >
+          Ask name
+        </button>
+        <button
+          onClick={() => send("Could you please provide your best email address?")}
+          disabled={closed}
+          className="rounded bg-gray-100 px-3 py-2"
+        >
+          Ask email
+        </button>
+        <button
+          onClick={() => send("Could you please provide a phone number we can reach you on?")}
+          disabled={closed}
+          className="rounded bg-gray-100 px-3 py-2"
+        >
+          Ask phone
+        </button>
+      </div>
+
+      <button
+        onClick={endForBoth}
+        className="w-full rounded bg-red-600 text-white px-3 py-2"
+      >
+        End session
+      </button>
+    </div>
+  );
+}
