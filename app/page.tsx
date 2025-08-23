@@ -1,0 +1,1 @@
+'use client';import NumberInput6 from '@/components/NumberInput6';export default function Home(){return(<main className='mx-auto max-w-xl space-y-6'><h1 className='text-2xl font-semibold'>Join your secure chat</h1><NumberInput6 onSubmit={c=>{window.location.href=`/s/${c}`}}/><p className='text-xs text-gray-500'>Ephemeral: data is deleted when the chat ends.</p></main>)}

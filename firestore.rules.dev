@@ -1,0 +1,10 @@
+// DEV ONLY — permissive rules for local testing
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /sessions/{code} {
+      allow read, write: if true;
+      match /messages/{id} { allow read, write: if true; }
+    }
+  }
+}
