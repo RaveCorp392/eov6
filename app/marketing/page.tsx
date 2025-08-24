@@ -1,70 +1,46 @@
-﻿import Link from "next/link";
+﻿// app/marketing/page.tsx
+import Link from "next/link";
 
-export default function Page() {
-  const Pill = ({ children }: { children: React.ReactNode }) => (
-    <span className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700">
-      {children}
-    </span>
-  );
-
-  const Section = ({
-    title,
-    children,
-    kicker,
-  }: {
-    title: string;
-    children: React.ReactNode;
-    kicker?: string;
-  }) => (
-    <section className="mx-auto max-w-6xl px-4 py-16">
-      {kicker && (
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-          {kicker}
-        </p>
-      )}
-      <h2 className="mb-6 text-2xl font-semibold text-slate-900">{title}</h2>
-      <div className="prose prose-slate max-w-none">{children}</div>
-    </section>
-  );
-
+export default function MarketingPage() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white to-slate-50">
-      {/* HERO */}
-      <header className="mx-auto max-w-6xl px-4 pt-20 pb-10 text-center">
-        <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
-          <Pill>Ephemeral by default</Pill>
-          <Pill>Agent + Caller</Pill>
-          <Pill>TTL auto-deletes</Pill>
+    <main className="mx-auto max-w-6xl px-6 py-16">
+      {/* Hero */}
+      <section className="text-center">
+        <div className="mb-4 flex items-center justify-center gap-2 text-xs text-slate-600">
+          <span className="rounded-full bg-slate-100 px-2 py-1">Ephemeral by default</span>
+          <span className="rounded-full bg-slate-100 px-2 py-1">Agent + Caller</span>
+          <span className="rounded-full bg-slate-100 px-2 py-1">TTL auto-deletes</span>
         </div>
 
-        <h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
-          EOV6 â€” Secure details, shared fast.
+        <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl">
+          EOV6 &mdash; Secure details, shared fast.
         </h1>
 
-        <p className="mx-auto mt-4 max-w-2xl text-lg leading-7 text-slate-600">
-          When a conversation moves to a phone call, getting names, emails and
-          phone numbers right is painful. EOV6 gives agents a session code the
-          caller can enter at <span className="font-semibold">eov6.com</span> to
-          send verified contact details and chatâ€”stored ephemerally and deleted
-          by policy.
+        <p className="mx-auto mt-4 max-w-2xl text-slate-600">
+          When a conversation moves to a phone call, getting names, emails and phone numbers
+          right is painful. EOV6 gives agents a session code the caller can enter at
+          <span className="font-semibold"> eov6.com</span> to send verified contact details
+          and chat stored ephemerally and deleted by policy.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/agent"
-            className="rounded-xl bg-indigo-600 px-5 py-3 text-white shadow-sm transition hover:bg-indigo-700"
+            className="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700"
           >
             Open agent console
           </Link>
-          <Link
-            href="/ivr"
-            className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-slate-800 shadow-sm transition hover:bg-slate-50"
+
+          <a
+            href="https://eov6.com"
+            className="rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-800 hover:bg-slate-50"
           >
             Caller IVR / code entry
-          </Link>
+          </a>
+
           <a
             href="mailto:partners@meetsafe.io"
-            className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-slate-800 shadow-sm transition hover:bg-slate-50"
+            className="rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-800 hover:bg-slate-50"
           >
             Contact us
           </a>
@@ -73,144 +49,99 @@ export default function Page() {
         <p className="mt-3 text-xs text-slate-500">
           Prefer email? partners@meetsafe.io
         </p>
-      </header>
+      </section>
 
-      {/* HOW IT WORKS */}
-      <Section title="How it works" kicker="Product">
-        <ol className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 !list-none p-0">
-          {[
-            {
-              n: "01",
-              t: "Agent opens a session",
-              d: "Agent gets a short code. Share it verbally during a call or paste it in chat.",
-            },
-            {
-              n: "02",
-              t: "Caller goes to eov6.com",
-              d: "Caller taps â€œIVR initiatedâ€, enters the code, and sees a simple secure chat.",
-            },
-            {
-              n: "03",
-              t: "Send details instantly",
-              d: "Caller can push full name, email and phone with one button; agent can also ask for them with canned prompts.",
-            },
-            {
-              n: "04",
-              t: "Ephemeral by policy",
-              d: "Sessions auto-expire via TTL. No long-term PII by default. Export/integrate only if your policy requires.",
-            },
-          ].map((s) => (
-            <li
-              key={s.n}
-              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-            >
-              <div className="mb-3 text-xs font-semibold tracking-widest text-indigo-600">
-                {s.n}
-              </div>
-              <div className="mb-1 text-lg font-semibold text-slate-900">
-                {s.t}
-              </div>
-              <p className="text-sm text-slate-600">{s.d}</p>
-            </li>
-          ))}
-        </ol>
-      </Section>
+      {/* How it works */}
+      <section className="mt-20">
+        <h2 className="text-left text-xl font-semibold">How it works</h2>
 
-      {/* CURRENT CAPABILITIES */}
-      <Section title="Whatâ€™s working today" kicker="MVP">
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            "Agent console with live chat.",
-            "Caller page with â€˜Send detailsâ€™ (name, email, phone).",
-            "Canned prompts: Ask name / Ask email / Ask phone.",
-            "One-time session codes; org prefixes possible (e.g., SSQ-XXXXXX).",
-            "Time-to-live (TTL) deletion policy.",
-            "Contact routing via partners@meetsafe.io.",
-          ].map((x) => (
-            <li
-              key={x}
-              className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"
-            >
-              {x}
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      {/* ROADMAP */}
-      <Section title="Near-term roadmap" kicker="Whatâ€™s next">
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            "File uploads (images/PDFs) with strict TTL + â€˜privacy modeâ€™.",
-            "Consent and T&Cs (checkbox + audit event).",
-            "Confirmation flows (e.g., confirm spelling before commit).",
-            "Billing portal (Stripe) with usage-based pricing.",
-            "Org admin, canned prompt libraries, and audit exports.",
-            "Optional CRM/webhook integration.",
-          ].map((x) => (
-            <li
-              key={x}
-              className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"
-            >
-              {x}
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      {/* TRUST */}
-      <Section title="Privacy by design" kicker="Trust">
-        <div className="grid gap-8 lg:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-2 text-base font-semibold text-slate-900">
-              Ephemeral storage
-            </h3>
-            <p className="text-sm text-slate-600">
-              Messages and profile data live only for the configured TTL. By
-              default, no long-term PII at rest. You choose if/when to export.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-2 text-base font-semibold text-slate-900">
-              Least-data principle
-            </h3>
-            <p className="text-sm text-slate-600">
-              We collect only whatâ€™s needed to complete the conversation: name,
-              email, phone, and messages. Nothing else by default.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-2 text-base font-semibold text-slate-900">
-              Enterprise-friendly
-            </h3>
-            <p className="text-sm text-slate-600">
-              Per-org prefixes for codes, audit logs, and downstream integration
-              are available when your compliance team is ready.
-            </p>
-          </div>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card
+            step="01"
+            title="Agent opens a session"
+            body="Agent gets a short code. Share it verbally during a call or paste it in chat."
+          />
+          <Card
+            step="02"
+            title="Caller goes to eov6.com"
+            body="Caller taps code (or IVR initiated), enters the code, and sees a simple secure chat."
+          />
+          <Card
+            step="03"
+            title="Send details instantly"
+            body="Caller can push full name, email and phone with one button; agent can also ask with canned prompts."
+          />
+          <Card
+            step="04"
+            title="Ephemeral by policy"
+            body="Sessions auto-expire via TTL. No long-term PII by default. Export/integrate only if your policy requires."
+          />
         </div>
-      </Section>
+      </section>
+
+      {/* MVP status */}
+      <section className="mt-16">
+        <h3 className="text-left text-lg font-semibold">What&apos;s working today</h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <Pill>Agent console with live chat.</Pill>
+          <Pill>Caller page with &quot;Send details&quot; (name, email, phone).</Pill>
+          <Pill>Canned prompts: Ask name / Ask email / Ask phone.</Pill>
+          <Pill>One-time session codes; org prefixes possible (e.g., SSQ-XXXXXX).</Pill>
+          <Pill>Time-to-live (TTL) deletion policy.</Pill>
+          <Pill>Contact routing via partners@meetsafe.io.</Pill>
+        </div>
+      </section>
+
+      {/* Near-term roadmap */}
+      <section className="mt-16">
+        <h3 className="text-left text-lg font-semibold">Near-term roadmap</h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <Pill>File uploads (images/PDFs) with strict TTL + privacy mode.</Pill>
+          <Pill>Consent and T&amp;Cs (checkbox + audit event).</Pill>
+          <Pill>Confirmation flows (e.g., confirm spelling before commit).</Pill>
+          <Pill>Billing portal (Stripe) with usage-based pricing.</Pill>
+          <Pill>Org admin, canned prompt libraries, and audit exports.</Pill>
+          <Pill>Optional CRM/webhook integration.</Pill>
+        </div>
+      </section>
+
+      {/* Trust */}
+      <section className="mt-16">
+        <h3 className="text-left text-lg font-semibold">Privacy by design</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <InfoCard
+            title="Ephemeral storage"
+            body="Messages and profile data live only for the configured TTL. By default, no long-term PII at rest. You choose if/when to export."
+          />
+          <InfoCard
+            title="Least-data principle"
+            body="We collect only what is needed to complete the conversation: name, email, phone, and messages. Nothing else by default."
+          />
+          <InfoCard
+            title="Enterprise-friendly"
+            body="Per-org prefixes for codes, audit logs, and downstream integration are available when your compliance team is ready."
+          />
+        </div>
+      </section>
 
       {/* CTA */}
-      <section className="mx-auto mb-24 max-w-6xl px-4">
-        <div className="rounded-3xl bg-indigo-600 p-8 text-white md:p-12">
-          <h3 className="text-2xl font-semibold">
-            Ready to try it with your team?
-          </h3>
-          <p className="mt-2 max-w-2xl text-indigo-100">
-            Open an agent session, ask the caller to enter the code, and push
-            details in seconds. For pricing or a pilot, weâ€™ll set you up.
+      <section className="mt-16">
+        <div className="rounded-2xl bg-indigo-600 px-6 py-10 text-center text-indigo-50">
+          <h3 className="text-2xl font-semibold">Ready to try it with your team?</h3>
+          <p className="mx-auto mt-2 max-w-2xl text-indigo-100">
+            Open an agent session, ask the caller to enter the code, and push details in seconds.
+            For pricing or a pilot, we&apos;ll set you up.
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/agent"
-              className="rounded-xl bg-white px-5 py-3 font-medium text-indigo-700 shadow-sm transition hover:bg-indigo-50"
+              className="rounded-lg bg-white px-4 py-2 font-medium text-indigo-700 hover:bg-indigo-50"
             >
               Open agent console
             </Link>
             <a
               href="mailto:partners@meetsafe.io"
-              className="rounded-xl border border-white/50 px-5 py-3 font-medium text-white/90 transition hover:bg-white/10"
+              className="rounded-lg border border-indigo-300 px-4 py-2 font-medium text-white hover:bg-indigo-500"
             >
               partners@meetsafe.io
             </a>
@@ -218,10 +149,38 @@ export default function Page() {
         </div>
       </section>
 
-      <footer className="mx-auto max-w-6xl px-4 pb-16 text-center text-xs text-slate-500">
-        Â© {new Date().getFullYear()} EOV6. All rights reserved.
+      <footer className="mt-12 text-center text-xs text-slate-400">
+        © {new Date().getFullYear()} EOV6. All rights reserved.
       </footer>
     </main>
   );
 }
 
+/* ---------- tiny presentational helpers ---------- */
+
+function Card(props: { step: string; title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-4">
+      <div className="text-xs font-semibold text-slate-500">{props.step}</div>
+      <div className="mt-1 text-base font-semibold">{props.title}</div>
+      <p className="mt-1 text-sm text-slate-600">{props.body}</p>
+    </div>
+  );
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+      {children}
+    </div>
+  );
+}
+
+function InfoCard(props: { title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 p-5">
+      <div className="text-base font-semibold">{props.title}</div>
+      <p className="mt-1 text-sm text-slate-600">{props.body}</p>
+    </div>
+  );
+}
