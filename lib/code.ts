@@ -11,14 +11,18 @@ export type Msg = {
   fileSize?: number;
 };
 
+/** Default numeric code length (kept for IVR/marketing usage). */
+export const defaultCodeLength = 6;
+
 /** Compute an absolute Date for a TTL of N hours from now. */
 export function expiryInHours(hours: number) {
-  const now = Date.now();
-  return new Date(now + hours * 60 * 60 * 1000);
+  return new Date(Date.now() + hours * 60 * 60 * 1000);
 }
 
-/** Generate a 6-digit session code as a string (e.g. "493502"). */
-export function randomCode(): string {
-  // 100000..999999 (leading zeros avoided; matches the numeric codes you’ve been using)
-  return String(Math.floor(100000 + Math.random() * 900000));
+/** Generate a numeric session code, no leading zero. */
+export function randomCode(len = defaultCodeLength): string {
+  if (len <= 0) return "0";
+  let s = String(1 + Math.floor(Math.random() * 9)); // first digit 1..9
+  for (let i = 1; i < len; i++) s += Math.floor(Math.random() * 10).toString();
+  return s;
 }
