@@ -13,6 +13,7 @@ import {
 import { db, serverTimestamp } from "@/lib/firebase";
 import { expiryInHours, Msg } from "@/lib/code";
 import { useRouter } from "next/navigation";
+import NewSessionButton from "@/components/NewSessionButton";
 
 type Params = { params: { code: string } };
 
@@ -27,41 +28,50 @@ export default function CallerPage({ params }: Params) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [closed, setClosed] = useState(false);
 
-  // IMPORTANT: keep collection name "s"
-  const sessRef = useMemo(() => doc(db, "s", code), [code]);
-  const msgsRef = useMemo(() => collection(db, "s", code, "messages"), [code]);
+  const sessRef = useMemo(() => doc(db, "sessions", code), [code]);
+  const msgsRef = useMemo(
+    () => collection(db, "sessions", code, "messages"),
+    [code]
+  );
 
+  // ensure session exists + subscribe to header + messages
   useEffect(() => {
-    // create/merge session shell + TTL
+    // create-or-merge session shell
     setDoc(
       sessRef,
       {
         createdAt: serverTimestamp(),
-        expiresAt: expiryInHours(1),
+        expiresAt: expiryInHours(1), // TTL field
       },
       { merge: true }
-    );
+    ).catch((err) => console.error("[caller] setDoc(sessRef) failed:", err));
 
-    const unsubHeader = onSnapshot(sessRef, (snap) => {
-      const d = snap.data() as any | undefined;
-      if (d) {
+    const unsubHeader = onSnapshot(
+      sessRef,
+      (snap) => {
+        const d = (snap.data() as any) || {};
         setName(d.name ?? "");
         setEmail(d.email ?? "");
         setPhone(d.phone ?? "");
         setClosed(Boolean(d.closed));
-      }
-    });
+      },
+      (err) => console.error("[caller] onSnapshot(session) error:", err)
+    );
 
-    const unsubMsgs = onSnapshot(query(msgsRef, orderBy("at", "asc")), (snap) => {
-      const rows: Msg[] = [];
-      snap.forEach((doc) => {
-        const data = doc.data() as any;
-        if (data?.text && data?.from && data?.at) {
-          rows.push({ text: data.text, from: data.from, at: data.at });
-        }
-      });
-      setMessages(rows);
-    });
+    const unsubMsgs = onSnapshot(
+      query(msgsRef, orderBy("at", "asc")),
+      (snap) => {
+        const rows: Msg[] = [];
+        snap.forEach((doc) => {
+          const data = doc.data() as any;
+          if (data?.text && data?.from && data?.at) {
+            rows.push({ text: data.text, from: data.from, at: data.at });
+          }
+        });
+        setMessages(rows);
+      },
+      (err) => console.error("[caller] onSnapshot(messages) error:", err)
+    );
 
     return () => {
       unsubHeader();
@@ -72,31 +82,43 @@ export default function CallerPage({ params }: Params) {
   async function sendMessage() {
     const text = input.trim();
     if (!text || closed) return;
-    await addDoc(msgsRef, { text, from: "caller", at: serverTimestamp() });
-    setInput("");
+    try {
+      await addDoc(msgsRef, { text, from: "caller", at: serverTimestamp() });
+      setInput("");
+    } catch (e) {
+      console.error("[caller] addDoc(messages) failed:", e);
+    }
   }
 
   async function sendDetails() {
     if (closed) return;
-    await setDoc(
-      sessRef,
-      {
-        name: name?.trim() || "",
-        email: email?.trim() || "",
-        phone: phone?.trim() || "",
-        identified: Boolean(name || email || phone),
-        expiresAt: expiryInHours(1),
-      },
-      { merge: true }
-    );
-    await addDoc(msgsRef, {
-      text: "Contact details were provided.",
-      from: "caller",
-      at: serverTimestamp(),
-    });
+    try {
+      await setDoc(
+        sessRef,
+        {
+          name: name?.trim() || "",
+          email: email?.trim() || "",
+          phone: phone?.trim() || "",
+          identified: Boolean(name || email || phone),
+          // refresh TTL whenever details arrive
+          expiresAt: expiryInHours(1),
+        },
+        { merge: true }
+      );
+
+      // optional audit line in chat so agents notice
+      await addDoc(msgsRef, {
+        text: "Contact details were provided.",
+        from: "caller",
+        at: serverTimestamp(),
+      });
+    } catch (e) {
+      console.error("[caller] sendDetails failed:", e);
+    }
   }
 
   function leaveSession() {
+    // local-only exit; do not delete anything
     router.push("/");
   }
 
@@ -109,6 +131,10 @@ export default function CallerPage({ params }: Params) {
             (Session ended by agent)
           </span>
         )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <NewSessionButton />
       </div>
 
       <div className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white">
@@ -178,7 +204,10 @@ export default function CallerPage({ params }: Params) {
         </button>
       </div>
 
-      <button onClick={leaveSession} className="w-full rounded bg-gray-100 px-3 py-2">
+      <button
+        onClick={leaveSession}
+        className="w-full rounded bg-gray-100 px-3 py-2"
+      >
         Leave session
       </button>
     </div>
