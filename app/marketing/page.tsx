@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 export default function Page() {
   const Pill = ({ children }: { children: React.ReactNode }) => (
@@ -38,14 +38,14 @@ export default function Page() {
         </div>
 
         <h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
-          EOV6 — Secure details, shared fast.
+          EOV6 â€” Secure details, shared fast.
         </h1>
 
         <p className="mx-auto mt-4 max-w-2xl text-lg leading-7 text-slate-600">
           When a conversation moves to a phone call, getting names, emails and
           phone numbers right is painful. EOV6 gives agents a session code the
           caller can enter at <span className="font-semibold">eov6.com</span> to
-          send verified contact details and chat—stored ephemerally and deleted
+          send verified contact details and chatâ€”stored ephemerally and deleted
           by policy.
         </p>
 
@@ -87,7 +87,7 @@ export default function Page() {
             {
               n: "02",
               t: "Caller goes to eov6.com",
-              d: "Caller taps “IVR initiated”, enters the code, and sees a simple secure chat.",
+              d: "Caller taps â€œIVR initiatedâ€, enters the code, and sees a simple secure chat.",
             },
             {
               n: "03",
@@ -117,11 +117,11 @@ export default function Page() {
       </Section>
 
       {/* CURRENT CAPABILITIES */}
-      <Section title="What’s working today" kicker="MVP">
+      <Section title="Whatâ€™s working today" kicker="MVP">
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[
             "Agent console with live chat.",
-            "Caller page with ‘Send details’ (name, email, phone).",
+            "Caller page with â€˜Send detailsâ€™ (name, email, phone).",
             "Canned prompts: Ask name / Ask email / Ask phone.",
             "One-time session codes; org prefixes possible (e.g., SSQ-XXXXXX).",
             "Time-to-live (TTL) deletion policy.",
@@ -138,10 +138,10 @@ export default function Page() {
       </Section>
 
       {/* ROADMAP */}
-      <Section title="Near-term roadmap" kicker="What’s next">
+      <Section title="Near-term roadmap" kicker="Whatâ€™s next">
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[
-            "File uploads (images/PDFs) with strict TTL + ‘privacy mode’.",
+            "File uploads (images/PDFs) with strict TTL + â€˜privacy modeâ€™.",
             "Consent and T&Cs (checkbox + audit event).",
             "Confirmation flows (e.g., confirm spelling before commit).",
             "Billing portal (Stripe) with usage-based pricing.",
@@ -175,7 +175,7 @@ export default function Page() {
               Least-data principle
             </h3>
             <p className="text-sm text-slate-600">
-              We collect only what’s needed to complete the conversation: name,
+              We collect only whatâ€™s needed to complete the conversation: name,
               email, phone, and messages. Nothing else by default.
             </p>
           </div>
@@ -199,7 +199,7 @@ export default function Page() {
           </h3>
           <p className="mt-2 max-w-2xl text-indigo-100">
             Open an agent session, ask the caller to enter the code, and push
-            details in seconds. For pricing or a pilot, we’ll set you up.
+            details in seconds. For pricing or a pilot, weâ€™ll set you up.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
@@ -219,8 +219,9 @@ export default function Page() {
       </section>
 
       <footer className="mx-auto max-w-6xl px-4 pb-16 text-center text-xs text-slate-500">
-        © {new Date().getFullYear()} EOV6. All rights reserved.
+        Â© {new Date().getFullYear()} EOV6. All rights reserved.
       </footer>
     </main>
   );
 }
+

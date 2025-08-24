@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
@@ -50,7 +50,7 @@ export default function AdminPage() {
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">EOV6 • Admin</h1>
+        <h1 className="text-2xl font-semibold">EOV6 â€¢ Admin</h1>
         {user ? (
           <button
             onClick={logout}
@@ -92,7 +92,7 @@ export default function AdminPage() {
 
           <div className="rounded-lg bg-gray-50 p-4">
             <p className="mb-2 text-sm text-gray-700">
-              You’re signed in. Open the Agent Console to run or join sessions.
+              Youâ€™re signed in. Open the Agent Console to run or join sessions.
             </p>
             <Link
               href="/agent"
@@ -115,3 +115,4 @@ export default function AdminPage() {
     </main>
   );
 }
+

@@ -1,4 +1,4 @@
-// lib/code.ts
+﻿// lib/code.ts
 import { Timestamp } from "firebase/firestore";
 
 export const defaultCodeLength: number = Number.isFinite(
@@ -24,3 +24,4 @@ export type Msg = {
   from: "caller" | "agent";
   at: Timestamp;
 };
+

@@ -1,4 +1,4 @@
-// lib/firebase.ts
+﻿// lib/firebase.ts
 import { getApps, getApp, initializeApp } from "firebase/app";
 import {
   getFirestore,
@@ -56,3 +56,4 @@ export {
   where,
   orderBy,
 };
+

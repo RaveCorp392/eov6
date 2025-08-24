@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -53,7 +53,7 @@ export default function AgentAuthGate({
   if (checking) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center text-slate-600">
-        Checking agent access…
+        Checking agent accessâ€¦
       </div>
     );
   }
@@ -112,3 +112,4 @@ export default function AgentAuthGate({
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-// app/admin/page.tsx
+﻿// app/admin/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -46,7 +46,7 @@ export default function AdminPage() {
             disabled={busy}
             className="px-4 py-2 rounded-xl bg-blue-600 text-white disabled:opacity-50"
           >
-            {busy ? "Signing in…" : "Sign in with Google"}
+            {busy ? "Signing inâ€¦" : "Sign in with Google"}
           </button>
         </div>
       ) : (
@@ -74,13 +74,13 @@ export default function AdminPage() {
               disabled={busy}
               className="px-4 py-2 rounded-xl bg-gray-800 text-white disabled:opacity-50"
             >
-              {busy ? "Signing out…" : "Sign out"}
+              {busy ? "Signing outâ€¦" : "Sign out"}
             </button>
           </div>
 
           <p className="text-xs text-gray-500">
             Tip: You can restrict who may sign in by enabling{" "}
-            <em>“Block all users except those on allowlist”</em> in Firebase Auth &rarr;{" "}
+            <em>â€œBlock all users except those on allowlistâ€</em> in Firebase Auth &rarr;{" "}
             <em>Blocking functions</em> (or add domain restrictions under <em>Users</em>).
           </p>
         </div>
@@ -88,3 +88,4 @@ export default function AdminPage() {
     </main>
   );
 }
+

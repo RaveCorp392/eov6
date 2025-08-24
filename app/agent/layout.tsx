@@ -1,4 +1,4 @@
-import AgentAuthGate from "@/components/AgentAuthGate";
+﻿import AgentAuthGate from "@/components/AgentAuthGate";
 
 export default function AgentLayout({
   children,
@@ -7,3 +7,4 @@ export default function AgentLayout({
 }) {
   return <AgentAuthGate>{children}</AgentAuthGate>;
 }
+
