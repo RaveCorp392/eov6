@@ -4,6 +4,13 @@ import { getFirestore, serverTimestamp, Timestamp } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
+/**
+ * Minimal “am I in the browser?” flag that callers can use
+ * to avoid running client-only Firebase code on the server.
+ * (Your pages/components already treat this as a boolean.)
+ */
+export const isFirebaseReady = typeof window !== "undefined";
+
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -13,6 +20,7 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
+// Reuse the existing app if it’s already been initialized
 export const app = getApps().length ? getApps()[0]! : initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
@@ -22,5 +30,5 @@ export const storage = getStorage(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Re-exports for convenience
+// Convenience re-exports
 export { serverTimestamp, Timestamp };
