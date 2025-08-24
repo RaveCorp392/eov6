@@ -1,28 +1,32 @@
-﻿import { Timestamp } from "firebase/firestore";
+﻿// Shared utilities & types used by pages/components
 
 export type Msg = {
+  from: "caller" | "agent";
+  at: any;               // Firestore Timestamp | FieldValue
   text?: string;
-  from: "agent" | "caller";
-  at: any; // Firestore Timestamp (kept loose for SSR/hydration)
-  // Optional file payload for uploads
   file?: {
     url: string;
     name: string;
-    size: number;
-    type: string;
+    size: number;        // bytes
+    type: string;        // mime
+    path?: string;       // storage path (optional, for debugging)
   };
 };
 
 export const defaultCodeLength = 6;
 
-// TTL helper: now + N hours
-export function expiryInHours(hours: number) {
-  return Timestamp.fromDate(new Date(Date.now() + hours * 60 * 60 * 1000));
+export function randomCode(len: number = defaultCodeLength) {
+  const digits = "0123456789";
+  let s = "";
+  for (let i = 0; i < len; i++) s += digits[Math.floor(Math.random() * digits.length)];
+  return s;
 }
 
-// Helper used by NewSessionButton (6-digit by default)
-export function randomCode(len: number = defaultCodeLength): string {
-  const min = Math.pow(10, len - 1);
-  const max = Math.pow(10, len) - 1;
-  return String(Math.floor(min + Math.random() * (max - min + 1)));
+// Firestore Timestamp in the future (client-side). Firestore will store as a timestamp.
+export function expiryInHours(hours: number) {
+  return new Date(Date.now() + hours * 60 * 60 * 1000);
+}
+
+export function formatKB(bytes: number) {
+  return `${Math.ceil(bytes / 1024)} KB`;
 }
