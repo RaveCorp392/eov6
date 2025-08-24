@@ -1,25 +1,13 @@
 ﻿// lib/firebase.ts
-import { getApps, getApp, initializeApp } from "firebase/app";
+import { initializeApp, getApp, getApps } from "firebase/app";
 import {
   getFirestore,
-  // re-export commonly used Firestore helpers so pages can import from "@/lib/firebase"
-  Timestamp,
-  serverTimestamp,
-  collection,
-  doc,
-  setDoc,
-  addDoc,
-  updateDoc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
+  serverTimestamp as _serverTimestamp,
 } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
-// ---- Config (all public keys are fine client-side) ----
+// Public config (Next.js reads NEXT_PUBLIC_* at build and client)
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -29,31 +17,19 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-// ---- App singletons ----
-export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Auth (for /admin)
+export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+export const storage = getStorage(app);
 
-// Helper some pages referenced
-export const isFirebaseReady = getApps().length > 0;
+// keep the timestamp helper the codebase already uses
+export const serverTimestamp = _serverTimestamp;
 
-// Re-exports (so imports like `import { db, serverTimestamp } from "@/lib/firebase"` keep working)
-export {
-  Timestamp,
-  serverTimestamp,
-  collection,
-  doc,
-  setDoc,
-  addDoc,
-  updateDoc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
-};
+// some places import this flag
+export const isFirebaseReady = true;
 
+// ✅ export both named and default so either import style works
+export { app };
+export default app;
