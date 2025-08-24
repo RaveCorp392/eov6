@@ -1,10 +1,6 @@
-﻿import AgentAuthGate from "@/components/AgentAuthGate";
+﻿import type { ReactNode } from "react";
+import AgentAuthGate from "@/components/AgentAuthGate";
 
-export default function AgentLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AgentLayout({ children }: { children: ReactNode }) {
   return <AgentAuthGate>{children}</AgentAuthGate>;
 }
-
