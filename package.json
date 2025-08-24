@@ -9,6 +9,7 @@
     "lint": "echo no-lint"
   },
   "dependencies": {
+    "@next/mdx": "^15.5.0",
     "clsx": "2.1.1",
     "firebase": "^10.12.4",
     "next": "14.2.5",

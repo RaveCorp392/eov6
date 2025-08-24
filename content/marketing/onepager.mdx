@@ -1,0 +1,32 @@
+## Why EOV6
+
+When a call moves to the phone, spelling names and emails is slow and error-prone. EOV6 gives the agent a short code the caller enters at **eov6.com** to share verified contact details and chat, stored ephemerally and deleted by policy.
+
+## How it works
+1. **Agent opens a session** → gets a short code.
+2. **Caller enters the code** at eov6.com → a simple, secure chat opens.
+3. **Send details** → caller pushes full name, email and phone in one tap (agents can “Ask name/email/phone”).
+4. **Auto-expire** → session TTL clears data by design.
+
+## What’s live today
+- Agent console with live chat and canned prompts.
+- Caller page with “Send details” (name, email, phone).
+- Session lifecycle: create, chat, end, TTL.
+- Google sign-in for agents (subdomains authorized).
+- Vercel deploy + custom domain (marketing + app).
+
+## Near-term roadmap
+- **Org-level uploads** (images/PDFs) with strict TTL (toggle per org).
+- Consent & T&Cs checkbox + audit line.
+- Billing portal (usage-based).
+- Org admin, canned prompt libraries, optional webhook/CRM integration.
+
+## Privacy & security
+- **Ephemeral by default**: TTL purges sessions automatically.
+- **Least-data**: name, email, phone, and messages only.
+- **Org controls**: features like uploads are opt-in per org.
+- **Separation**: caller is anonymous; agents use Google SSO.
+
+## Why now
+- Call centers waste minutes per call on spelling and verification.
+- EOV6 shortens handle time, reduces rework, and improves data quality.
