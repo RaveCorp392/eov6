@@ -8,93 +8,90 @@ import { addDoc, collection } from "firebase/firestore";
 type Props = {
   code: string;
   disabled?: boolean;
+  className?: string;
 };
 
-export default function FileUploader({ code, disabled }: Props) {
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+export default function FileUploader({ code, disabled, className }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pct, setPct] = useState(0);
+  const [pct, setPct] = useState<number>(0);
 
-  async function handlePick() {
-    if (disabled || busy) return;
-    inputRef.current?.click();
+  function pick() {
+    if (!inputRef.current || disabled || busy) return;
+    inputRef.current.value = "";
+    inputRef.current.click();
   }
 
-  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    e.target.value = ""; // reset
     if (!file) return;
-
-    // quick client-side guard (mirrors rules)
-    const isOkType =
-      file.type.startsWith("image/") || file.type === "application/pdf";
-    if (!isOkType || file.size > 10 * 1024 * 1024) {
-      alert("Only images or PDFs up to 10MB.");
+    if (file.size > MAX_BYTES) {
+      alert("File too large. Max 10 MB.");
       return;
     }
+    setBusy(true);
+    setPct(0);
 
     try {
-      setBusy(true);
-      setPct(0);
+      // sessions/{code}/{timestamp}-{name}
+      const key = `${Date.now()}-${file.name}`;
+      const storageRef = ref(storage, `sessions/${code}/${key}`);
 
-      const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-      const path = `uploads/${code}/${Date.now()}-${safeName}`;
-      const task = uploadBytesResumable(ref(storage, path), file, {
+      const task = uploadBytesResumable(storageRef, file, {
         contentType: file.type,
       });
 
       task.on("state_changed", (snap) => {
-        if (snap.totalBytes > 0) {
-          setPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
-        }
+        const p = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        setPct(p);
       });
 
-      await task;
-      const url = await getDownloadURL(ref(storage, path));
+      await task; // wait for completion
 
-      // write a chat item so the agent sees a link/preview
-      await addDoc(collection(db, "sessions", code, "messages"), {
+      const url = await getDownloadURL(storageRef);
+
+      // post a chat message that contains a `file` payload
+      const msgsRef = collection(db, "sessions", code, "messages");
+      await addDoc(msgsRef, {
         from: "caller",
         at: serverTimestamp(),
-        fileUrl: url,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
+        file: {
+          url,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+        },
       });
-
-      setPct(0);
-    } catch (err: any) {
+    } catch (err) {
       console.error("upload error", err);
       alert("Upload failed. Please try again.");
     } finally {
       setBusy(false);
+      setPct(0);
     }
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <>
       <input
         ref={inputRef}
         type="file"
         accept="image/*,application/pdf"
-        className="hidden"
-        onChange={handleChange}
+        hidden
+        onChange={onPick}
       />
       <button
-        onClick={handlePick}
+        onClick={pick}
         disabled={disabled || busy}
-        className="rounded bg-violet-600 text-white px-3 py-2 disabled:opacity-50"
+        className={
+          className ??
+          "rounded bg-violet-600 text-white px-3 py-2 disabled:opacity-50"
+        }
       >
         {busy ? `Uploading… ${pct}%` : "Upload file"}
       </button>
-      {busy && (
-        <div className="h-2 w-48 rounded bg-slate-200 overflow-hidden">
-          <div
-            className="h-2 bg-violet-500"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      )}
-    </div>
+    </>
   );
 }

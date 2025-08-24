@@ -11,7 +11,8 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db, serverTimestamp } from "@/lib/firebase";
-import { Msg } from "@/lib/code";
+import { expiryInHours, Msg } from "@/lib/code";
+import NewSessionButton from "@/components/NewSessionButton";
 
 type Params = { params: { code: string } };
 
@@ -19,11 +20,11 @@ export default function AgentSessionPage({ params }: Params) {
   const code = params.code;
 
   const [messages, setMessages] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
   const [name, setName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
-  const [closed, setClosed] = useState(false);
+  const [closed, setClosed] = useState<boolean>(false);
+  const [input, setInput] = useState<string>("");
 
   const sessRef = useMemo(() => doc(db, "sessions", code), [code]);
   const msgsRef = useMemo(
@@ -48,15 +49,18 @@ export default function AgentSessionPage({ params }: Params) {
         const rows: Msg[] = [];
         snap.forEach((doc) => {
           const data = doc.data() as any;
-          rows.push({
-            text: data.text,
-            from: data.from,
-            at: data.at,
-            fileUrl: data.fileUrl,
-            fileName: data.fileName,
-            fileType: data.fileType,
-            fileSize: data.fileSize,
-          });
+          const base: Msg = { from: data.from, at: data.at };
+          if (data?.file?.url) {
+            base.file = {
+              url: data.file.url,
+              name: data.file.name,
+              size: data.file.size,
+              type: data.file.type,
+            };
+          } else if (data?.text) {
+            base.text = data.text;
+          }
+          rows.push(base);
         });
         setMessages(rows);
       }
@@ -68,78 +72,65 @@ export default function AgentSessionPage({ params }: Params) {
     };
   }, [sessRef, msgsRef]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text) return;
+  async function sendAgent(text: string) {
+    if (!text.trim() || closed) return;
     await addDoc(msgsRef, { text, from: "agent", at: serverTimestamp() });
+  }
+
+  async function handleSend() {
+    await sendAgent(input);
     setInput("");
   }
 
   async function endSession() {
-    await setDoc(sessRef, { closed: true }, { merge: true });
+    await setDoc(
+      sessRef,
+      { closed: true, expiresAt: expiryInHours(1) },
+      { merge: true }
+    );
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-4 space-y-3">
-      <div className="flex items-center justify-between text-sm text-slate-700">
-        <div>
-          <span className="text-slate-500 mr-2">Session</span>
-          <b>{code}</b>
+    <main className="mx-auto max-w-4xl px-4 py-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-slate-600">
+          <span className="mr-3">Session <b>{code}</b></span>
+          {name && <span className="mr-3">{name}</span>}
+          {email && <span className="mr-3">{email}</span>}
+          {phone && <span>{phone}</span>}
           {closed && (
             <span className="ml-2 text-red-600 font-semibold">
               (Session closed)
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3 text-xs">
-          {name && <span className="rounded bg-slate-100 px-2 py-1">{name}</span>}
-          {email && (
-            <span className="rounded bg-slate-100 px-2 py-1">{email}</span>
-          )}
-          {phone && (
-            <span className="rounded bg-slate-100 px-2 py-1">{phone}</span>
-          )}
-        </div>
+        {closed && (
+          <NewSessionButton label="Start next session" emphasize />
+        )}
       </div>
 
-      <div className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white">
+      <div className="border rounded-lg p-4 h-[420px] overflow-y-auto bg-white">
         {messages.map((m, i) => (
           <div
             key={i}
             className={`mb-2 max-w-[80%] ${
-              m.from === "caller" ? "ml-auto text-right" : ""
+              m.from === "agent" ? "ml-auto text-right" : ""
             }`}
           >
             <div
               className={`inline-block rounded-lg px-3 py-2 ${
-                m.from === "caller" ? "bg-indigo-100" : "bg-gray-100"
+                m.from === "agent" ? "bg-emerald-100" : "bg-gray-100"
               }`}
             >
-              {m.fileUrl ? (
-                <div className="space-y-1 text-left">
-                  {m.fileType?.startsWith("image/") ? (
-                    <a href={m.fileUrl} target="_blank" rel="noreferrer">
-                      <img
-                        src={m.fileUrl}
-                        alt={m.fileName ?? "image"}
-                        className="max-h-40 rounded border"
-                      />
-                    </a>
-                  ) : (
-                    <a
-                      href={m.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline"
-                    >
-                      {m.fileName ?? "Download file"}
-                    </a>
-                  )}
-                  <div className="text-xs text-slate-600">
-                    {m.fileName}{" "}
-                    {m.fileSize ? `(${Math.ceil(m.fileSize / 1024)} KB)` : ""}
-                  </div>
-                </div>
+              {m.file ? (
+                <a
+                  href={m.file.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                >
+                  {m.file.name} ({Math.ceil(m.file.size / 1024)} KB)
+                </a>
               ) : (
                 m.text
               )}
@@ -157,7 +148,7 @@ export default function AgentSessionPage({ params }: Params) {
           disabled={closed}
         />
         <button
-          onClick={send}
+          onClick={handleSend}
           disabled={closed}
           className="rounded bg-green-600 text-white px-4 py-2 disabled:opacity-50"
         >
@@ -165,56 +156,36 @@ export default function AgentSessionPage({ params }: Params) {
         </button>
       </div>
 
-      {/* Canned prompts */}
       <div className="flex gap-2">
         <button
-          onClick={() =>
-            addDoc(msgsRef, {
-              text: "Could you please provide your full name?",
-              from: "agent",
-              at: serverTimestamp(),
-            })
-          }
+          onClick={() => sendAgent("Could you please provide your full name?")}
           disabled={closed}
           className="rounded border px-3 py-2"
         >
           Ask name
         </button>
         <button
-          onClick={() =>
-            addDoc(msgsRef, {
-              text: "Could you please provide your best email address?",
-              from: "agent",
-              at: serverTimestamp(),
-            })
-          }
+          onClick={() => sendAgent("Could you please provide your best email address?")}
           disabled={closed}
           className="rounded border px-3 py-2"
         >
           Ask email
         </button>
         <button
-          onClick={() =>
-            addDoc(msgsRef, {
-              text: "Could you please provide a phone number we can reach you on?",
-              from: "agent",
-              at: serverTimestamp(),
-            })
-          }
+          onClick={() => sendAgent("Could you please provide a phone number we can reach you on?")}
           disabled={closed}
           className="rounded border px-3 py-2"
         >
           Ask phone
         </button>
-      </div>
 
-      <button
-        onClick={endSession}
-        disabled={closed}
-        className="w-full rounded bg-red-600 text-white px-3 py-2 disabled:opacity-50"
-      >
-        End session
-      </button>
-    </div>
+        <button
+          onClick={endSession}
+          className="ml-auto rounded bg-red-600 text-white px-4 py-2"
+        >
+          End session
+        </button>
+      </div>
+    </main>
   );
 }

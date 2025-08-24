@@ -6,43 +6,47 @@ import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/aut
 
 export default function AgentAuthGate({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, setUser);
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setBusy(false);
+    });
     return () => unsub();
   }, []);
 
-  async function handleSignIn() {
-    try {
-      setBusy(true);
-      await signInWithPopup(auth, googleProvider);
-    } finally {
-      setBusy(false);
-    }
+  async function signIn() {
+    await signInWithPopup(auth, googleProvider);
   }
-
-  async function handleSignOut() {
+  async function signOutUser() {
     await signOut(auth);
   }
 
+  if (busy) return null;
+
   if (!user) {
     return (
-      <div className="mx-auto max-w-md p-6 text-center">
-        <h1 className="text-xl font-semibold mb-2">EOV6 Agent</h1>
-        <p className="text-sm text-slate-600 mb-4">
-          Please sign in with Google to open the agent console.
+      <div className="max-w-lg mx-auto p-6 text-center">
+        <h2 className="text-xl font-semibold mb-3">EOV6 — Admin</h2>
+        <p className="mb-4 text-slate-600">
+          Sign in with Google to open the Agent Console.
         </p>
-        <button
-          onClick={handleSignIn}
-          disabled={busy}
-          className="rounded bg-indigo-600 px-4 py-2 text-white disabled:opacity-50"
-        >
-          {busy ? "Signing in…" : "Sign in with Google"}
+        <button onClick={signIn} className="rounded bg-indigo-600 text-white px-4 py-2">
+          Sign in with Google
         </button>
       </div>
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <div className="flex justify-end p-2">
+        <button onClick={signOutUser} className="text-sm underline">
+          Sign out
+        </button>
+      </div>
+      {children}
+    </>
+  );
 }

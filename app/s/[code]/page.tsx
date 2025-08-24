@@ -34,13 +34,14 @@ export default function CallerPage({ params }: Params) {
     [code]
   );
 
-  // create/merge session shell + subscribe to header + messages
+  // ensure session exists + subscribe to header + messages
   useEffect(() => {
+    // create-or-merge session shell
     setDoc(
       sessRef,
       {
         createdAt: serverTimestamp(),
-        expiresAt: expiryInHours(1), // TTL refresh anchor
+        expiresAt: expiryInHours(1), // TTL field
       },
       { merge: true }
     );
@@ -61,15 +62,18 @@ export default function CallerPage({ params }: Params) {
         const rows: Msg[] = [];
         snap.forEach((doc) => {
           const data = doc.data() as any;
-          rows.push({
-            text: data.text,
-            from: data.from,
-            at: data.at,
-            fileUrl: data.fileUrl,
-            fileName: data.fileName,
-            fileType: data.fileType,
-            fileSize: data.fileSize,
-          });
+          const base: Msg = { from: data.from, at: data.at };
+          if (data?.file?.url) {
+            base.file = {
+              url: data.file.url,
+              name: data.file.name,
+              size: data.file.size,
+              type: data.file.type,
+            };
+          } else if (data?.text) {
+            base.text = data.text;
+          }
+          rows.push(base);
         });
         setMessages(rows);
       }
@@ -107,6 +111,7 @@ export default function CallerPage({ params }: Params) {
       { merge: true }
     );
 
+    // optional audit line in chat so agents notice
     await addDoc(msgsRef, {
       text: "Contact details were provided.",
       from: "caller",
@@ -143,31 +148,15 @@ export default function CallerPage({ params }: Params) {
                 m.from === "caller" ? "bg-indigo-100" : "bg-gray-100"
               }`}
             >
-              {m.fileUrl ? (
-                <div className="space-y-1 text-left">
-                  {m.fileType?.startsWith("image/") ? (
-                    <a href={m.fileUrl} target="_blank" rel="noreferrer">
-                      <img
-                        src={m.fileUrl}
-                        alt={m.fileName ?? "image"}
-                        className="max-h-40 rounded border"
-                      />
-                    </a>
-                  ) : (
-                    <a
-                      href={m.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline"
-                    >
-                      {m.fileName ?? "Download file"}
-                    </a>
-                  )}
-                  <div className="text-xs text-slate-600">
-                    {m.fileName}{" "}
-                    {m.fileSize ? `(${Math.ceil(m.fileSize / 1024)} KB)` : ""}
-                  </div>
-                </div>
+              {m.file ? (
+                <a
+                  href={m.file.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                >
+                  {m.file.name} ({Math.ceil(m.file.size / 1024)} KB)
+                </a>
               ) : (
                 m.text
               )}

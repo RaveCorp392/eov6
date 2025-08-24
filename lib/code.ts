@@ -1,28 +1,28 @@
 ﻿import { Timestamp } from "firebase/firestore";
 
-/** Chat message shape (text or file). */
 export type Msg = {
   text?: string;
-  from: "caller" | "agent";
-  at: Timestamp;
-  fileUrl?: string;
-  fileName?: string;
-  fileType?: string;
-  fileSize?: number;
+  from: "agent" | "caller";
+  at: any; // Firestore Timestamp (kept loose for SSR/hydration)
+  // Optional file payload for uploads
+  file?: {
+    url: string;
+    name: string;
+    size: number;
+    type: string;
+  };
 };
 
-/** Default numeric code length (kept for IVR/marketing usage). */
 export const defaultCodeLength = 6;
 
-/** Compute an absolute Date for a TTL of N hours from now. */
+// TTL helper: now + N hours
 export function expiryInHours(hours: number) {
-  return new Date(Date.now() + hours * 60 * 60 * 1000);
+  return Timestamp.fromDate(new Date(Date.now() + hours * 60 * 60 * 1000));
 }
 
-/** Generate a numeric session code, no leading zero. */
-export function randomCode(len = defaultCodeLength): string {
-  if (len <= 0) return "0";
-  let s = String(1 + Math.floor(Math.random() * 9)); // first digit 1..9
-  for (let i = 1; i < len; i++) s += Math.floor(Math.random() * 10).toString();
-  return s;
+// Helper used by NewSessionButton (6-digit by default)
+export function randomCode(len: number = defaultCodeLength): string {
+  const min = Math.pow(10, len - 1);
+  const max = Math.pow(10, len) - 1;
+  return String(Math.floor(min + Math.random() * (max - min + 1)));
 }
