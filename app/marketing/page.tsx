@@ -19,25 +19,37 @@ export default function MarketingPage() {
         </h1>
 
         <p className="mx-auto mt-4 max-w-2xl text-slate-600">
-          Agents get a short code, callers enter it at <span className="font-semibold">eov6.com</span>,
-          and verified contact details arrive — then auto-expire by policy.
+          Agents get a short code, callers enter it at{" "}
+          <span className="font-semibold">eov6.com</span>, and verified contact details arrive —
+          then auto-expire by policy.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/agent" className="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700">
+          <Link
+            href="/agent"
+            className="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700"
+          >
             Open agent console
           </Link>
-          <Link href="/" className="rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-800 hover:bg-slate-50">
+          <Link
+            href="/"
+            className="rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-800 hover:bg-slate-50"
+          >
             Caller IVR / code entry
           </Link>
-          <a href="mailto:partners@meetsafe.io" className="rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-800 hover:bg-slate-50">
+          <a
+            href="mailto:partners@meetsafe.io"
+            className="rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-800 hover:bg-slate-50"
+          >
             Contact us
           </a>
         </div>
       </section>
 
-      {/* MDX One-pager */}
+      {/* MDX One-pager (adds detail below the hero) */}
       <section className="mt-14">
+        {/* If you use @tailwindcss/typography this will style MDX nicely.
+           Without the plugin, it's harmless but has no effect. */}
         <div className="mx-auto max-w-3xl prose prose-slate">
           <OnePager />
         </div>
