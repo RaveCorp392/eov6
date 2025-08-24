@@ -1,6 +1,7 @@
+// app/s/[code]/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   addDoc,
   collection,
@@ -13,8 +14,7 @@ import {
 import { db, serverTimestamp } from "@/lib/firebase";
 import { expiryInHours, Msg } from "@/lib/code";
 import { useRouter } from "next/navigation";
-// import NewSessionButton only for debug
-import NewSessionButton from "@/components/NewSessionButton";
+import FileUploader from "@/components/FileUploader";
 
 type Params = { params: { code: string } };
 
@@ -29,27 +29,19 @@ export default function CallerPage({ params }: Params) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [closed, setClosed] = useState(false);
 
-  const showDebug = process.env.NEXT_PUBLIC_DEBUG_LINKS === "1";
-
   const sessRef = useMemo(() => doc(db, "sessions", code), [code]);
   const msgsRef = useMemo(
     () => collection(db, "sessions", code, "messages"),
     [code]
   );
 
-  // --- auto-scroll target ---
-  const listRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
-
-  // ensure session exists + subscribe to header + messages
   useEffect(() => {
     setDoc(
       sessRef,
-      { createdAt: serverTimestamp(), expiresAt: expiryInHours(1) },
+      {
+        createdAt: serverTimestamp(),
+        expiresAt: expiryInHours(1),
+      },
       { merge: true }
     );
 
@@ -68,8 +60,19 @@ export default function CallerPage({ params }: Params) {
       (snap) => {
         const rows: Msg[] = [];
         snap.forEach((doc) => {
-          const v = doc.data() as any;
-          if (v?.text && v?.from && v?.at) rows.push({ text: v.text, from: v.from, at: v.at });
+          const data = doc.data() as any;
+          const row: Msg = {
+            from: data.from,
+            at: data.at,
+          };
+          if (data.text) row.text = data.text;
+          if (data.fileUrl) {
+            row.fileUrl = data.fileUrl;
+            row.fileName = data.fileName;
+            row.fileType = data.fileType;
+            row.fileSize = data.fileSize;
+          }
+          rows.push(row);
         });
         setMessages(rows);
       }
@@ -84,7 +87,11 @@ export default function CallerPage({ params }: Params) {
   async function sendMessage() {
     const text = input.trim();
     if (!text || closed) return;
-    await addDoc(msgsRef, { text, from: "caller", at: serverTimestamp() });
+    await addDoc(msgsRef, {
+      text,
+      from: "caller",
+      at: serverTimestamp(),
+    });
     setInput("");
   }
 
@@ -113,36 +120,54 @@ export default function CallerPage({ params }: Params) {
     router.push("/");
   }
 
+  const allowUploads =
+    process.env.NEXT_PUBLIC_ALLOW_UPLOADS === "1" || true; // default on for demo
+
   return (
     <div className="mx-auto max-w-3xl p-4 space-y-3">
       <div className="text-sm text-gray-600">
-        Ephemeral session <b>{code}</b>. Data is cleared automatically by policy.
-        {closed && <span className="ml-2 text-red-600 font-semibold">(Session ended by agent)</span>}
+        Ephemeral session <b>{code}</b>. Data is cleared automatically by
+        policy.
+        {closed && (
+          <span className="ml-2 text-red-600 font-semibold">
+            (Session ended by agent)
+          </span>
+        )}
       </div>
 
-      {/* DEBUG ONLY: hide in production unless NEXT_PUBLIC_DEBUG_LINKS=1 */}
-      {showDebug && (
-        <div className="flex items-center gap-2">
-          <NewSessionButton label="Open agent console" />
-        </div>
-      )}
-
-      <div
-        ref={listRef}
-        className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white"
-      >
+      <div className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white">
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`mb-2 max-w-[80%] ${m.from === "caller" ? "ml-auto text-right" : ""}`}
+            className={`mb-2 max-w-[80%] ${
+              m.from === "caller" ? "ml-auto text-right" : ""
+            }`}
           >
-            <div
-              className={`inline-block rounded-lg px-3 py-2 ${
-                m.from === "caller" ? "bg-indigo-100" : "bg-gray-100"
-              }`}
-            >
-              {m.text}
-            </div>
+            {m.fileUrl ? (
+              <div className="inline-block rounded-lg px-3 py-2 bg-indigo-50">
+                <a
+                  className="underline"
+                  href={m.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {m.fileName || "File"}
+                </a>
+                {typeof m.fileSize === "number" && (
+                  <span className="ml-2 text-xs text-slate-600">
+                    ({Math.ceil(m.fileSize / 1024)} KB)
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div
+                className={`inline-block rounded-lg px-3 py-2 ${
+                  m.from === "caller" ? "bg-indigo-100" : "bg-gray-100"
+                }`}
+              >
+                {m.text}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -195,7 +220,16 @@ export default function CallerPage({ params }: Params) {
         </button>
       </div>
 
-      <button onClick={leaveSession} className="w-full rounded bg-gray-100 px-3 py-2">
+      {allowUploads && !closed && (
+        <div className="pt-2">
+          <FileUploader code={code} />
+        </div>
+      )}
+
+      <button
+        onClick={leaveSession}
+        className="w-full rounded bg-gray-100 px-3 py-2"
+      >
         Leave session
       </button>
     </div>

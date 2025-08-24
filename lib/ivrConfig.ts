@@ -1,13 +1,10 @@
-﻿export type Profile = {
-  name?: string;
-  email?: string;
-  phone?: string; // <â€” added/ensured
+﻿// lib/ivrConfig.ts
+export type OrgPolicy = {
+  uploadsEnabled: boolean;      // org-level toggle
+  maxUploadBytes: number;       // UI-enforced size cap (matches Storage rules)
 };
 
-// (Optional) central prompts â€” keep if you already have similar constants
-export const IVR_QUESTIONS = {
-  askName: "Could you please provide your full name?",
-  askEmail: "Could you please provide your best email address?",
-  askPhone: "Could you please provide a phone number we can reach you on?",
+export const orgPolicy: OrgPolicy = {
+  uploadsEnabled: (process.env.NEXT_PUBLIC_UPLOADS_ENABLED ?? "0") === "1",
+  maxUploadBytes: 10 * 1024 * 1024, // 10MB
 };
-
