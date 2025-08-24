@@ -9,59 +9,54 @@ import { expiryInHours, randomCode } from "@/lib/code";
 type Props = {
   className?: string;
   label?: string;
-  /** Optional: make the button visually stronger (used after ending a session) */
+  /** Optional: visually emphasize (e.g., after ending a session) */
   emphasize?: boolean;
 };
 
-/**
- * Creates a fresh session (unique code) and routes the agent to /agent/s/[code].
- * Use on /agent or inline in the console after "End session".
- */
-export default function NewAgentSessionButton({
+export default function NewSessionButton({
   className = "",
   label = "Open Agent Console",
   emphasize = false,
 }: Props) {
-  const [busy, setBusy] = useState(false);
   const router = useRouter();
+  const [busy, setBusy] = useState(false);
 
-  async function handle() {
+  async function createAndRoute() {
     if (busy) return;
     setBusy(true);
     try {
-      // Try a few codes to avoid a (rare) collision.
-      let code = "";
-      for (let i = 0; i < 6; i++) {
-        const c = randomCode();
-        const ref = doc(db, "sessions", c);
+      // Try a few times in the unlikely event of a collision
+      let code = randomCode();
+      for (let i = 0; i < 5; i++) {
+        const ref = doc(db, "sessions", code);
         const snap = await getDoc(ref);
         if (!snap.exists()) {
-          await setDoc(ref, {
-            createdAt: serverTimestamp(),
-            expiresAt: expiryInHours(1),
-            closed: false,
-          });
-          code = c;
-          break;
+          // create session shell; TTL starts now
+          await setDoc(
+            ref,
+            {
+              createdAt: serverTimestamp(),
+              expiresAt: expiryInHours(1),
+              closed: false,
+            },
+            { merge: true }
+          );
+          router.push(`/agent/s/${code}`);
+          return;
         }
+        code = randomCode();
       }
-      if (!code) throw new Error("Could not allocate a session code");
-      router.push(`/agent/s/${code}`);
+      alert("Could not start a new session. Please try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  const visual =
-    emphasize
-      ? "bg-indigo-700 shadow-md hover:bg-indigo-800 focus:ring-2 focus:ring-indigo-400"
-      : "bg-indigo-600 hover:bg-indigo-700";
-
   return (
     <button
-      onClick={handle}
+      onClick={createAndRoute}
       disabled={busy}
-      className={`rounded text-white px-4 py-2 disabled:opacity-50 ${visual} ${className}`}
+      className={`rounded ${emphasize ? "bg-violet-600" : "bg-indigo-600"} text-white px-4 py-2 disabled:opacity-50 ${className}`}
     >
       {busy ? "Opening…" : label}
     </button>

@@ -1,4 +1,3 @@
-// app/s/[code]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -35,12 +34,13 @@ export default function CallerPage({ params }: Params) {
     [code]
   );
 
+  // create/merge session shell + subscribe to header + messages
   useEffect(() => {
     setDoc(
       sessRef,
       {
         createdAt: serverTimestamp(),
-        expiresAt: expiryInHours(1),
+        expiresAt: expiryInHours(1), // TTL refresh anchor
       },
       { merge: true }
     );
@@ -61,18 +61,15 @@ export default function CallerPage({ params }: Params) {
         const rows: Msg[] = [];
         snap.forEach((doc) => {
           const data = doc.data() as any;
-          const row: Msg = {
+          rows.push({
+            text: data.text,
             from: data.from,
             at: data.at,
-          };
-          if (data.text) row.text = data.text;
-          if (data.fileUrl) {
-            row.fileUrl = data.fileUrl;
-            row.fileName = data.fileName;
-            row.fileType = data.fileType;
-            row.fileSize = data.fileSize;
-          }
-          rows.push(row);
+            fileUrl: data.fileUrl,
+            fileName: data.fileName,
+            fileType: data.fileType,
+            fileSize: data.fileSize,
+          });
         });
         setMessages(rows);
       }
@@ -104,6 +101,7 @@ export default function CallerPage({ params }: Params) {
         email: email?.trim() || "",
         phone: phone?.trim() || "",
         identified: Boolean(name || email || phone),
+        // refresh TTL whenever details arrive
         expiresAt: expiryInHours(1),
       },
       { merge: true }
@@ -119,9 +117,6 @@ export default function CallerPage({ params }: Params) {
   function leaveSession() {
     router.push("/");
   }
-
-  const allowUploads =
-    process.env.NEXT_PUBLIC_ALLOW_UPLOADS === "1" || true; // default on for demo
 
   return (
     <div className="mx-auto max-w-3xl p-4 space-y-3">
@@ -143,31 +138,40 @@ export default function CallerPage({ params }: Params) {
               m.from === "caller" ? "ml-auto text-right" : ""
             }`}
           >
-            {m.fileUrl ? (
-              <div className="inline-block rounded-lg px-3 py-2 bg-indigo-50">
-                <a
-                  className="underline"
-                  href={m.fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {m.fileName || "File"}
-                </a>
-                {typeof m.fileSize === "number" && (
-                  <span className="ml-2 text-xs text-slate-600">
-                    ({Math.ceil(m.fileSize / 1024)} KB)
-                  </span>
-                )}
-              </div>
-            ) : (
-              <div
-                className={`inline-block rounded-lg px-3 py-2 ${
-                  m.from === "caller" ? "bg-indigo-100" : "bg-gray-100"
-                }`}
-              >
-                {m.text}
-              </div>
-            )}
+            <div
+              className={`inline-block rounded-lg px-3 py-2 ${
+                m.from === "caller" ? "bg-indigo-100" : "bg-gray-100"
+              }`}
+            >
+              {m.fileUrl ? (
+                <div className="space-y-1 text-left">
+                  {m.fileType?.startsWith("image/") ? (
+                    <a href={m.fileUrl} target="_blank" rel="noreferrer">
+                      <img
+                        src={m.fileUrl}
+                        alt={m.fileName ?? "image"}
+                        className="max-h-40 rounded border"
+                      />
+                    </a>
+                  ) : (
+                    <a
+                      href={m.fileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline"
+                    >
+                      {m.fileName ?? "Download file"}
+                    </a>
+                  )}
+                  <div className="text-xs text-slate-600">
+                    {m.fileName}{" "}
+                    {m.fileSize ? `(${Math.ceil(m.fileSize / 1024)} KB)` : ""}
+                  </div>
+                </div>
+              ) : (
+                m.text
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -220,11 +224,8 @@ export default function CallerPage({ params }: Params) {
         </button>
       </div>
 
-      {allowUploads && !closed && (
-        <div className="pt-2">
-          <FileUploader code={code} />
-        </div>
-      )}
+      {/* Upload */}
+      <FileUploader code={code} disabled={closed} />
 
       <button
         onClick={leaveSession}

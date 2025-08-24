@@ -1,15 +1,24 @@
-// storage.rules
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Uploads live inside sessions/{code}/uploads/{uid}/{filename}
-    match /sessions/{code}/uploads/{uid}/{file} {
-      allow write: if request.auth != null
-                   && request.auth.uid == uid
-                   && request.resource.size < 10 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*')
-                      || request.resource.contentType == 'application/pdf';
-      // (Optional) allow read for agents if needed later; default is deny.
+
+    // Check the Firestore session exists and is not closed
+    function sessionOpen(code) {
+      let snap = get(/databases/(default)/documents/sessions/$(code));
+      return snap.data != null && (snap.data.closed != true);
+    }
+
+    // All uploads go to uploads/{code}/...
+    match /uploads/{code}/{file=**} {
+
+      // Allow reads while the session is open (agent needs to fetch view/download)
+      allow read: if sessionOpen(code);
+
+      // Allow writes if session is open, type is image/* or PDF, and ≤10MB
+      allow write: if sessionOpen(code)
+                   && request.resource.size <= 10 * 1024 * 1024
+                   && ( request.resource.contentType.matches('image/.*')
+                        || request.resource.contentType == 'application/pdf');
     }
   }
 }

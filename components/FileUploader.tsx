@@ -1,67 +1,73 @@
-// components/FileUploader.tsx
 "use client";
 
 import { useRef, useState } from "react";
-import { addDoc, collection } from "firebase/firestore";
+import { storage, db, serverTimestamp } from "@/lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { db, storage, serverTimestamp } from "@/lib/firebase";
+import { addDoc, collection } from "firebase/firestore";
 
-type Props = { code: string };
+type Props = {
+  code: string;
+  disabled?: boolean;
+};
 
-export default function FileUploader({ code }: Props) {
+export default function FileUploader({ code, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<number>(0);
+  const [pct, setPct] = useState(0);
 
-  function pick() {
+  async function handlePick() {
+    if (disabled || busy) return;
     inputRef.current?.click();
   }
 
-  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = ""; // reset
     if (!file) return;
 
-    const maxBytes = 10 * 1024 * 1024; // 10MB cap
-    if (file.size > maxBytes) {
-      alert("File too large (max 10MB).");
-      e.target.value = "";
+    // quick client-side guard (mirrors rules)
+    const isOkType =
+      file.type.startsWith("image/") || file.type === "application/pdf";
+    if (!isOkType || file.size > 10 * 1024 * 1024) {
+      alert("Only images or PDFs up to 10MB.");
       return;
     }
 
-    setBusy(true);
-    setProgress(0);
     try {
-      const path = `sessions/${code}/${Date.now()}-${file.name}`;
-      const r = ref(storage, path);
-      const task = uploadBytesResumable(r, file, { contentType: file.type || undefined });
+      setBusy(true);
+      setPct(0);
 
-      task.on("state_changed", snap => {
-        // ✅ Use totalBytes (not `total`)
-        if (snap.totalBytes) {
-          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-          setProgress(pct);
+      const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+      const path = `uploads/${code}/${Date.now()}-${safeName}`;
+      const task = uploadBytesResumable(ref(storage, path), file, {
+        contentType: file.type,
+      });
+
+      task.on("state_changed", (snap) => {
+        if (snap.totalBytes > 0) {
+          setPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
         }
       });
 
       await task;
-      const url = await getDownloadURL(r);
+      const url = await getDownloadURL(ref(storage, path));
 
+      // write a chat item so the agent sees a link/preview
       await addDoc(collection(db, "sessions", code, "messages"), {
         from: "caller",
         at: serverTimestamp(),
         fileUrl: url,
         fileName: file.name,
-        fileType: file.type || "application/octet-stream",
+        fileType: file.type,
         fileSize: file.size,
       });
 
-      setProgress(100);
-    } catch (err) {
-      console.error(err);
+      setPct(0);
+    } catch (err: any) {
+      console.error("upload error", err);
       alert("Upload failed. Please try again.");
     } finally {
       setBusy(false);
-      e.target.value = "";
     }
   }
 
@@ -72,18 +78,21 @@ export default function FileUploader({ code }: Props) {
         type="file"
         accept="image/*,application/pdf"
         className="hidden"
-        onChange={onPick}
+        onChange={handleChange}
       />
       <button
-        onClick={pick}
-        disabled={busy}
+        onClick={handlePick}
+        disabled={disabled || busy}
         className="rounded bg-violet-600 text-white px-3 py-2 disabled:opacity-50"
       >
-        {busy ? `Uploading… ${progress}%` : "Upload file"}
+        {busy ? `Uploading… ${pct}%` : "Upload file"}
       </button>
       {busy && (
-        <div className="h-2 w-40 rounded bg-slate-200 overflow-hidden">
-          <div className="h-2 bg-violet-600" style={{ width: `${progress}%` }} />
+        <div className="h-2 w-48 rounded bg-slate-200 overflow-hidden">
+          <div
+            className="h-2 bg-violet-500"
+            style={{ width: `${pct}%` }}
+          />
         </div>
       )}
     </div>
