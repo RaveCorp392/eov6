@@ -27,20 +27,17 @@ export default function CallerPage({ params }: Params) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [closed, setClosed] = useState(false);
 
-  const sessRef = useMemo(() => doc(db, "sessions", code), [code]);
-  const msgsRef = useMemo(
-    () => collection(db, "sessions", code, "messages"),
-    [code]
-  );
+  // IMPORTANT: keep collection name "s"
+  const sessRef = useMemo(() => doc(db, "s", code), [code]);
+  const msgsRef = useMemo(() => collection(db, "s", code, "messages"), [code]);
 
-  // ensure session exists + subscribe to header + messages
   useEffect(() => {
-    // create-or-merge session shell
+    // create/merge session shell + TTL
     setDoc(
       sessRef,
       {
         createdAt: serverTimestamp(),
-        expiresAt: expiryInHours(1), // TTL field
+        expiresAt: expiryInHours(1),
       },
       { merge: true }
     );
@@ -55,23 +52,16 @@ export default function CallerPage({ params }: Params) {
       }
     });
 
-    const unsubMsgs = onSnapshot(
-      query(msgsRef, orderBy("at", "asc")),
-      (snap) => {
-        const rows: Msg[] = [];
-        snap.forEach((doc) => {
-          const data = doc.data() as any;
-          if (data?.text && data?.from && data?.at) {
-            rows.push({
-              text: data.text,
-              from: data.from,
-              at: data.at,
-            });
-          }
-        });
-        setMessages(rows);
-      }
-    );
+    const unsubMsgs = onSnapshot(query(msgsRef, orderBy("at", "asc")), (snap) => {
+      const rows: Msg[] = [];
+      snap.forEach((doc) => {
+        const data = doc.data() as any;
+        if (data?.text && data?.from && data?.at) {
+          rows.push({ text: data.text, from: data.from, at: data.at });
+        }
+      });
+      setMessages(rows);
+    });
 
     return () => {
       unsubHeader();
@@ -82,11 +72,7 @@ export default function CallerPage({ params }: Params) {
   async function sendMessage() {
     const text = input.trim();
     if (!text || closed) return;
-    await addDoc(msgsRef, {
-      text,
-      from: "caller",
-      at: serverTimestamp(),
-    });
+    await addDoc(msgsRef, { text, from: "caller", at: serverTimestamp() });
     setInput("");
   }
 
@@ -99,13 +85,10 @@ export default function CallerPage({ params }: Params) {
         email: email?.trim() || "",
         phone: phone?.trim() || "",
         identified: Boolean(name || email || phone),
-        // refresh TTL whenever details arrive
         expiresAt: expiryInHours(1),
       },
       { merge: true }
     );
-
-    // optional audit line in chat so agents notice
     await addDoc(msgsRef, {
       text: "Contact details were provided.",
       from: "caller",
@@ -114,15 +97,13 @@ export default function CallerPage({ params }: Params) {
   }
 
   function leaveSession() {
-    // local-only exit; do not delete anything
     router.push("/");
   }
 
   return (
     <div className="mx-auto max-w-3xl p-4 space-y-3">
       <div className="text-sm text-gray-600">
-        Ephemeral session <b>{code}</b>. Data is cleared automatically by
-        policy.
+        Ephemeral session <b>{code}</b>. Data is cleared automatically by policy.
         {closed && (
           <span className="ml-2 text-red-600 font-semibold">
             (Session ended by agent)
@@ -197,10 +178,7 @@ export default function CallerPage({ params }: Params) {
         </button>
       </div>
 
-      <button
-        onClick={leaveSession}
-        className="w-full rounded bg-gray-100 px-3 py-2"
-      >
+      <button onClick={leaveSession} className="w-full rounded bg-gray-100 px-3 py-2">
         Leave session
       </button>
     </div>
