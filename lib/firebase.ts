@@ -1,10 +1,5 @@
-// lib/firebase.ts
-import { initializeApp, getApp, getApps } from "firebase/app";
-import {
-  getFirestore,
-  serverTimestamp,
-  Timestamp,
-} from "firebase/firestore";
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -15,12 +10,13 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-// one-and-only app
-export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+// Reuse the existing app in the browser if it’s already been created
+export const app: FirebaseApp =
+  getApps().length > 0 ? getApps()[0]! : initializeApp(firebaseConfig);
+
 export const db = getFirestore(app);
 
-// tiny guard used by pages before acting
-export const isFirebaseReady = () => getApps().length > 0;
-
-// re-export helpers so pages can import from "@/lib/firebase"
-export { serverTimestamp, Timestamp };
+// Tiny helper some pages like to use
+export function isFirebaseReady() {
+  return !!app?.name;
+}
