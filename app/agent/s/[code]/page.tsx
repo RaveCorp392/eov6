@@ -9,9 +9,10 @@ import {
   orderBy,
   query,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { db, serverTimestamp } from "@/lib/firebase";
-import { Msg } from "@/lib/code";
+import { expiryInHours, Msg } from "@/lib/code";
 import NewSessionButton from "@/components/NewSessionButton";
 
 type Params = { params: { code: string } };
@@ -20,7 +21,14 @@ export default function AgentSessionPage({ params }: Params) {
   const code = params.code;
 
   const [input, setInput] = useState("");
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [messages, setMessages] = useState<Msg[]>([]);
+
+  // caller profile shown as chips
+  const [name, setName] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+  const [phone, setPhone] = useState<string>("");
+
+  // once true, we don’t flip it back to false unless we load a new session
   const [closed, setClosed] = useState(false);
 
   const sessRef = useMemo(() => doc(db, "sessions", code), [code]);
@@ -29,28 +37,43 @@ export default function AgentSessionPage({ params }: Params) {
     [code]
   );
 
-  // live session header + messages
+  // subscribe to session header + chat stream
   useEffect(() => {
-    const unsubHeader = onSnapshot(
+    // ensure the session doc exists (merge so we never clear fields like `closed`)
+    setDoc(
       sessRef,
-      (snap) => {
-        const d = snap.data() as any;
-        setClosed(Boolean(d?.closed));
+      {
+        createdAt: serverTimestamp(),
+        expiresAt: expiryInHours(1),
       },
-      (err) => console.error("[agent] header snapshot error:", err)
+      { merge: true }
     );
+
+    const unsubHeader = onSnapshot(sessRef, (snap) => {
+      const d = snap.data() as any | undefined;
+      if (!d) return;
+
+      // chips
+      setName(d.name ?? "");
+      setEmail(d.email ?? "");
+      setPhone(d.phone ?? "");
+
+      // IMPORTANT: only ever set closed -> true; never force to false on re-sync
+      if (d.closed === true) setClosed(true);
+    });
 
     const unsubMsgs = onSnapshot(
       query(msgsRef, orderBy("at", "asc")),
       (snap) => {
         const rows: Msg[] = [];
-        snap.forEach((d) => {
-          const v = d.data() as any;
-          if (v?.text && v?.from && v?.at) rows.push(v as Msg);
+        snap.forEach((m) => {
+          const v = m.data() as any;
+          if (v?.text && v?.from && v?.at) {
+            rows.push({ text: v.text, from: v.from, at: v.at });
+          }
         });
-        setMsgs(rows);
-      },
-      (err) => console.error("[agent] messages snapshot error:", err)
+        setMessages(rows);
+      }
     );
 
     return () => {
@@ -59,70 +82,80 @@ export default function AgentSessionPage({ params }: Params) {
     };
   }, [sessRef, msgsRef]);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || closed) return;
-    try {
-      await addDoc(msgsRef, { text, from: "agent", at: serverTimestamp() });
-      setInput("");
-    } catch (e) {
-      console.error("[agent] send failed:", e);
-    }
-  }
-
+  // canned prompts
   async function ask(kind: "name" | "email" | "phone") {
-    if (closed) return;
-    const copy =
+    const text =
       kind === "name"
         ? "Could you please provide your full name?"
         : kind === "email"
         ? "Could you please provide your best email address?"
         : "Could you please provide a phone number we can reach you on?";
-    await addDoc(msgsRef, { text: copy, from: "agent", at: serverTimestamp() });
+
+    await addDoc(msgsRef, { text, from: "agent", at: serverTimestamp() });
+  }
+
+  async function send() {
+    const text = input.trim();
+    if (!text || closed) return;
+    await addDoc(msgsRef, { text, from: "agent", at: serverTimestamp() });
+    setInput("");
   }
 
   async function endSession() {
-    try {
-      await setDoc(
-        sessRef,
-        { closed: true, closedAt: serverTimestamp() },
-        { merge: true }
-      );
-      await addDoc(msgsRef, {
-        text: "Session was closed by agent.",
-        from: "agent",
-        at: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error("[agent] endSession failed:", e);
-    }
+    // mark closed; we don’t navigate automatically so the banner remains
+    await updateDoc(sessRef, {
+      closed: true,
+      endedAt: serverTimestamp(),
+      // we also refresh TTL so retention is consistent after end
+      expiresAt: expiryInHours(1),
+    });
+    setClosed(true); // optimistic
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-4 space-y-3">
-      <div className="text-sm text-gray-600">
-        Session <b>{code}</b>{" "}
-        {closed && (
-          <span className="ml-2 text-red-600 font-semibold">(Session closed)</span>
-        )}
+    <div className="mx-auto max-w-4xl p-4 space-y-3">
+      {/* top bar: session + chips */}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div>
+          <span className="text-gray-600">Session </span>
+          <b>{code}</b>
+          {closed && (
+            <span className="ml-2 text-red-600 font-semibold">
+              (Session closed)
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">
+            {name || "—"}
+          </span>
+          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">
+            {email || "—"}
+          </span>
+          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">
+            {phone || "—"}
+          </span>
+        </div>
       </div>
 
+      {/* when closed, keep a persistent CTA to start the next session */}
       {closed && (
-        <div className="flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-          <div className="text-indigo-900 font-medium">
-            Session ended. Start the next one?
+        <div className="flex items-center justify-between rounded-lg bg-indigo-50 px-4 py-3">
+          <div className="text-indigo-900">
+            <b>Session ended.</b> Start the next one?
           </div>
-          {/* Uses existing component; no prop changes needed */}
-          <NewSessionButton label="Start next session" />
+          <NewSessionButton label="Start next session" emphasize />
         </div>
       )}
 
+      {/* chat window */}
       <div className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white">
-        {msgs.map((m, i) => (
+        {messages.map((m, i) => (
           <div
             key={i}
             className={`mb-2 max-w-[80%] ${
-              m.from === "agent" ? "ml-auto text-right" : ""
+              m.from === "agent" ? "mr-auto" : "ml-auto text-right"
             }`}
           >
             <div
@@ -136,6 +169,7 @@ export default function AgentSessionPage({ params }: Params) {
         ))}
       </div>
 
+      {/* compose row */}
       <div className="flex gap-2">
         <input
           className="flex-1 rounded border px-3 py-2"
@@ -147,12 +181,13 @@ export default function AgentSessionPage({ params }: Params) {
         <button
           onClick={send}
           disabled={closed}
-          className="rounded bg-green-600 text-white px-4 py-2 disabled:opacity-50"
+          className="rounded bg-emerald-600 text-white px-4 py-2 disabled:opacity-50"
         >
           Send
         </button>
       </div>
 
+      {/* canned prompts */}
       <div className="flex gap-2">
         <button
           onClick={() => ask("name")}
@@ -177,6 +212,7 @@ export default function AgentSessionPage({ params }: Params) {
         </button>
       </div>
 
+      {/* end session */}
       <button
         onClick={endSession}
         disabled={closed}
