@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -13,6 +13,7 @@ import {
 import { db, serverTimestamp } from "@/lib/firebase";
 import { expiryInHours, Msg } from "@/lib/code";
 import { useRouter } from "next/navigation";
+// import NewSessionButton only for debug
 import NewSessionButton from "@/components/NewSessionButton";
 
 type Params = { params: { code: string } };
@@ -28,49 +29,50 @@ export default function CallerPage({ params }: Params) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [closed, setClosed] = useState(false);
 
+  const showDebug = process.env.NEXT_PUBLIC_DEBUG_LINKS === "1";
+
   const sessRef = useMemo(() => doc(db, "sessions", code), [code]);
   const msgsRef = useMemo(
     () => collection(db, "sessions", code, "messages"),
     [code]
   );
 
+  // --- auto-scroll target ---
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
+
   // ensure session exists + subscribe to header + messages
   useEffect(() => {
-    // create-or-merge session shell
     setDoc(
       sessRef,
-      {
-        createdAt: serverTimestamp(),
-        expiresAt: expiryInHours(1), // TTL field
-      },
+      { createdAt: serverTimestamp(), expiresAt: expiryInHours(1) },
       { merge: true }
-    ).catch((err) => console.error("[caller] setDoc(sessRef) failed:", err));
+    );
 
-    const unsubHeader = onSnapshot(
-      sessRef,
-      (snap) => {
-        const d = (snap.data() as any) || {};
+    const unsubHeader = onSnapshot(sessRef, (snap) => {
+      const d = snap.data() as any | undefined;
+      if (d) {
         setName(d.name ?? "");
         setEmail(d.email ?? "");
         setPhone(d.phone ?? "");
         setClosed(Boolean(d.closed));
-      },
-      (err) => console.error("[caller] onSnapshot(session) error:", err)
-    );
+      }
+    });
 
     const unsubMsgs = onSnapshot(
       query(msgsRef, orderBy("at", "asc")),
       (snap) => {
         const rows: Msg[] = [];
         snap.forEach((doc) => {
-          const data = doc.data() as any;
-          if (data?.text && data?.from && data?.at) {
-            rows.push({ text: data.text, from: data.from, at: data.at });
-          }
+          const v = doc.data() as any;
+          if (v?.text && v?.from && v?.at) rows.push({ text: v.text, from: v.from, at: v.at });
         });
         setMessages(rows);
-      },
-      (err) => console.error("[caller] onSnapshot(messages) error:", err)
+      }
     );
 
     return () => {
@@ -82,43 +84,32 @@ export default function CallerPage({ params }: Params) {
   async function sendMessage() {
     const text = input.trim();
     if (!text || closed) return;
-    try {
-      await addDoc(msgsRef, { text, from: "caller", at: serverTimestamp() });
-      setInput("");
-    } catch (e) {
-      console.error("[caller] addDoc(messages) failed:", e);
-    }
+    await addDoc(msgsRef, { text, from: "caller", at: serverTimestamp() });
+    setInput("");
   }
 
   async function sendDetails() {
     if (closed) return;
-    try {
-      await setDoc(
-        sessRef,
-        {
-          name: name?.trim() || "",
-          email: email?.trim() || "",
-          phone: phone?.trim() || "",
-          identified: Boolean(name || email || phone),
-          // refresh TTL whenever details arrive
-          expiresAt: expiryInHours(1),
-        },
-        { merge: true }
-      );
+    await setDoc(
+      sessRef,
+      {
+        name: name?.trim() || "",
+        email: email?.trim() || "",
+        phone: phone?.trim() || "",
+        identified: Boolean(name || email || phone),
+        expiresAt: expiryInHours(1),
+      },
+      { merge: true }
+    );
 
-      // optional audit line in chat so agents notice
-      await addDoc(msgsRef, {
-        text: "Contact details were provided.",
-        from: "caller",
-        at: serverTimestamp(),
-      });
-    } catch (e) {
-      console.error("[caller] sendDetails failed:", e);
-    }
+    await addDoc(msgsRef, {
+      text: "Contact details were provided.",
+      from: "caller",
+      at: serverTimestamp(),
+    });
   }
 
   function leaveSession() {
-    // local-only exit; do not delete anything
     router.push("/");
   }
 
@@ -126,24 +117,24 @@ export default function CallerPage({ params }: Params) {
     <div className="mx-auto max-w-3xl p-4 space-y-3">
       <div className="text-sm text-gray-600">
         Ephemeral session <b>{code}</b>. Data is cleared automatically by policy.
-        {closed && (
-          <span className="ml-2 text-red-600 font-semibold">
-            (Session ended by agent)
-          </span>
-        )}
+        {closed && <span className="ml-2 text-red-600 font-semibold">(Session ended by agent)</span>}
       </div>
 
-      <div className="flex items-center gap-2">
-        <NewSessionButton />
-      </div>
+      {/* DEBUG ONLY: hide in production unless NEXT_PUBLIC_DEBUG_LINKS=1 */}
+      {showDebug && (
+        <div className="flex items-center gap-2">
+          <NewSessionButton label="Open agent console" />
+        </div>
+      )}
 
-      <div className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white">
+      <div
+        ref={listRef}
+        className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white"
+      >
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`mb-2 max-w-[80%] ${
-              m.from === "caller" ? "ml-auto text-right" : ""
-            }`}
+            className={`mb-2 max-w-[80%] ${m.from === "caller" ? "ml-auto text-right" : ""}`}
           >
             <div
               className={`inline-block rounded-lg px-3 py-2 ${
@@ -204,10 +195,7 @@ export default function CallerPage({ params }: Params) {
         </button>
       </div>
 
-      <button
-        onClick={leaveSession}
-        className="w-full rounded bg-gray-100 px-3 py-2"
-      >
+      <button onClick={leaveSession} className="w-full rounded bg-gray-100 px-3 py-2">
         Leave session
       </button>
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -22,13 +22,9 @@ export default function AgentSessionPage({ params }: Params) {
 
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
-
-  // caller profile shown as chips
   const [name, setName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
-
-  // once true, we don’t flip it back to false unless we load a new session
   const [closed, setClosed] = useState(false);
 
   const sessRef = useMemo(() => doc(db, "sessions", code), [code]);
@@ -37,28 +33,27 @@ export default function AgentSessionPage({ params }: Params) {
     [code]
   );
 
-  // subscribe to session header + chat stream
+  // --- auto-scroll target ---
+  const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // ensure the session doc exists (merge so we never clear fields like `closed`)
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
+
+  useEffect(() => {
     setDoc(
       sessRef,
-      {
-        createdAt: serverTimestamp(),
-        expiresAt: expiryInHours(1),
-      },
+      { createdAt: serverTimestamp(), expiresAt: expiryInHours(1) },
       { merge: true }
     );
 
     const unsubHeader = onSnapshot(sessRef, (snap) => {
       const d = snap.data() as any | undefined;
       if (!d) return;
-
-      // chips
       setName(d.name ?? "");
       setEmail(d.email ?? "");
       setPhone(d.phone ?? "");
-
-      // IMPORTANT: only ever set closed -> true; never force to false on re-sync
       if (d.closed === true) setClosed(true);
     });
 
@@ -68,9 +63,7 @@ export default function AgentSessionPage({ params }: Params) {
         const rows: Msg[] = [];
         snap.forEach((m) => {
           const v = m.data() as any;
-          if (v?.text && v?.from && v?.at) {
-            rows.push({ text: v.text, from: v.from, at: v.at });
-          }
+          if (v?.text && v?.from && v?.at) rows.push({ text: v.text, from: v.from, at: v.at });
         });
         setMessages(rows);
       }
@@ -82,7 +75,6 @@ export default function AgentSessionPage({ params }: Params) {
     };
   }, [sessRef, msgsRef]);
 
-  // canned prompts
   async function ask(kind: "name" | "email" | "phone") {
     const text =
       kind === "name"
@@ -90,7 +82,6 @@ export default function AgentSessionPage({ params }: Params) {
         : kind === "email"
         ? "Could you please provide your best email address?"
         : "Could you please provide a phone number we can reach you on?";
-
     await addDoc(msgsRef, { text, from: "agent", at: serverTimestamp() });
   }
 
@@ -102,44 +93,30 @@ export default function AgentSessionPage({ params }: Params) {
   }
 
   async function endSession() {
-    // mark closed; we don’t navigate automatically so the banner remains
     await updateDoc(sessRef, {
       closed: true,
       endedAt: serverTimestamp(),
-      // we also refresh TTL so retention is consistent after end
       expiresAt: expiryInHours(1),
     });
-    setClosed(true); // optimistic
+    setClosed(true);
   }
 
   return (
     <div className="mx-auto max-w-4xl p-4 space-y-3">
-      {/* top bar: session + chips */}
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <div>
           <span className="text-gray-600">Session </span>
           <b>{code}</b>
-          {closed && (
-            <span className="ml-2 text-red-600 font-semibold">
-              (Session closed)
-            </span>
-          )}
+          {closed && <span className="ml-2 text-red-600 font-semibold">(Session closed)</span>}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">
-            {name || "—"}
-          </span>
-          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">
-            {email || "—"}
-          </span>
-          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">
-            {phone || "—"}
-          </span>
+          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">{name || "—"}</span>
+          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">{email || "—"}</span>
+          <span className="inline-flex items-center rounded bg-gray-100 px-3 py-1">{phone || "—"}</span>
         </div>
       </div>
 
-      {/* when closed, keep a persistent CTA to start the next session */}
       {closed && (
         <div className="flex items-center justify-between rounded-lg bg-indigo-50 px-4 py-3">
           <div className="text-indigo-900">
@@ -149,14 +126,14 @@ export default function AgentSessionPage({ params }: Params) {
         </div>
       )}
 
-      {/* chat window */}
-      <div className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white">
+      <div
+        ref={listRef}
+        className="border rounded-lg p-4 h-[360px] overflow-y-auto bg-white"
+      >
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`mb-2 max-w-[80%] ${
-              m.from === "agent" ? "mr-auto" : "ml-auto text-right"
-            }`}
+            className={`mb-2 max-w-[80%] ${m.from === "agent" ? "mr-auto" : "ml-auto text-right"}`}
           >
             <div
               className={`inline-block rounded-lg px-3 py-2 ${
@@ -169,7 +146,6 @@ export default function AgentSessionPage({ params }: Params) {
         ))}
       </div>
 
-      {/* compose row */}
       <div className="flex gap-2">
         <input
           className="flex-1 rounded border px-3 py-2"
@@ -178,46 +154,18 @@ export default function AgentSessionPage({ params }: Params) {
           onChange={(e) => setInput(e.target.value)}
           disabled={closed}
         />
-        <button
-          onClick={send}
-          disabled={closed}
-          className="rounded bg-emerald-600 text-white px-4 py-2 disabled:opacity-50"
-        >
+        <button onClick={send} disabled={closed} className="rounded bg-emerald-600 text-white px-4 py-2 disabled:opacity-50">
           Send
         </button>
       </div>
 
-      {/* canned prompts */}
       <div className="flex gap-2">
-        <button
-          onClick={() => ask("name")}
-          disabled={closed}
-          className="rounded border px-3 py-2 disabled:opacity-50"
-        >
-          Ask name
-        </button>
-        <button
-          onClick={() => ask("email")}
-          disabled={closed}
-          className="rounded border px-3 py-2 disabled:opacity-50"
-        >
-          Ask email
-        </button>
-        <button
-          onClick={() => ask("phone")}
-          disabled={closed}
-          className="rounded border px-3 py-2 disabled:opacity-50"
-        >
-          Ask phone
-        </button>
+        <button onClick={() => ask("name")}  disabled={closed} className="rounded border px-3 py-2 disabled:opacity-50">Ask name</button>
+        <button onClick={() => ask("email")} disabled={closed} className="rounded border px-3 py-2 disabled:opacity-50">Ask email</button>
+        <button onClick={() => ask("phone")} disabled={closed} className="rounded border px-3 py-2 disabled:opacity-50">Ask phone</button>
       </div>
 
-      {/* end session */}
-      <button
-        onClick={endSession}
-        disabled={closed}
-        className="w-full rounded bg-red-600 text-white px-3 py-2 disabled:opacity-50"
-      >
+      <button onClick={endSession} disabled={closed} className="w-full rounded bg-red-600 text-white px-3 py-2 disabled:opacity-50">
         End session
       </button>
     </div>
