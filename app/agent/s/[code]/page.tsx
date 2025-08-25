@@ -12,7 +12,7 @@ export default function AgentSession({ params }: { params: { code: string }}) {
   const [session, setSession] = useState<any>(null);
 
   useEffect(() => {
-    // Keep harmless: guarantees parent doc exists for rules + details panel
+    // Ensure parent session doc exists so rules + details work
     ensureSessionOpen(code);
     const unsub = onSnapshot(doc(db, 'sessions', code), (s) => {
       if (s.exists()) setSession({ id: s.id, ...s.data() });
@@ -26,18 +26,20 @@ export default function AgentSession({ params }: { params: { code: string }}) {
 
   return (
     <div className="col" style={{gap: 16}}>
+      {/* Top bar */}
       <div className="panel" style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
         <div style={{display:'flex', gap:12, alignItems:'center'}}>
           <h2 style={{margin:0}}>Session <span className="mono">{code}</span></h2>
-          {session?.closed ? <span className="badge">Closed</span> : <span className="badge" style={{background:'#155e75'}}>Open</span>}
+          {session?.closed
+            ? <span className="badge">Closed</span>
+            : <span className="badge" style={{background:'#155e75'}}>Open</span>}
         </div>
-        {!session?.closed ? <button className="button" onClick={endSession}>End session</button> : null}
+        {!session?.closed && <button className="button" onClick={endSession}>End session</button>}
       </div>
 
+      {/* Two-column: chat + details */}
       <div style={{display:'grid', gap:16, gridTemplateColumns:'2fr 1fr'}}>
-        {/* Left: chat */}
         <ChatWindow code={code} role="agent" />
-        {/* Right: caller details */}
         <AgentDetailsPanel code={code} />
       </div>
     </div>
