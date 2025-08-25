@@ -1,18 +1,16 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Session artifacts (images/pdfs) live under sessions/{code}/...
-    match /sessions/{code}/{filename} {
-      allow read: if true; // public read for shared links/bubbles
-      allow write: if
-        request.resource.size < 10 * 1024 * 1024 &&
-        request.resource.contentType.matches('^(image/.*|application/pdf)$') &&
-        code.matches('^[0-9]{5,6}$');
+    function isOpenSession(code) {
+      return exists(/databases/$(database)/documents/sessions/$(code)) &&
+             get(/databases/$(database)/documents/sessions/$(code)).data.closed != true &&
+             get(/databases/$(database)/documents/sessions/$(code)).data.expiresAt > request.time;
     }
-
-    // Deny everything else
-    match /{allPaths=**} {
-      allow read, write: if false;
+    match /uploads/{code}/{fileId} {
+      allow read: if isOpenSession(code);
+      allow write: if isOpenSession(code) &&
+                   request.resource.size < 10 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/.*|application/pdf');
     }
   }
 }
