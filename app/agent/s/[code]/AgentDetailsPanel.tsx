@@ -8,6 +8,7 @@ export default function AgentDetailsPanel({ code }: { code: string }) {
   const [s, setS] = useState<any>(null);
 
   useEffect(() => {
+    if (!code) return;
     const unsub = onSnapshot(doc(db, 'sessions', code), snap => {
       if (snap.exists()) setS({ id: snap.id, ...snap.data() });
       else setS(null);
