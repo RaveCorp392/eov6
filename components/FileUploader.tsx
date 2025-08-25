@@ -19,8 +19,7 @@ export default function FileUploader({ code }: { code: string; }) {
     if (!file) return;
     setBusy(true);
     try {
-      // Ensure parent doc exists & is open (rules depend on it)
-      await ensureSessionOpen(code);
+      await ensureSessionOpen(code);  // ✅ parent doc exists before upload
 
       const fileId = `${Date.now()}-${slugName(file.name)}`;
       const fileRef = ref(storage, `uploads/${code}/${fileId}`);
