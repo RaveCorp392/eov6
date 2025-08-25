@@ -1,6 +1,5 @@
-﻿// Client-safe Firebase singletons
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, serverTimestamp } from "firebase/firestore";
+﻿import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, serverTimestamp as _serverTimestamp } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
@@ -16,14 +15,9 @@ const firebaseConfig = {
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);
-export const storage = getStorage(app);
-
-// Auth (used by AgentAuthGate and admin/agent pages)
+export const serverTimestamp = _serverTimestamp;
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+export const storage = getStorage(app);
 
-// Handy re-export
-export { serverTimestamp };
-
-// Some code imports this; treat it as a boolean flag, not a function.
-export const isFirebaseReady = true;
+export default app;
