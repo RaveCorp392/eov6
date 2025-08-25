@@ -1,34 +1,45 @@
-﻿// app/agent/page.tsx
-"use client";
+﻿'use client';
 
-import Link from "next/link";
-import NewSessionButton from "@/components/NewSessionButton";
+import ChatWindow from '@/components/ChatWindow';
+import AgentDetailsPanel from './AgentDetailsPanel';
+import { db } from '@/lib/firebase';
+import { ensureSessionOpen } from '@/lib/ensureSession';
+import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 
-export default function AgentHome() {
+export default function AgentSession({ params }: { params: { code: string }}) {
+  const code = params.code;
+  const [session, setSession] = useState<any>(null);
+
+  useEffect(() => {
+    // Make sure the parent doc exists (rules depend on it)
+    ensureSessionOpen(code);
+    const unsub = onSnapshot(doc(db, 'sessions', code), (s) => {
+      if (s.exists()) setSession({ id: s.id, ...s.data() });
+    });
+    return () => unsub();
+  }, [code]);
+
+  const endSession = async () => {
+    await updateDoc(doc(db, 'sessions', code), { closed: true, closedAt: serverTimestamp() });
+  };
+
   return (
-    <main className="mx-auto max-w-3xl px-6 py-16">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Agent console</h1>
-        <div className="flex gap-2">
-          <Link
-            href="/marketing"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
-          >
-            Marketing
-          </Link>
-          {/* You can keep your existing Sign out control in layout/header */}
+    <div className="col" style={{gap: 16}}>
+      <div className="panel" style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+        <div style={{display:'flex', gap:12, alignItems:'center'}}>
+          <h2 style={{margin:0}}>Session <span className="mono">{code}</span></h2>
+          {session?.closed ? <span className="badge">Closed</span> : <span className="badge" style={{background:'#155e75'}}>Open</span>}
         </div>
-      </header>
+        {!session?.closed ? (
+          <button className="button" onClick={endSession}>End session</button>
+        ) : null}
+      </div>
 
-      <section className="mt-10 rounded-xl border border-slate-200 p-6">
-        <p className="text-slate-700">
-          Create a one-time code and share it with the caller to collect name,
-          email, and phone securely. Sessions auto-expire per policy.
-        </p>
-        <div className="mt-6">
-          <NewSessionButton emphasize />
-        </div>
-      </section>
-    </main>
+      <div style={{display:'grid', gap:16, gridTemplateColumns:'2fr 1fr'}}>
+        <ChatWindow code={code} role="agent" />
+        <AgentDetailsPanel code={code} />
+      </div>
+    </div>
   );
 }
