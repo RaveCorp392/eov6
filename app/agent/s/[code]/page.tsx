@@ -1,64 +1,44 @@
 'use client';
 
 import ChatWindow from '@/components/ChatWindow';
-import UploadButton from '@/components/UploadButton';
-import { ensureSessionOpen, expiryInHours } from '@/lib/ensureSession';
+import AgentDetailsPanel from './AgentDetailsPanel';
 import { db } from '@/lib/firebase';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { ensureSessionOpen } from '@/lib/ensureSession';
+import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 
-export default function CallerSession({ params }: { params: { code: string }}) {
+export default function AgentSession({ params }: { params: { code: string }}) {
   const code = params.code;
-  const [loaded, setLoaded] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [identified, setIdentified] = useState(false);
+  const [session, setSession] = useState<any>(null);
 
-  // Always create/open the parent doc on mount
   useEffect(() => {
-    ensureSessionOpen(code).then(() => setLoaded(true));
+    // Keep harmless: guarantees parent doc exists for rules + details panel
+    ensureSessionOpen(code);
+    const unsub = onSnapshot(doc(db, 'sessions', code), (s) => {
+      if (s.exists()) setSession({ id: s.id, ...s.data() });
+    });
+    return () => unsub();
   }, [code]);
 
-  const sendDetails = async () => {
-    await ensureSessionOpen(code);
-    await updateDoc(doc(db, 'sessions', code), {
-      name: name || null,
-      email: email || null,
-      phone: phone || null,
-      identified: true,
-      createdAt: serverTimestamp(),
-      expiresAt: expiryInHours(1)
-    });
-    setIdentified(true);
+  const endSession = async () => {
+    await updateDoc(doc(db, 'sessions', code), { closed: true, closedAt: serverTimestamp() });
   };
-
-  if (!loaded) return <div className="panel">Loading…</div>;
 
   return (
     <div className="col" style={{gap: 16}}>
-      <div className="panel" style={{display:'flex', justifyContent:'space-between'}}>
+      <div className="panel" style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
         <div style={{display:'flex', gap:12, alignItems:'center'}}>
           <h2 style={{margin:0}}>Session <span className="mono">{code}</span></h2>
-          <span className="badge">Secure shared chat</span>
+          {session?.closed ? <span className="badge">Closed</span> : <span className="badge" style={{background:'#155e75'}}>Open</span>}
         </div>
+        {!session?.closed ? <button className="button" onClick={endSession}>End session</button> : null}
       </div>
 
-      <ChatWindow code={code} role="caller" />
-
-      <div style={{display:'grid', gap:16, gridTemplateColumns:'1fr 1fr'}}>
-        <div className="panel">
-          <div className="small">Send your details</div>
-          <div style={{height:8}} />
-          <div className="col" style={{gap: 8}}>
-            <input className="input" placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
-            <input className="input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input className="input" type="tel" placeholder="Phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            <button className="button" onClick={sendDetails}>Send details</button>
-            {identified ? <div className="small">✅ Details sent</div> : null}
-          </div>
-        </div>
-        <UploadButton code={code} />
+      <div style={{display:'grid', gap:16, gridTemplateColumns:'2fr 1fr'}}>
+        {/* Left: chat */}
+        <ChatWindow code={code} role="agent" />
+        {/* Right: caller details */}
+        <AgentDetailsPanel code={code} />
       </div>
     </div>
   );
