@@ -1,44 +1,40 @@
 ﻿'use client';
 
-import ChatWindow from '@/components/ChatWindow';
-import AgentDetailsPanel from './AgentDetailsPanel';
-import { db } from '@/lib/firebase';
-import { ensureSessionOpen } from '@/lib/ensureSession';
-import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import NewSessionButton from '@/components/NewSessionButton';
 
-export default function AgentSession({ params }: { params: { code: string }}) {
-  const code = params.code;
-  const [session, setSession] = useState<any>(null);
+export default function AgentLanding() {
+  const r = useRouter();
+  const [code, setCode] = useState('');
 
-  useEffect(() => {
-    // Make sure the parent doc exists (rules depend on it)
-    ensureSessionOpen(code);
-    const unsub = onSnapshot(doc(db, 'sessions', code), (s) => {
-      if (s.exists()) setSession({ id: s.id, ...s.data() });
-    });
-    return () => unsub();
-  }, [code]);
-
-  const endSession = async () => {
-    await updateDoc(doc(db, 'sessions', code), { closed: true, closedAt: serverTimestamp() });
+  const join = (e: React.FormEvent) => {
+    e.preventDefault();
+    const c = code.trim().replace(/\D/g, '');
+    if (c.length) r.push(`/agent/s/${c}`);
   };
 
   return (
-    <div className="col" style={{gap: 16}}>
-      <div className="panel" style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-        <div style={{display:'flex', gap:12, alignItems:'center'}}>
-          <h2 style={{margin:0}}>Session <span className="mono">{code}</span></h2>
-          {session?.closed ? <span className="badge">Closed</span> : <span className="badge" style={{background:'#155e75'}}>Open</span>}
-        </div>
-        {!session?.closed ? (
-          <button className="button" onClick={endSession}>End session</button>
-        ) : null}
+    <div className="col" style={{gap:16}}>
+      <div className="panel">
+        <h2 style={{margin:0}}>EOV6 • Agent</h2>
+        <div className="small" style={{opacity:.8}}>Create a session or join an existing one.</div>
       </div>
 
-      <div style={{display:'grid', gap:16, gridTemplateColumns:'2fr 1fr'}}>
-        <ChatWindow code={code} role="agent" />
-        <AgentDetailsPanel code={code} />
+      <div className="panel" style={{display:'flex', gap:16, alignItems:'center'}}>
+        <NewSessionButton />
+        <form onSubmit={join} style={{display:'flex', gap:8, alignItems:'center'}}>
+          <input
+            placeholder="Enter 6‑digit code"
+            value={code}
+            onChange={e=>setCode(e.target.value)}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            className="input"
+            style={{width:160}}
+          />
+          <button className="button" type="submit">Join</button>
+        </form>
       </div>
     </div>
   );
