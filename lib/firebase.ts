@@ -1,12 +1,12 @@
-﻿// lib/firebase.ts
-// Single place to initialize Firebase and export typed helpers.
+﻿// app/lib/firebase.ts (or /lib/firebase.ts if that's your alias target)
+"use client";
 
-import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
-import { getFirestore, serverTimestamp, type Firestore } from 'firebase/firestore';
-import { getStorage, type FirebaseStorage } from 'firebase/storage';
-import { getAuth, GoogleAuthProvider, type Auth } from 'firebase/auth';
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
+import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
-// Pull config from env (Next.js exposes NEXT_PUBLIC_* to the client)
+// Your envs must be defined (NEXT_PUBLIC_* in Vercel)
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -16,31 +16,19 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-function ensureApp(): FirebaseApp {
-  // SSR/edge safe: don’t re-init if already created.
-  return getApps().length ? getApp() : initializeApp(firebaseConfig);
-}
+// Initialize exactly once (works on client/nav)
+const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-const app: FirebaseApp = ensureApp();
+// Core SDK singletons
+const auth: Auth = getAuth(app);
 const db: Firestore = getFirestore(app);
 const storage: FirebaseStorage = getStorage(app);
-const auth: Auth = getAuth(app);
+
+// Google provider (named export you were importing)
 const googleProvider = new GoogleAuthProvider();
 
-/** Small convenience used by a couple of pages to guard code paths. */
-export function isFirebaseReady(): boolean {
-  try {
-    return getApps().length > 0;
-  } catch {
-    return false;
-  }
-}
+// Small helper some files were importing in builds
+export const isFirebaseReady = () => !!getApps().length;
 
-export {
-  app,
-  db,
-  storage,
-  auth,
-  googleProvider,
-  serverTimestamp, // re-export for callers that import from "@/lib/firebase"
-};
+export { app, auth, db, storage, googleProvider };
+export default app;

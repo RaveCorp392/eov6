@@ -1,21 +1,20 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Demo uploads: images & PDFs up to 10 MB under /uploads/{sessionId}/...
-    match /uploads/{sessionId}/{fileName} {
-      allow write: if
-        request.resource.size < 10 * 1024 * 1024 &&
-        (
-          request.resource.contentType.matches('image/.*') ||
-          request.resource.contentType == 'application/pdf'
-        );
-
-      // For demo: allow agents/callers to fetch the file if they have the URL.
+    // Demo-only: allow public read of uploaded files.
+    match /uploads/{code}/{filename} {
+      // 1) Allow reads for demo
       allow read: if true;
+
+      // 2) Allow writes when content is image/* or application/pdf and <= 10 MB
+      allow write: if request.resource != null
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType == 'application/pdf')
+        && request.resource.size < 10 * 1024 * 1024;
     }
 
-    // Everything else is blocked
-    match /{allPaths=**} {
+    // Everything else locked down
+    match /{document=**} {
       allow read, write: if false;
     }
   }

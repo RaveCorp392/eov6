@@ -1,19 +1,20 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, UploadTaskSnapshot } from 'firebase/storage';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 type Props = {
-  code: string;                    // session code
-  role: 'agent' | 'caller';
+  code: string;               // session code
+  role: 'caller' | 'agent';   // who is posting the file
 };
 
 export default function FileUploader({ code, role }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [progress, setProgress] = useState<number>(0);
-  const [busy, setBusy] = useState<boolean>(false);
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
 
   const onPick = () => inputRef.current?.click();
 
@@ -21,103 +22,87 @@ export default function FileUploader({ code, role }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Basic allow-list (client-side only; rules should enforce for real)
-    const okTypes = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
-    if (!okTypes.includes(file.type)) {
-      alert('Please upload an image (png/jpg/webp) or PDF.');
-      e.target.value = '';
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File is over 10 MB limit.');
-      e.target.value = '';
-      return;
-    }
+    setError(null);
+    setStatus('uploading');
+    setProgress(0);
 
-    void doUpload(file);
-  };
+    const storage = getStorage(); // uses default initialized app
+    const safeName = file.name.replace(/[^\w.\-]/g, '_'); // defensive
+    const path = `uploads/${code}/${Date.now()}-${safeName}`;
+    const fileRef = ref(storage, path);
 
-  const doUpload = async (file: File) => {
-    try {
-      setBusy(true);
-      setProgress(0);
+    const task = uploadBytesResumable(fileRef, file, { contentType: file.type });
 
-      // Path: uploads/{code}/{timestamp}-{filename}
-      const storage = getStorage();
-      const stamp = Date.now();
-      const cleanName = file.name.replace(/\s+/g, '-');
-      const path = `uploads/${code}/${stamp}-${cleanName}`;
-      const ref = storageRef(storage, path);
-
-      const task = uploadBytesResumable(ref, file, {
-        contentType: file.type,
-        cacheControl: 'public,max-age=3600',
-      });
-
-      task.on(
-        'state_changed',
-        (snap: UploadTaskSnapshot) => {
-          // Firebase v10: use totalBytes, not total
+    task.on(
+      'state_changed',
+      (snap) => {
+        if (snap.totalBytes > 0) {
           const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
           setProgress(pct);
-        },
-        (err) => {
-          console.error(err);
-          alert('Upload failed by storage rules. Make sure the session is open and try again.');
-          setBusy(false);
-          setProgress(0);
-        },
-        async () => {
-          // Finished — get URL and post a message into the session chat
+        }
+      },
+      (err) => {
+        setStatus('error');
+        setError(err?.message ?? 'Upload failed');
+      },
+      async () => {
+        try {
           const url = await getDownloadURL(task.snapshot.ref);
 
-          // Write a chat message: sessions/{code}/messages
-          await addDoc(collection(db, 'sessions', code, 'messages'), {
-            from: role,              // 'agent' | 'caller'
+          // append a chat message in Firestore for this session
+          const messagesCol = collection(db, 'sessions', code, 'messages');
+          await addDoc(messagesCol, {
+            role,                    // 'caller' | 'agent'
             type: 'file',
             name: file.name,
             size: file.size,
-            mime: file.type,
-            path,                    // storage path
-            url,                     // download URL
-            ts: serverTimestamp(),
+            contentType: file.type,
+            storagePath: path,
+            url,                     // handy for immediate display
+            createdAt: serverTimestamp(),
           });
 
-          setBusy(false);
+          setStatus('done');
           setProgress(100);
-          // reset input so the same file can be chosen again later
+          // reset input so same file can be selected again if needed
           if (inputRef.current) inputRef.current.value = '';
+        } catch (e: any) {
+          setStatus('error');
+          setError(e?.message ?? 'Failed to record file message');
         }
-      );
-    } catch (err) {
-      console.error(err);
-      alert('Upload failed. Please try again.');
-      setBusy(false);
-      setProgress(0);
-    }
+      }
+    );
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 shadow-lg shadow-black/30">
+      <h3 className="mb-2 text-sm font-semibold text-white/90">File upload (beta)</h3>
+      <p className="mb-3 text-xs text-white/60">Allowed: images & PDF · Max 10&nbsp;MB</p>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onPick}
+          className="inline-flex items-center rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white hover:bg-white/[0.08]"
+          disabled={status === 'uploading'}
+        >
+          Choose file
+        </button>
+
+        {status === 'uploading' && (
+          <span className="text-xs text-white/70">Uploading… {progress}%</span>
+        )}
+        {status === 'done' && <span className="text-xs text-emerald-400">Uploaded ✓</span>}
+        {status === 'error' && <span className="text-xs text-rose-400">{error}</span>}
+      </div>
+
       <input
         ref={inputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,application/pdf"
+        accept="image/*,application/pdf"
         className="hidden"
         onChange={onChange}
       />
-      <button
-        type="button"
-        onClick={onPick}
-        disabled={busy}
-        className="px-3 py-1 rounded bg-white/10 hover:bg-white/15 text-white text-sm border border-white/15 disabled:opacity-60"
-      >
-        {busy ? 'Uploading…' : 'Choose file'}
-      </button>
-
-      {progress > 0 && (
-        <span className="text-xs text-white/75">{progress}%</span>
-      )}
     </div>
   );
 }
