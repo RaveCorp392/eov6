@@ -3,95 +3,77 @@
 
 import React, { useRef, useState } from "react";
 import { storage } from "@/lib/firebase";
-import {
-  ref as sref,
-  uploadBytesResumable,
-  getDownloadURL,
-} from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
 type Props = {
   code: string; // session code
+  onUploaded?: (info: { name: string; url: string; path: string }) => void;
 };
 
-export default function FileUploader({ code }: Props) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">(
-    "idle"
-  );
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [url, setUrl] = useState<string | null>(null);
+const ALLOWED = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
+const MAX_BYTES = 10 * 1024 * 1024; // 10MB
 
-  function onPick() {
+export default function FileUploader({ code, onUploaded }: Props) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function pick() {
     inputRef.current?.click();
   }
 
-  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    setError(null);
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Only images and PDFs
-    if (!/^image\/|application\/pdf$/.test(file.type)) {
-      setError("Only images and PDF files are allowed.");
+    if (!ALLOWED.includes(file.type)) {
+      setError("Only images or PDF are allowed.");
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      setError("File is larger than 10MB.");
       return;
     }
 
-    setError(null);
-    setStatus("uploading");
-    setProgress(0);
+    try {
+      const ts = Date.now();
+      const cleanName = file.name.replace(/\s+/g, "_");
+      const path = `uploads/${code}/${ts}-${cleanName}`;
+      const storageRef = ref(storage, path);
 
-    const path = `uploads/${code}/${Date.now()}-${file.name}`;
-    const r = sref(storage, path);
-    const task = uploadBytesResumable(r, file, { contentType: file.type });
+      const task = uploadBytesResumable(storageRef, file);
+      task.on("state_changed", snap => {
+        setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
+      });
 
-    task.on(
-      "state_changed",
-      (snap) => {
-        const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
-        setProgress(Math.round(pct));
-      },
-      (err) => {
-        setStatus("error");
-        setError(err.message || "Upload failed");
-      },
-      async () => {
-        const dl = await getDownloadURL(task.snapshot.ref);
-        setUrl(dl);
-        setStatus("done");
-      }
-    );
+      await task;
+      const url = await getDownloadURL(storageRef);
+      setProgress(100);
+      onUploaded?.({ name: cleanName, url, path });
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message ?? "Upload failed");
+      alert("Upload failed by storage rules. Make sure the session is open and try again.");
+    } finally {
+      // reset the input so the same file can be chosen again
+      if (inputRef.current) inputRef.current.value = "";
+    }
   }
 
   return (
     <div className="space-y-2">
-      <div className="text-sm opacity-80">
-        <strong>File upload (beta)</strong>
-        <div>Allowed: images &amp; PDF · Max 10 MB</div>
-      </div>
-
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,.pdf"
+        accept="image/*,application/pdf"
         className="hidden"
-        onChange={onFileChange}
+        onChange={onPick}
       />
-      <button
-        type="button"
-        onClick={onPick}
-        className="px-3 py-1 rounded-md border border-white/20 hover:bg-white/5"
-      >
+      <button onClick={pick} className="px-3 py-1 rounded border">
         Choose file
       </button>
-
-      {status === "uploading" && (
-        <div className="text-sm">Uploading… {progress}%</div>
-      )}
-      {status === "done" && url && (
-        <div className="text-sm break-all">
-          Uploaded ✓ <a href={url}>Open</a>
-        </div>
-      )}
+      {progress !== null && <div className="text-sm opacity-80">Uploading… {progress}%</div>}
       {error && <div className="text-sm text-red-400">{error}</div>}
     </div>
   );
