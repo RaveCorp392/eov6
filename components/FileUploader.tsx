@@ -1,72 +1,84 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { ensureSessionOpen } from '@/lib/ensureSession';
+import React, { useState } from 'react';
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { app } from '@/lib/firebase';
 
-export default function FileUploader({ code }: { code: string }) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [pct, setPct] = useState<number>(0);
+type Props = {
+  code: string; // session code
+};
+
+export default function FileUploader({ code }: Props) {
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [doneUrl, setDoneUrl] = useState<string | null>(null);
 
-  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+  function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    try {
-      setBusy(true);
-      // Make sure the session doc exists and TTL is fresh BEFORE writing to Storage
-      await ensureSessionOpen(code);
+    setBusy(true);
+    setError(null);
+    setDoneUrl(null);
+    setProgress(0);
 
-      const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
-      const fileId = `${Date.now()}-${safeName}`;
-      const objectRef = ref(storage, `uploads/${code}/${fileId}`);
+    // Upload path MUST match storage.rules
+    const storage = getStorage(app);
+    const cleanName = file.name.replace(/\s+/g, '-');
+    const objectPath = `uploads/${code}/${Date.now()}-${cleanName}`;
+    const storageRef = ref(storage, objectPath);
 
-      const task = uploadBytesResumable(objectRef, file, { contentType: file.type });
-      task.on('state_changed', (snap) => {
-        const percent = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        setPct(percent);
-      });
+    const task = uploadBytesResumable(storageRef, file, {
+      contentType: file.type || 'application/octet-stream',
+    });
 
-      await task; // wait for completion
-      const url = await getDownloadURL(task.snapshot.ref);
-
-      // Post a file message into chat
-      await addDoc(collection(db, 'sessions', code, 'messages'), {
-        from: 'caller',
-        text: `${file.name} (${Math.round(file.size / 1024)} KB)`,
-        fileUrl: url,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
-        at: serverTimestamp(),
-      });
-
-      // reset picker
-      if (inputRef.current) inputRef.current.value = '';
-      setPct(0);
-      setBusy(false);
-    } catch (err: any) {
-      setBusy(false);
-      alert('Upload failed by storage rules. Make sure the session is open and try again.');
-      // Optional: console.error(err);
-    }
+    task.on(
+      'state_changed',
+      snap => {
+        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        setProgress(pct);
+      },
+      err => {
+        console.error('upload error', err);
+        setError(err?.message || 'Upload failed by storage rules. Make sure the session is open and try again.');
+        setBusy(false);
+      },
+      async () => {
+        try {
+          const url = await getDownloadURL(task.snapshot.ref);
+          setDoneUrl(url);
+        } catch (e: any) {
+          setError(e?.message || 'Could not fetch download URL.');
+        } finally {
+          setBusy(false);
+        }
+      }
+    );
   }
 
   return (
     <div className="space-y-2">
-      <div className="text-sm opacity-75">Allowed: images & PDF · Max 10 MB</div>
+      <label className="block text-sm opacity-80">File upload (beta)</label>
+      <p className="text-xs opacity-60">Allowed: images & PDF • Max 10 MB</p>
+
       <input
-        ref={inputRef}
         type="file"
         accept="image/*,application/pdf"
-        onChange={onPick}
+        onChange={onChange}
         disabled={busy}
+        className="block"
       />
-      {busy && <div className="text-xs opacity-75">Uploading… {pct}%</div>}
+
+      {progress !== null && (
+        <div className="text-xs opacity-70">Uploading… {progress}%</div>
+      )}
+      {error && <div className="text-xs text-red-400">{error}</div>}
+      {doneUrl && (
+        <div className="text-xs break-all">
+          Uploaded ✓ <a href={doneUrl} target="_blank" className="underline">Open</a>
+        </div>
+      )}
     </div>
   );
 }

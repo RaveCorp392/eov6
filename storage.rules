@@ -1,16 +1,22 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function isOpenSession(code) {
-      return exists(/databases/$(database)/documents/sessions/$(code)) &&
-             get(/databases/$(database)/documents/sessions/$(code)).data.closed != true &&
-             get(/databases/$(database)/documents/sessions/$(code)).data.expiresAt > request.time;
+    // Demo uploads: images & PDFs up to 10 MB under /uploads/{sessionId}/...
+    match /uploads/{sessionId}/{fileName} {
+      allow write: if
+        request.resource.size < 10 * 1024 * 1024 &&
+        (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType == 'application/pdf'
+        );
+
+      // For demo: allow agents/callers to fetch the file if they have the URL.
+      allow read: if true;
     }
-    match /uploads/{code}/{fileId} {
-      allow read: if isOpenSession(code);
-      allow write: if isOpenSession(code) &&
-                   request.resource.size < 10 * 1024 * 1024 &&
-                   request.resource.contentType.matches('image/.*|application/pdf');
+
+    // Everything else is blocked
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }
