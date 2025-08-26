@@ -1,16 +1,10 @@
 ﻿// lib/firebase.ts
-import { initializeApp, getApp, getApps } from "firebase/app";
-import {
-  getFirestore,
-  // re-exports for convenience across the app
-  serverTimestamp as _serverTimestamp,
-  Timestamp as _Timestamp,
-  FieldValue as _FieldValue,
-} from "firebase/firestore";
+import { getApp, getApps, initializeApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
-// Required env (Vercel + .env.local)
+// Pull from existing NEXT_PUBLIC_* env vars
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -20,27 +14,11 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-// Singleton Firebase app (important for Next.js)
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// SDK singletons
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-export const auth = getAuth(app);
+/** Export useful singletons */
+export const app = firebaseApp;               // <-- named export, fixes the “no exported member 'app'” error
+export const db = getFirestore(firebaseApp);
+export const storage = getStorage(firebaseApp);
+export const auth = getAuth(firebaseApp);
 export const googleProvider = new GoogleAuthProvider();
-
-// Convenience re-exports so components can import from "@/lib/firebase"
-export const serverTimestamp = _serverTimestamp;
-export type Timestamp = _Timestamp;
-export type FieldValue = _FieldValue;
-
-// Simple readiness check used in a couple places
-export function isFirebaseReady(): boolean {
-  try {
-    return !!db && !!storage && !!auth;
-  } catch {
-    return false;
-  }
-}
-
-export default app;

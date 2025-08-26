@@ -1,84 +1,98 @@
-'use client';
+// components/FileUploader.tsx
+"use client";
 
-import React, { useState } from 'react';
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { app } from '@/lib/firebase';
+import React, { useRef, useState } from "react";
+import { storage } from "@/lib/firebase";
+import {
+  ref as sref,
+  uploadBytesResumable,
+  getDownloadURL,
+} from "firebase/storage";
 
 type Props = {
   code: string; // session code
 };
 
 export default function FileUploader({ code }: Props) {
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<number | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [status, setStatus] = useState<"idle" | "uploading" | "done" | "error">(
+    "idle"
+  );
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [doneUrl, setDoneUrl] = useState<string | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
 
-  function onChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function onPick() {
+    inputRef.current?.click();
+  }
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setBusy(true);
+    // Only images and PDFs
+    if (!/^image\/|application\/pdf$/.test(file.type)) {
+      setError("Only images and PDF files are allowed.");
+      return;
+    }
+
     setError(null);
-    setDoneUrl(null);
+    setStatus("uploading");
     setProgress(0);
 
-    // Upload path MUST match storage.rules
-    const storage = getStorage(app);
-    const cleanName = file.name.replace(/\s+/g, '-');
-    const objectPath = `uploads/${code}/${Date.now()}-${cleanName}`;
-    const storageRef = ref(storage, objectPath);
-
-    const task = uploadBytesResumable(storageRef, file, {
-      contentType: file.type || 'application/octet-stream',
-    });
+    const path = `uploads/${code}/${Date.now()}-${file.name}`;
+    const r = sref(storage, path);
+    const task = uploadBytesResumable(r, file, { contentType: file.type });
 
     task.on(
-      'state_changed',
-      snap => {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        setProgress(pct);
+      "state_changed",
+      (snap) => {
+        const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
+        setProgress(Math.round(pct));
       },
-      err => {
-        console.error('upload error', err);
-        setError(err?.message || 'Upload failed by storage rules. Make sure the session is open and try again.');
-        setBusy(false);
+      (err) => {
+        setStatus("error");
+        setError(err.message || "Upload failed");
       },
       async () => {
-        try {
-          const url = await getDownloadURL(task.snapshot.ref);
-          setDoneUrl(url);
-        } catch (e: any) {
-          setError(e?.message || 'Could not fetch download URL.');
-        } finally {
-          setBusy(false);
-        }
+        const dl = await getDownloadURL(task.snapshot.ref);
+        setUrl(dl);
+        setStatus("done");
       }
     );
   }
 
   return (
     <div className="space-y-2">
-      <label className="block text-sm opacity-80">File upload (beta)</label>
-      <p className="text-xs opacity-60">Allowed: images & PDF • Max 10 MB</p>
+      <div className="text-sm opacity-80">
+        <strong>File upload (beta)</strong>
+        <div>Allowed: images &amp; PDF · Max 10 MB</div>
+      </div>
 
       <input
+        ref={inputRef}
         type="file"
-        accept="image/*,application/pdf"
-        onChange={onChange}
-        disabled={busy}
-        className="block"
+        accept="image/*,.pdf"
+        className="hidden"
+        onChange={onFileChange}
       />
+      <button
+        type="button"
+        onClick={onPick}
+        className="px-3 py-1 rounded-md border border-white/20 hover:bg-white/5"
+      >
+        Choose file
+      </button>
 
-      {progress !== null && (
-        <div className="text-xs opacity-70">Uploading… {progress}%</div>
+      {status === "uploading" && (
+        <div className="text-sm">Uploading… {progress}%</div>
       )}
-      {error && <div className="text-xs text-red-400">{error}</div>}
-      {doneUrl && (
-        <div className="text-xs break-all">
-          Uploaded ✓ <a href={doneUrl} target="_blank" className="underline">Open</a>
+      {status === "done" && url && (
+        <div className="text-sm break-all">
+          Uploaded ✓ <a href={url}>Open</a>
         </div>
       )}
+      {error && <div className="text-sm text-red-400">{error}</div>}
     </div>
   );
 }
