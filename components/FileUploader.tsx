@@ -1,60 +1,72 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { storage, db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { ensureSessionOpen } from '@/lib/ensureSession';
 
-function slugName(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9\\.]+/g, '-').replace(/^-+|-+$/g, '');
-}
-
-export default function FileUploader({ code }: { code: string; }) {
+export default function FileUploader({ code }: { code: string }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [pct, setPct] = useState<number>(0);
-  const [busy, setBusy] = useState<boolean>(false);
+  const [busy, setBusy] = useState(false);
 
-  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setBusy(true);
+
     try {
-      await ensureSessionOpen(code);  // ✅ parent doc exists before upload
+      setBusy(true);
+      // Make sure the session doc exists and TTL is fresh BEFORE writing to Storage
+      await ensureSessionOpen(code);
 
-      const fileId = `${Date.now()}-${slugName(file.name)}`;
-      const fileRef = ref(storage, `uploads/${code}/${fileId}`);
+      const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
+      const fileId = `${Date.now()}-${safeName}`;
+      const objectRef = ref(storage, `uploads/${code}/${fileId}`);
 
-      const task = uploadBytesResumable(fileRef, file, { contentType: file.type || undefined });
+      const task = uploadBytesResumable(objectRef, file, { contentType: file.type });
       task.on('state_changed', (snap) => {
-        setPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
+        const percent = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        setPct(percent);
       });
 
-      await task;
+      await task; // wait for completion
       const url = await getDownloadURL(task.snapshot.ref);
 
+      // Post a file message into chat
       await addDoc(collection(db, 'sessions', code, 'messages'), {
         from: 'caller',
-        at: serverTimestamp(),
+        text: `${file.name} (${Math.round(file.size / 1024)} KB)`,
         fileUrl: url,
         fileName: file.name,
         fileType: file.type,
-        fileSize: file.size
+        fileSize: file.size,
+        at: serverTimestamp(),
       });
 
+      // reset picker
+      if (inputRef.current) inputRef.current.value = '';
       setPct(0);
-    } catch (err: any) {
-      console.error(err);
-      alert('Upload failed by storage rules. Make sure the session is open and try again.');
-    } finally {
       setBusy(false);
-      if (e.target) e.target.value = '';
+    } catch (err: any) {
+      setBusy(false);
+      alert('Upload failed by storage rules. Make sure the session is open and try again.');
+      // Optional: console.error(err);
     }
   }
 
   return (
-    <div className="col" style={{gap: 6}}>
-      <input type="file" accept="image/*,application/pdf" onChange={handleChange} disabled={busy} />
-      {busy ? <div className="small">Uploading… {pct}%</div> : null}
+    <div className="space-y-2">
+      <div className="text-sm opacity-75">Allowed: images & PDF · Max 10 MB</div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*,application/pdf"
+        onChange={onPick}
+        disabled={busy}
+      />
+      {busy && <div className="text-xs opacity-75">Uploading… {pct}%</div>}
     </div>
   );
 }
