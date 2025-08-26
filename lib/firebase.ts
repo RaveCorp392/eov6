@@ -1,17 +1,16 @@
 ﻿// lib/firebase.ts
 import { initializeApp, getApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  // re-exports for convenience across the app
+  serverTimestamp as _serverTimestamp,
+  Timestamp as _Timestamp,
+  FieldValue as _FieldValue,
+} from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
-// REQUIRED: define these in your env (Vercel + local .env.local)
-// NEXT_PUBLIC_FIREBASE_API_KEY=...
-// NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
-// NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
-// NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
-// NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
-// NEXT_PUBLIC_FIREBASE_APP_ID=...
-
+// Required env (Vercel + .env.local)
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -21,7 +20,7 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-// Use singleton app (important for Next.js hot reload)
+// Singleton Firebase app (important for Next.js)
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 // SDK singletons
@@ -30,7 +29,12 @@ export const storage = getStorage(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Helper for components to check if Firebase is initialized
+// Convenience re-exports so components can import from "@/lib/firebase"
+export const serverTimestamp = _serverTimestamp;
+export type Timestamp = _Timestamp;
+export type FieldValue = _FieldValue;
+
+// Simple readiness check used in a couple places
 export function isFirebaseReady(): boolean {
   try {
     return !!db && !!storage && !!auth;
