@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { doc, setDoc } from "firebase/firestore";
-import { db, serverTimestamp } from "@/lib/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore"; // <-- from firestore
+import { db } from "@/lib/firebase";                               // <-- keep db from our lib
 import { expiryInHours, randomCode } from "@/lib/code";
+
+
+
 
 type Props = {
   className?: string;
