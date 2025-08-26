@@ -1,80 +1,123 @@
-// components/FileUploader.tsx
-"use client";
+'use client';
 
-import React, { useRef, useState } from "react";
-import { storage } from "@/lib/firebase";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import React, { useRef, useState } from 'react';
+import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, UploadTaskSnapshot } from 'firebase/storage';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 type Props = {
-  code: string; // session code
-  onUploaded?: (info: { name: string; url: string; path: string }) => void;
+  code: string;                    // session code
+  role: 'agent' | 'caller';
 };
 
-const ALLOWED = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
-const MAX_BYTES = 10 * 1024 * 1024; // 10MB
-
-export default function FileUploader({ code, onUploaded }: Props) {
+export default function FileUploader({ code, role }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number>(0);
+  const [busy, setBusy] = useState<boolean>(false);
 
-  function pick() {
-    inputRef.current?.click();
-  }
+  const onPick = () => inputRef.current?.click();
 
-  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    setError(null);
+  const onChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!ALLOWED.includes(file.type)) {
-      setError("Only images or PDF are allowed.");
+    // Basic allow-list (client-side only; rules should enforce for real)
+    const okTypes = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
+    if (!okTypes.includes(file.type)) {
+      alert('Please upload an image (png/jpg/webp) or PDF.');
+      e.target.value = '';
       return;
     }
-    if (file.size > MAX_BYTES) {
-      setError("File is larger than 10MB.");
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File is over 10 MB limit.');
+      e.target.value = '';
       return;
     }
 
+    void doUpload(file);
+  };
+
+  const doUpload = async (file: File) => {
     try {
-      const ts = Date.now();
-      const cleanName = file.name.replace(/\s+/g, "_");
-      const path = `uploads/${code}/${ts}-${cleanName}`;
-      const storageRef = ref(storage, path);
+      setBusy(true);
+      setProgress(0);
 
-      const task = uploadBytesResumable(storageRef, file);
-      task.on("state_changed", snap => {
-        setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
+      // Path: uploads/{code}/{timestamp}-{filename}
+      const storage = getStorage();
+      const stamp = Date.now();
+      const cleanName = file.name.replace(/\s+/g, '-');
+      const path = `uploads/${code}/${stamp}-${cleanName}`;
+      const ref = storageRef(storage, path);
+
+      const task = uploadBytesResumable(ref, file, {
+        contentType: file.type,
+        cacheControl: 'public,max-age=3600',
       });
 
-      await task;
-      const url = await getDownloadURL(storageRef);
-      setProgress(100);
-      onUploaded?.({ name: cleanName, url, path });
-    } catch (err: any) {
+      task.on(
+        'state_changed',
+        (snap: UploadTaskSnapshot) => {
+          // Firebase v10: use totalBytes, not total
+          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+          setProgress(pct);
+        },
+        (err) => {
+          console.error(err);
+          alert('Upload failed by storage rules. Make sure the session is open and try again.');
+          setBusy(false);
+          setProgress(0);
+        },
+        async () => {
+          // Finished — get URL and post a message into the session chat
+          const url = await getDownloadURL(task.snapshot.ref);
+
+          // Write a chat message: sessions/{code}/messages
+          await addDoc(collection(db, 'sessions', code, 'messages'), {
+            from: role,              // 'agent' | 'caller'
+            type: 'file',
+            name: file.name,
+            size: file.size,
+            mime: file.type,
+            path,                    // storage path
+            url,                     // download URL
+            ts: serverTimestamp(),
+          });
+
+          setBusy(false);
+          setProgress(100);
+          // reset input so the same file can be chosen again later
+          if (inputRef.current) inputRef.current.value = '';
+        }
+      );
+    } catch (err) {
       console.error(err);
-      setError(err?.message ?? "Upload failed");
-      alert("Upload failed by storage rules. Make sure the session is open and try again.");
-    } finally {
-      // reset the input so the same file can be chosen again
-      if (inputRef.current) inputRef.current.value = "";
+      alert('Upload failed. Please try again.');
+      setBusy(false);
+      setProgress(0);
     }
-  }
+  };
 
   return (
-    <div className="space-y-2">
+    <div className="flex items-center gap-3">
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,application/pdf"
+        accept="image/png,image/jpeg,image/webp,application/pdf"
         className="hidden"
-        onChange={onPick}
+        onChange={onChange}
       />
-      <button onClick={pick} className="px-3 py-1 rounded border">
-        Choose file
+      <button
+        type="button"
+        onClick={onPick}
+        disabled={busy}
+        className="px-3 py-1 rounded bg-white/10 hover:bg-white/15 text-white text-sm border border-white/15 disabled:opacity-60"
+      >
+        {busy ? 'Uploading…' : 'Choose file'}
       </button>
-      {progress !== null && <div className="text-sm opacity-80">Uploading… {progress}%</div>}
-      {error && <div className="text-sm text-red-400">{error}</div>}
+
+      {progress > 0 && (
+        <span className="text-xs text-white/75">{progress}%</span>
+      )}
     </div>
   );
 }
