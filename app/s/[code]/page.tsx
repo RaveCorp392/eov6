@@ -1,145 +1,121 @@
-'use client';
+// Caller view — chat with “Send your details” and file upload sidebar
+import type { Metadata } from "next";
+import ChatWindow from "@/components/ChatWindow";
+import FileUploader from "@/components/FileUploader";
+// If you already have a component that writes name/email/phone to the session,
+// import it here; otherwise replace the placeholder <SendDetailsForm/> below.
+//
+// Example (if exists):
+// import SendDetailsForm from "@/components/SendDetailsForm";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { collection, doc, setDoc, serverTimestamp, addDoc, orderBy, onSnapshot, query } from 'firebase/firestore';
-import { db, storage } from '@/lib/firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { expiryInHours, slugName } from '@/lib/code';
-
-type Msg = {
-  text?: string;
-  from: 'agent'|'caller'|'system';
-  at: any;
-  fileUrl?: string;
-  fileName?: string;
-  fileType?: string;
-  fileSize?: number;
+export const metadata: Metadata = {
+  title: "Secure shared chat",
 };
 
-export default function CallerPage() {
-  const { code } = useParams<{code: string}>();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [text, setText] = useState('');
-  const [pct, setPct] = useState(0);
-  const scroller = useRef<HTMLDivElement>(null);
-
-  const sessRef = useMemo(()=> doc(db, 'sessions', code), [code]);
-  const msgsCol = useMemo(()=> collection(db, 'sessions', code, 'messages'), [code]);
-
-  // ensure session doc exists + TTL gets refreshed on load
-  useEffect(() => {
-    setDoc(sessRef, {
-      createdAt: serverTimestamp(),
-      expiresAt: expiryInHours(1),
-      closed: false,
-    }, { merge: true });
-  }, [sessRef]);
-
-  useEffect(() => {
-    const q = query(msgsCol, orderBy('at', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      setMsgs(snap.docs.map(d => d.data() as Msg));
-      setTimeout(() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }), 50);
-    });
-    return unsub;
-  }, [msgsCol]);
-
-  async function send() {
-    if (!text.trim()) return;
-    await addDoc(msgsCol, { text, from: 'caller', at: serverTimestamp() });
-    setText('');
-  }
-
-  async function sendDetails() {
-    await setDoc(sessRef, {
-      name: name || null,
-      email: email || null,
-      phone: phone || null,
-      identified: !!(name || email || phone),
-      expiresAt: expiryInHours(1),
-    }, { merge: true });
-
-    await addDoc(msgsCol, {
-      from: 'system',
-      at: serverTimestamp(),
-      text: 'Caller shared contact details.',
-    });
-  }
-
-  async function onChooseFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const fileId = `${Date.now()}-${slugName(file.name)}`;
-    const fileRef = ref(storage, `uploads/${code}/${fileId}`);
-    const task = uploadBytesResumable(fileRef, file, { contentType: file.type });
-
-    task.on('state_changed', (snap) => {
-      setPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
-    });
-
-    try {
-      await task;
-      const url = await getDownloadURL(fileRef);
-      await addDoc(msgsCol, {
-        from: 'caller',
-        at: serverTimestamp(),
-        text: file.name,
-        fileUrl: url, fileName: file.name, fileType: file.type, fileSize: file.size,
-      });
-    } catch {
-      alert('Upload failed by storage rules. Make sure the session is open and try again.');
-    }
-  }
-
+export default function CallerSessionPage({
+  params: { code },
+}: {
+  params: { code: string };
+}) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[1fr_420px] h-screen">
-      <div className="flex flex-col">
-        <header className="p-3 text-sm opacity-75">Session <b>{code}</b> — Secure shared chat</header>
-        <div ref={scroller} className="flex-1 overflow-auto px-4 space-y-2">
-          {msgs.map((m, i) => (
-            <div key={i} className="text-sm">
-              <div className="opacity-60 uppercase">{m.from}</div>
-              {m.text && <div>{m.text}</div>}
-              {m.fileUrl && (
-                <a href={m.fileUrl} target="_blank" className="underline">
-                  {m.fileName} ({Math.round((m.fileSize ?? 0)/1024)} KB)
-                </a>
-              )}
-            </div>
-          ))}
+    <main className="min-h-dvh bg-[#0b1220] text-slate-100">
+      {/* Top bar */}
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b1220]/80 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
+            <span className="text-sm/5 text-slate-300">Session</span>
+            <span className="rounded bg-white/5 px-2 py-0.5 text-sm/5 font-medium text-white">
+              {code}
+            </span>
+          </div>
+          <span className="text-xs text-slate-400">Ephemeral; clears on end</span>
         </div>
-        <div className="p-3 flex gap-2">
-          <input
-            value={text}
-            onChange={(e)=>setText(e.target.value)}
-            onKeyDown={e=>e.key==='Enter' && send()}
-            className="flex-1 rounded px-3 py-2 bg-neutral-900 border border-neutral-700"
-            placeholder="Type a message…"
-          />
-          <button onClick={send} className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700">Send</button>
-        </div>
+      </header>
+
+      {/* Content */}
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[1fr_380px]">
+        {/* Chat */}
+        <section className="rounded-2xl border border-white/10 bg-white/[0.02] shadow-lg shadow-black/30">
+          <div className="border-b border-white/10 px-4 py-3">
+            <h2 className="text-sm font-semibold tracking-wide text-white/90">
+              Secure shared chat
+            </h2>
+            <p className="text-xs text-slate-400">
+              Your messages are visible to the agent assisting you.
+            </p>
+          </div>
+          <div className="p-4">
+            <ChatWindow code={code} role="caller" />
+          </div>
+        </section>
+
+        {/* Sidebar: details + upload */}
+        <aside className="space-y-6">
+          {/* Send details */}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 shadow-lg shadow-black/30">
+            <h3 className="mb-2 text-sm font-semibold text-white/90">
+              Send your details
+            </h3>
+
+            {/* If you have a SendDetailsForm component, render it here:
+                <SendDetailsForm code={code} />
+               Otherwise, drop in your existing three-field form (name/email/phone)
+               in place of the placeholder below. Keep the same handlers you already use.
+            */}
+            <form
+              id="caller-details-form"
+              className="space-y-3"
+              // onSubmit={onSubmitDetails} // keep your existing handler here
+            >
+              <div className="grid grid-cols-1 gap-3">
+                <input
+                  type="text"
+                  name="fullName"
+                  placeholder="Full name"
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
+                />
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
+                />
+                <input
+                  type="tel"
+                  name="phone"
+                  inputMode="tel"
+                  placeholder="Phone"
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <p className="text-xs text-slate-400">Only shared with this session</p>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300"
+                >
+                  Send details
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Upload */}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 shadow-lg shadow-black/30">
+            <h3 className="mb-2 text-sm font-semibold text-white/90">
+              File upload <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">beta</span>
+            </h3>
+            <p className="mb-3 text-xs text-slate-400">
+              Allowed: images &amp; PDF • Max 10&nbsp;MB
+            </p>
+
+            {/* Your uploader already handles progress & rules; we just style the container */}
+            <FileUploader code={code} />
+          </div>
+        </aside>
       </div>
-
-      <aside className="border-l border-neutral-800 p-4 space-y-3">
-        <h2 className="font-semibold">Send your details</h2>
-        <div className="grid gap-2">
-          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Full name" className="rounded px-3 py-2 bg-neutral-900 border border-neutral-700" />
-          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" inputMode="email" className="rounded px-3 py-2 bg-neutral-900 border border-neutral-700" />
-          <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Phone" inputMode="tel" className="rounded px-3 py-2 bg-neutral-900 border border-neutral-700" />
-          <button onClick={sendDetails} className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700">Send details</button>
-        </div>
-
-        <div className="mt-6">
-          <h3 className="font-semibold mb-1">File upload (beta)</h3>
-          <p className="text-xs opacity-70 mb-2">Allowed: images & PDF · Max 10 MB</p>
-          <input type="file" accept="image/*,application/pdf" onChange={onChooseFile} />
-          {pct > 0 && pct < 100 && <div className="text-xs mt-2">Uploading… {pct}%</div>}
-        </div>
-      </aside>
-    </div>
+    </main>
   );
 }

@@ -1,80 +1,68 @@
-'use client';
+// Agent console — two-pane layout (chat + caller details)
+import type { Metadata } from "next";
+import ChatWindow from "@/components/ChatWindow";
+import AgentDetailsPanel from "@/components/AgentDetailsPanel";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { collection, doc, onSnapshot, orderBy, query, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import AgentDetailsPanel from '@/components/AgentDetailsPanel';
-
-type Msg = {
-  text?: string;
-  from: 'agent'|'caller'|'system';
-  at: any; // Timestamp
-  fileUrl?: string;
-  fileName?: string;
-  fileType?: string;
-  fileSize?: number;
+export const metadata: Metadata = {
+  title: "Agent console",
 };
 
-export default function AgentSessionPage() {
-  const { code } = useParams<{code: string}>();
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [text, setText] = useState('');
-  const scroller = useRef<HTMLDivElement>(null);
-
-  const msgsCol = useMemo(
-    () => collection(db, 'sessions', code, 'messages'),
-    [code]
-  );
-
-  useEffect(() => {
-    const q = query(msgsCol, orderBy('at', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      setMsgs(snap.docs.map(d => d.data() as Msg));
-      // auto-scroll
-      setTimeout(() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }), 50);
-    });
-    return unsub;
-  }, [msgsCol]);
-
-  async function send() {
-    if (!text.trim()) return;
-    await addDoc(msgsCol, { text, from: 'agent', at: serverTimestamp() });
-    setText('');
-  }
-
+export default function AgentSessionPage({
+  params: { code },
+}: {
+  params: { code: string };
+}) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[1fr_360px] h-screen">
-      <div className="flex flex-col">
-        <header className="p-3 text-sm opacity-75">Session <b>{code}</b></header>
-        <div ref={scroller} className="flex-1 overflow-auto px-4 space-y-2">
-          {msgs.map((m, i) => (
-            <div key={i} className="text-sm">
-              <div className="opacity-60 uppercase">{m.from}</div>
-              {m.text && <div>{m.text}</div>}
-              {m.fileUrl && (
-                <a href={m.fileUrl} target="_blank" className="underline">
-                  {m.fileName} ({Math.round((m.fileSize ?? 0)/1024)} KB)
-                </a>
-              )}
-            </div>
-          ))}
+    <main className="min-h-dvh bg-[#0b1220] text-slate-100">
+      {/* Top bar */}
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b1220]/80 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+            <span className="text-sm/5 text-slate-300">Session</span>
+            <span className="rounded bg-white/5 px-2 py-0.5 text-sm/5 font-medium text-white">
+              {code}
+            </span>
+          </div>
+          <span className="text-xs text-slate-400">Ephemeral; clears on end</span>
         </div>
-        <div className="p-3 flex gap-2">
-          <input
-            value={text}
-            onChange={(e)=>setText(e.target.value)}
-            onKeyDown={e=>e.key==='Enter' && send()}
-            className="flex-1 rounded px-3 py-2 bg-neutral-900 border border-neutral-700"
-            placeholder="Type a message…"
-          />
-          <button onClick={send} className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700">Send</button>
-        </div>
-      </div>
+      </header>
 
-      <aside className="border-l border-neutral-800 p-4">
-        <AgentDetailsPanel code={code} />
-      </aside>
-    </div>
+      {/* Content */}
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[1fr_380px]">
+        {/* Chat / transcript */}
+        <section className="rounded-2xl border border-white/10 bg-white/[0.02] shadow-lg shadow-black/30">
+          <div className="border-b border-white/10 px-4 py-3">
+            <h2 className="text-sm font-semibold tracking-wide text-white/90">
+              Secure shared chat
+            </h2>
+            <p className="text-xs text-slate-400">Visible to agent & caller</p>
+          </div>
+          <div className="p-4">
+            <ChatWindow code={code} role="agent" />
+          </div>
+        </section>
+
+        {/* Caller details / tools */}
+        <aside className="space-y-6">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 shadow-lg shadow-black/30">
+            <h3 className="mb-2 text-sm font-semibold text-white/90">
+              Caller details
+            </h3>
+            <AgentDetailsPanel code={code} />
+          </div>
+
+          {/* Room for future widgets (recent uploads, flags, etc.) */}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 shadow-lg shadow-black/30">
+            <h3 className="mb-2 text-sm font-semibold text-white/90">
+              Tools
+            </h3>
+            <p className="text-sm text-slate-400">
+              Add quick actions here (verify, notes, tags).
+            </p>
+          </div>
+        </aside>
+      </div>
+    </main>
   );
 }
