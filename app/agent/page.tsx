@@ -1,41 +1,34 @@
 ﻿'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import NewSessionButton from '@/components/NewSessionButton';
+import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { randomCode, expiryInHours } from '@/lib/code';
 
-export default function AgentLanding() {
-  const r = useRouter();
-  const [code, setCode] = useState('');
+export default function AgentHome() {
+  const router = useRouter();
 
-  const join = (e: React.FormEvent) => {
-    e.preventDefault();
-    const c = code.trim().replace(/\D/g, '');
-    if (c.length) r.push(`/agent/s/${c}`);
-  };
+  async function startSession() {
+    const code = randomCode();
+    // Upsert a fresh session doc the agent owns
+    await setDoc(doc(collection(db, 'sessions'), code), {
+      createdAt: serverTimestamp(),
+      expiresAt: expiryInHours(1),
+      closed: false,
+    }, { merge: true });
+
+    router.push(`/agent/s/${code}`);
+  }
 
   return (
-    <div className="col" style={{gap:16}}>
-      <div className="panel">
-        <h2 style={{margin:0}}>EOV6 • Agent</h2>
-        <div className="small" style={{opacity:.8}}>Create a session or join an existing one.</div>
-      </div>
-
-      <div className="panel" style={{display:'flex', gap:16, alignItems:'center'}}>
-        <NewSessionButton />
-        <form onSubmit={join} style={{display:'flex', gap:8, alignItems:'center'}}>
-          <input
-            placeholder="Enter 6‑digit code"
-            value={code}
-            onChange={e=>setCode(e.target.value)}
-            inputMode="numeric"
-            pattern="[0-9]*"
-            className="input"
-            style={{width:160}}
-          />
-          <button className="button" type="submit">Join</button>
-        </form>
-      </div>
-    </div>
+    <main className="p-6">
+      <h1 className="text-xl mb-4">Agent console</h1>
+      <button
+        onClick={startSession}
+        className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+      >
+        Start new session
+      </button>
+    </main>
   );
 }
