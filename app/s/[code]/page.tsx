@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 import ChatWindow from "@/components/ChatWindow";
 import FileUploader from "@/components/FileUploader";
 
@@ -17,20 +17,27 @@ export default function CallerSessionPage({ params }: PageProps) {
 
   const saveDetails = async () => {
     if (!code) return;
+    const identified = !!(name || email || phone);
+
     try {
+      // 1) Write to the ROOT session doc (what AgentDetailsPanel expects)
       await setDoc(
-        doc(db, "sessions", code, "details", "caller"),
-        {
-          name,
-          email,
-          phone,
-          identified: name.length > 0 || email.length > 0 || phone.length > 0,
-        },
+        doc(db, "sessions", code),
+        { name, email, phone, identified },
         { merge: true }
       );
+
+      // 2) (Optional) Keep a mirror in a subdoc if you like that structure
+      await setDoc(
+        doc(db, "sessions", code, "details", "caller"),
+        { name, email, phone, identified },
+        { merge: true }
+      );
+
       alert("Details sent!");
     } catch (err) {
       console.error("Error saving details:", err);
+      alert("Failed to send details. Please try again.");
     }
   };
 
