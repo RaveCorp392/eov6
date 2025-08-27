@@ -29,6 +29,6 @@ const googleProvider = new GoogleAuthProvider();
 
 // Small helper some files were importing in builds
 export const isFirebaseReady = () => !!getApps().length;
-
+export { serverTimestamp } from "firebase/firestore";
 export { app, auth, db, storage, googleProvider };
 export default app;
