@@ -1,57 +1,39 @@
-EOV6_OnePager.md
-EOV6 — Secure details, shared fast.
+# EOV6 – One Pager
 
-Problem: On calls, collecting PII (name, email, phone) is slow and error-prone—spelling mistakes, accents, rework.
-Solution: Agent starts a session, shares a short code. Caller enters it at eov6.com, sends their details with one tap, and can chat. All data is ephemeral by policy.
+## Problem
+Call center interactions are often unclear, hard to follow, and prone to errors. Customers repeat details; agents mishear; miscommunication increases cost and dissatisfaction.
 
-Why now
+## Solution
+EOV6 provides a **6-digit connect code** to instantly link a caller with a secure chat channel visible to both customer and agent.  
+- Caller enters code → chat opens.  
+- Agent sees caller details and transcript.  
+- Secure ephemeral session: cleared when ended.
 
-Teams are moving between chat and voice constantly; identity capture is the drag point.
+## Features
+- 6-digit session code entry.
+- Shared chat window (caller + agent).
+- Caller details form (name/email/phone).
+- File upload (PDF/images).
+- Role separation: caller vs agent UI.
+- Firebase-backed: secure ephemeral storage.
 
-Privacy expectations are rising; “collect less, keep less” is a feature.
+## Benefits
+- Reduces repetition and errors.
+- Provides written transcript alongside call.
+- Supports compliance and clarity.
+- Lightweight, no-install, web-based.
 
-How it works
+## Market
+- Call centers (BPOs, insurance, banking, utilities).
+- Enterprises with high call volumes.
+- SMBs outsourcing support.
 
-Agent opens session → gets a code.
+## Business Model
+- SaaS subscription for call centers.
+- Tiered pricing by seat or session volume.
 
-Caller goes to eov6.com → enters code.
+## Traction / Current Status
+- MVP live with session/chat/file upload.
+- Firebase + Vercel deployment.
+- In-progress: polish of UI + file link display.
 
-Caller taps Send details (name, email, phone) or agent uses canned prompts.
-
-Session auto-expires via TTL.
-
-What’s live today (MVP)
-
-Agent console + caller page with bi-directional chat
-
-One-tap Send details (name, email, phone)
-
-Canned prompts: Ask name / Ask email / Ask phone
-
-Time-to-live deletion (no long-term PII by default)
-
-/marketing landing and simple domain setup
-
-Roadmap (near-term)
-
-File uploads (images/PDF) with TTL, “privacy mode” render in chat (no persistent download)
-
-Consent & T&Cs (checkbox + audit line)
-
-Stripe billing (per seat; usage add-ons later)
-
-Org/team admin, canned prompt libraries
-
-Optional IVR prefill prefixes (e.g., SQ-XXXXXX), webhooks/CRM
-
-Business model (proposed)
-
-Per-agent monthly plan + usage tiers; free sandbox for trials.
-
-Status
-
-MVP built and deployed in <24h; live demo available.
-
-Privacy-first architecture; minimal data model; easy to integrate.
-
-Contact: partners@meetsafe.io
