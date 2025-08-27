@@ -3,106 +3,83 @@
 import React, { useRef, useState } from 'react';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db } from '@/lib/firebase'; // ensure your lib/firebase exports { db }
+                                     // (if it's a default export, change to: import firebase from '@/lib/firebase'; const { db } = firebase;)
 
 type Props = {
-  code: string;               // session code
-  role: 'caller' | 'agent';   // who is posting the file
+  code: string;                              // session code
+  role: 'caller' | 'agent';                  // who is uploading (for transcript)
+  accept?: string;                           // optional: e.g. "image/*,application/pdf"
 };
 
-export default function FileUploader({ code, role }: Props) {
+export default function FileUploader({ code, role, accept = 'image/*,application/pdf' }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [progress, setProgress] = useState<number>(0);
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [pct, setPct] = useState<number | null>(null);
+  const [lastName, setLastName] = useState<string | null>(null);
 
-  const onPick = () => inputRef.current?.click();
-
-  const onChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const file = e.target.files?.[0];
+  async function handlePick(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
     if (!file) return;
 
-    setError(null);
-    setStatus('uploading');
-    setProgress(0);
+    try {
+      setBusy(true);
+      setPct(0);
+      setLastName(file.name);
 
-    const storage = getStorage(); // uses default initialized app
-    const safeName = file.name.replace(/[^\w.\-]/g, '_'); // defensive
-    const path = `uploads/${code}/${Date.now()}-${safeName}`;
-    const fileRef = ref(storage, path);
+      const storage = getStorage();
+      // store under uploads/{code}/{timestamp}-{sanitizedName}
+      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+      const path = `uploads/${code}/${Date.now()}-${safeName}`;
+      const storageRef = ref(storage, path);
 
-    const task = uploadBytesResumable(fileRef, file, { contentType: file.type });
+      const task = uploadBytesResumable(storageRef, file, {
+        contentType: file.type || undefined,
+      });
 
-    task.on(
-      'state_changed',
-      (snap) => {
-        if (snap.totalBytes > 0) {
-          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-          setProgress(pct);
-        }
-      },
-      (err) => {
-        setStatus('error');
-        setError(err?.message ?? 'Upload failed');
-      },
-      async () => {
-        try {
-          const url = await getDownloadURL(task.snapshot.ref);
+      task.on('state_changed', snap => {
+        const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        setPct(progress);
+      });
 
-          // append a chat message in Firestore for this session
-          const messagesCol = collection(db, 'sessions', code, 'messages');
-          await addDoc(messagesCol, {
-            role,                    // 'caller' | 'agent'
-            type: 'file',
-            name: file.name,
-            size: file.size,
-            contentType: file.type,
-            storagePath: path,
-            url,                     // handy for immediate display
-            createdAt: serverTimestamp(),
-          });
+      await task; // wait for completion
+      const url = await getDownloadURL(task.snapshot.ref);
 
-          setStatus('done');
-          setProgress(100);
-          // reset input so same file can be selected again if needed
-          if (inputRef.current) inputRef.current.value = '';
-        } catch (e: any) {
-          setStatus('error');
-          setError(e?.message ?? 'Failed to record file message');
-        }
-      }
-    );
-  };
+      // write a chat message so both sides see “file uploaded”
+      await addDoc(collection(db, 'sessions', code, 'messages'), {
+        role,                          // "caller" or "agent"
+        type: 'file',                  // <- ChatWindow will render specially
+        name: file.name,
+        url,
+        contentType: file.type || null,
+        size: file.size,
+        createdAt: serverTimestamp(),
+      });
+
+      // optional toast—keep it quiet
+    } catch (err) {
+      alert('Upload failed. Please try again.');
+      console.error(err);
+    } finally {
+      setBusy(false);
+      setPct(null);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 shadow-lg shadow-black/30">
-      <h3 className="mb-2 text-sm font-semibold text-white/90">File upload (beta)</h3>
-      <p className="mb-3 text-xs text-white/60">Allowed: images & PDF · Max 10&nbsp;MB</p>
-
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onPick}
-          className="inline-flex items-center rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white hover:bg-white/[0.08]"
-          disabled={status === 'uploading'}
-        >
-          Choose file
-        </button>
-
-        {status === 'uploading' && (
-          <span className="text-xs text-white/70">Uploading… {progress}%</span>
-        )}
-        {status === 'done' && <span className="text-xs text-emerald-400">Uploaded ✓</span>}
-        {status === 'error' && <span className="text-xs text-rose-400">{error}</span>}
-      </div>
-
+    <div className="flex items-center gap-3 text-sm">
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,application/pdf"
-        className="hidden"
-        onChange={onChange}
+        accept={accept}
+        onChange={handlePick}
+        className="block w-full max-w-xs text-xs file:mr-3 file:rounded file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-white file:hover:bg-white/20 cursor-pointer"
       />
+      {busy && (
+        <span className="min-w-[5rem]">{pct !== null ? `${pct}%` : 'Uploading…'}</span>
+      )}
+      {!busy && lastName && <span className="opacity-70">Uploaded ✓</span>}
     </div>
   );
 }

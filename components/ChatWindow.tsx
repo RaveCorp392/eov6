@@ -1,77 +1,78 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import React, { useEffect, useRef } from 'react';
+import { onSnapshot, query, collection, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import type { Timestamp } from 'firebase/firestore';
 
 type Msg = {
-  id?: string;
+  id: string;
+  role: 'agent' | 'caller' | 'system';
+  type?: 'text' | 'file';
   text?: string;
-  from: 'agent' | 'caller' | 'system';
-  at?: Timestamp | null;
-  fileUrl?: string;
-  fileName?: string;
-  fileType?: string;
-  fileSize?: number;
+  url?: string;
+  name?: string;
+  contentType?: string | null;
+  createdAt?: any;
 };
 
-export default function ChatWindow({ code, role }: { code: string; role: 'agent'|'caller'; }) {
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [text, setText] = useState('');
-  const bottom = useRef<HTMLDivElement | null>(null);
+type Props = {
+  code: string;
+  role: 'agent' | 'caller';
+};
 
-  // Live stream of messages
+export default function ChatWindow({ code, role }: Props) {
+  const [msgs, setMsgs] = React.useState<Msg[]>([]);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
-    const q = query(collection(db, 'sessions', code, 'messages'), orderBy('at', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      const arr: Msg[] = [];
-      snap.forEach((d) => arr.push({ id: d.id, ...(d.data() as any) }));
-      setMsgs(arr);
+    const q = query(
+      collection(db, 'sessions', code, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+    const unsub = onSnapshot(q, snap => {
+      const rows: Msg[] = [];
+      snap.forEach(doc => rows.push({ id: doc.id, ...(doc.data() as any) }));
+      setMsgs(rows);
+      // autoscroll
+      requestAnimationFrame(() => scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight }));
     });
     return () => unsub();
   }, [code]);
 
-  // Robust auto‑scroll even when server timestamps reorder items
-  useLayoutEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [msgs.length]);
-
-  const send = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const tx = text.trim();
-    if (!tx) return;
-    setText('');
-    await addDoc(collection(db, 'sessions', code, 'messages'), {
-      text: tx,
-      from: role,
-      at: serverTimestamp()
-    });
-  };
-
   return (
-    <div className="panel" style={{display: 'flex', flexDirection: 'column', height: 420}}>
-      <div className="small" style={{opacity:.75, marginBottom: 8}}>🔒 Ephemeral: cleared when the session ends.</div>
-      <div style={{flex: 1, overflow: 'auto', paddingRight: 4}}>
-        {msgs.map((m) => (
-          <div key={m.id} style={{margin: '8px 0'}}>
-            <div className="small" style={{color: '#a3e5ff'}}>{m.from.toUpperCase()}</div>
-            {m.fileUrl ? (
-              <div>
-                <a href={m.fileUrl} target="_blank" rel="noreferrer">{m.fileName || 'file'}</a>
-                {typeof m.fileSize === 'number' ? <span className="small"> ({Math.round(m.fileSize/1024)} KB)</span> : null}
+    <div ref={scrollerRef} className="h-[50vh] lg:h-[60vh] overflow-y-auto space-y-3 pr-1">
+      {msgs.map(m => (
+        <div key={m.id} className={`max-w-[85%] rounded-xl px-3 py-2 shadow-sm
+            ${m.role === 'agent' ? 'bg-emerald-500/10 border border-emerald-500/20 self-start' : ''}
+            ${m.role === 'caller' ? 'bg-sky-500/10 border border-sky-500/20 self-start' : ''}
+            ${m.role === 'system' ? 'bg-white/5 border border-white/10 text-white/70 italic' : ''}`}>
+          {/* FILE MESSAGE */}
+          {m.type === 'file' && m.url ? (
+            <div className="flex items-center gap-2">
+              {/* small preview if image */}
+              {m.contentType?.startsWith('image/') ? (
+                <a href={m.url} target="_blank" className="block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={m.url} alt={m.name || 'image'} className="max-h-32 rounded-md" />
+                </a>
+              ) : null}
+              <div className="flex flex-col">
+                <span className="text-xs opacity-70">{m.role.toUpperCase()} • file</span>
+                <a href={m.url} target="_blank" className="underline break-all">
+                  {m.name || 'Download file'}
+                </a>
+                {m.contentType && <span className="text-xs opacity-60">{m.contentType}</span>}
               </div>
-            ) : (
-              <div>{m.text}</div>
-            )}
-          </div>
-        ))}
-        <div ref={bottom} />
-      </div>
-      <form onSubmit={send} style={{display:'flex', gap:8, marginTop:8}}>
-        <input className="input" placeholder="Type a message…" value={text} onChange={(e) => setText(e.target.value)} />
-        <button className="button" type="submit">Send</button>
-      </form>
+            </div>
+          ) : (
+            // TEXT MESSAGE (fallback)
+            <div>
+              <span className="text-xs opacity-70">{m.role.toUpperCase()}</span>
+              <div className="whitespace-pre-wrap">{m.text}</div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
