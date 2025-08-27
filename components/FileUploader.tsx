@@ -1,85 +1,96 @@
-'use client';
+"use client";
 
-import React, { useRef, useState } from 'react';
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase'; // ensure your lib/firebase exports { db }
-                                     // (if it's a default export, change to: import firebase from '@/lib/firebase'; const { db } = firebase;)
+import React, { useRef, useState } from "react";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { db } from "@/lib/firebase"; // your initialized Firestore/Apps here
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 type Props = {
-  code: string;                              // session code
-  role: 'caller' | 'agent';                  // who is uploading (for transcript)
-  accept?: string;                           // optional: e.g. "image/*,application/pdf"
+  code: string;                    // session code
+  role: "agent" | "caller";        // who is posting
+  accept?: string;                 // optional override (defaults images+pdf)
+  maxSizeMb?: number;              // soft guardrail
+  className?: string;
 };
 
-export default function FileUploader({ code, role, accept = 'image/*,application/pdf' }: Props) {
+export default function FileUploader({
+  code,
+  role,
+  accept = "image/*,application/pdf",
+  maxSizeMb = 10,
+  className = ""
+}: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pct, setPct] = useState<number | null>(null);
-  const [lastName, setLastName] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
 
-  async function handlePick(ev: React.ChangeEvent<HTMLInputElement>) {
-    const file = ev.target.files?.[0];
+  async function handlePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > maxSizeMb * 1024 * 1024) {
+      alert(`File is over ${maxSizeMb}MB.`);
+      e.currentTarget.value = "";
+      return;
+    }
+
+    setBusy(true);
+    setProgress(0);
+
     try {
-      setBusy(true);
-      setPct(0);
-      setLastName(file.name);
-
       const storage = getStorage();
-      // store under uploads/{code}/{timestamp}-{sanitizedName}
-      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
-      const path = `uploads/${code}/${Date.now()}-${safeName}`;
-      const storageRef = ref(storage, path);
+      // path: /uploads/<session>/<ts>-<sanitized-name>
+      const stamp = Date.now();
+      const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+      const objectPath = `uploads/${code}/${stamp}-${safeName}`;
+      const storageRef = ref(storage, objectPath);
 
-      const task = uploadBytesResumable(storageRef, file, {
-        contentType: file.type || undefined,
-      });
+      const task = uploadBytesResumable(storageRef, file);
 
-      task.on('state_changed', snap => {
-        const progress = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        setPct(progress);
+      task.on("state_changed", snap => {
+        if (snap.totalBytes) setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
       });
 
       await task; // wait for completion
-      const url = await getDownloadURL(task.snapshot.ref);
+      const url = await getDownloadURL(storageRef);
 
-      // write a chat message so both sides see “file uploaded”
-      await addDoc(collection(db, 'sessions', code, 'messages'), {
-        role,                          // "caller" or "agent"
-        type: 'file',                  // <- ChatWindow will render specially
+      // Write a chat message (link-only, no auto image tag here)
+      await addDoc(collection(db, "sessions", code, "messages"), {
+        ts: serverTimestamp(),
+        role,
+        type: "file",
         name: file.name,
-        url,
-        contentType: file.type || null,
         size: file.size,
-        createdAt: serverTimestamp(),
+        mime: file.type,
+        url
       });
 
-      // optional toast—keep it quiet
+      // Reset picker
+      if (inputRef.current) inputRef.current.value = "";
+      setProgress(null);
+      alert("Uploaded ✓");
     } catch (err) {
-      alert('Upload failed. Please try again.');
       console.error(err);
+      alert("Upload failed. Please try again.");
+      setProgress(null);
     } finally {
       setBusy(false);
-      setPct(null);
-      if (inputRef.current) inputRef.current.value = '';
     }
   }
 
   return (
-    <div className="flex items-center gap-3 text-sm">
+    <div className={`inline-flex items-center gap-2 ${className}`}>
       <input
         ref={inputRef}
         type="file"
         accept={accept}
         onChange={handlePick}
-        className="block w-full max-w-xs text-xs file:mr-3 file:rounded file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-white file:hover:bg-white/20 cursor-pointer"
+        disabled={busy}
+        className="cursor-pointer rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-slate-200"
       />
-      {busy && (
-        <span className="min-w-[5rem]">{pct !== null ? `${pct}%` : 'Uploading…'}</span>
+      {progress !== null && (
+        <span className="text-xs text-slate-400">{progress}%</span>
       )}
-      {!busy && lastName && <span className="opacity-70">Uploaded ✓</span>}
     </div>
   );
 }
