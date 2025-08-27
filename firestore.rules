@@ -1,20 +1,97 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isOpenSession(code) {
-      return exists(/databases/$(database)/documents/sessions/$(code)) &&
-             get(/databases/$(database)/documents/sessions/$(code)).data.closed != true &&
-             get(/databases/$(database)/documents/sessions/$(code)).data.expiresAt > request.time;
+
+    function isSixDigit(code) {
+      return code.matches('^[0-9]{6}$');
     }
+
+    function sessionDoc(code) {
+      return get(/databases/$(database)/documents/sessions/$(code));
+    }
+
+    function sessionExists(code) {
+      return exists(/databases/$(database)/documents/sessions/$(code));
+    }
+
+    function isActiveSession(code) {
+      return sessionExists(code)
+        && sessionDoc(code).data.active == true
+        && request.time < sessionDoc(code).data.expiresAt;
+    }
+
+    // Agents are authenticated users. You may later add custom claims.
+    function isAgent() {
+      return request.auth != null;
+    }
+
+    // Basic validators for messages
+    function validMessageBody() {
+      return request.resource.data.type in ['text','file','details']
+        && request.resource.data.role in ['agent','caller','system']
+        && request.resource.data.createdAt == request.time
+        // text
+        && (request.resource.data.type != 'text'
+            || (request.resource.data.text is string && request.resource.data.text.size() <= 4000))
+        // file
+        && (request.resource.data.type != 'file'
+            || (
+                request.resource.data.file is map
+                && request.resource.data.file.name is string
+                && request.resource.data.file.size is int
+                && request.resource.data.file.contentType is string
+                && request.resource.data.file.storagePath is string
+                && request.resource.data.file.downloadURL is string
+              ))
+        // details
+        && (request.resource.data.type != 'details'
+            || (
+                request.resource.data.details is map
+                && request.resource.data.details.name is string
+                && request.resource.data.details.email is string
+                && request.resource.data.details.phone is string
+              ));
+    }
+
+    // Sessions collection
     match /sessions/{code} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if request.auth != null || isOpenSession(code);
-      allow delete: if request.auth != null;
-      match /messages/{id} {
-        allow read: if isOpenSession(code);
-        allow create: if isOpenSession(code);
+      allow read: if isActiveSession(code); // both sides can read minimal session doc
+
+      // Session creation/updates by agent app only
+      allow create: if isAgent()
+        && isSixDigit(code)
+        && request.resource.data.active == true
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt is timestamp;
+
+      // Allow agents to safely update a few fields (e.g., active/lastActivityAt)
+      allow update: if isAgent()
+        && request.resource.data.keys().hasOnly(['active','lastActivityAt','createdAt','expiresAt','agentId'])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.expiresAt == resource.data.expiresAt;
+
+      // Messages subcollection
+      match /messages/{msgId} {
+        allow read: if isActiveSession(code);
+
+        // Callers (unauthenticated) can post into an active session ONLY:
+        allow create: if isActiveSession(code)
+          && validMessageBody()
+          && request.resource.data.role in ['caller','system']
+          // guard details visibility (optional)
+          && (request.resource.data.type != 'details' || !('visibleTo' in request.resource.data) || request.resource.data.visibleTo == 'agent');
+
+        // Agents (authenticated) can also post:
+        allow create: if isActiveSession(code)
+          && isAgent()
+          && validMessageBody()
+          && request.resource.data.role in ['agent','system'];
       }
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

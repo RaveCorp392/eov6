@@ -1,12 +1,10 @@
-﻿// app/lib/firebase.ts (or /lib/firebase.ts if that's your alias target)
-"use client";
+﻿// lib/firebase.ts
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
-import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
-import { getStorage, type FirebaseStorage } from "firebase/storage";
-
-// Your envs must be defined (NEXT_PUBLIC_* in Vercel)
+// All envs must be defined in .env.local / Vercel project
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -16,19 +14,12 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-// Initialize exactly once (works on client/nav)
-const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+export { app };
 
-// Core SDK singletons
-const auth: Auth = getAuth(app);
-const db: Firestore = getFirestore(app);
-const storage: FirebaseStorage = getStorage(app);
+export const db = getFirestore(app);
+export const auth = getAuth(app);
+export const storage = getStorage(app);
 
-// Google provider (named export you were importing)
-const googleProvider = new GoogleAuthProvider();
-
-// Small helper some files were importing in builds
-export const isFirebaseReady = () => !!getApps().length;
-export { serverTimestamp } from "firebase/firestore";
-export { app, auth, db, storage, googleProvider };
-export default app;
+// Optional provider for agent console sign-in
+export const googleProvider = new GoogleAuthProvider();
