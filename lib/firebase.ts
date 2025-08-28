@@ -26,3 +26,4 @@ export const googleProvider = new GoogleAuthProvider();
 
 // Common helpers so callers don’t import SDK modules directly
 export { serverTimestamp, Timestamp };
+export const isFirebaseReady = () => getApps().length > 0;
