@@ -1,10 +1,9 @@
 ﻿// lib/firebase.ts
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, serverTimestamp, Timestamp } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
-// All envs must be defined in .env.local / Vercel project
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -14,12 +13,16 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-export { app };
+// Singleton app
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
+// Core services
 export const db = getFirestore(app);
-export const auth = getAuth(app);
 export const storage = getStorage(app);
+export const auth = getAuth(app);
 
-// Optional provider for agent console sign-in
+// Auth helper for Google sign-in (used in /admin)
 export const googleProvider = new GoogleAuthProvider();
+
+// Common helpers so callers don’t import SDK modules directly
+export { serverTimestamp, Timestamp };
