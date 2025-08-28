@@ -1,9 +1,17 @@
 ﻿// lib/firebase.ts
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, serverTimestamp, Timestamp } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import {
+  getFirestore,
+  serverTimestamp,
+  collection,
+  addDoc,
+  doc,
+  setDoc,
+} from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
+// Pull from Vercel/Next public envs
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -13,17 +21,19 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
-// Singleton app
+// Ensure single app instance (works in dev + serverless)
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Core services
-export const db = getFirestore(app);
-export const storage = getStorage(app);
+// ---- Auth ----
 export const auth = getAuth(app);
-
-// Auth helper for Google sign-in (used in /admin)
 export const googleProvider = new GoogleAuthProvider();
 
-// Common helpers so callers don’t import SDK modules directly
-export { serverTimestamp, Timestamp };
-export const isFirebaseReady = () => getApps().length > 0;
+// ---- Firestore ----
+export const db = getFirestore(app);
+export { serverTimestamp, collection, addDoc, doc, setDoc };
+
+// ---- Storage (for uploads) ----
+export const storage = getStorage(app);
+
+// (Optional) tiny helper you can import if you want a simple guard
+export const firebaseReady = Boolean(app);

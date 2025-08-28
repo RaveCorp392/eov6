@@ -30,42 +30,30 @@ export default function AdminPage() {
     await signOut(auth);
   };
 
-  if (!ready) {
-    return (
-      <main className="p-6 text-white/80">
-        <p>Checking auth…</p>
-      </main>
-    );
-  }
-
   return (
-    <main className="p-6 text-white">
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Agent console</h1>
-        {user ? (
-          <button
-            onClick={doLogout}
-            className="rounded bg-white/10 px-3 py-1 text-sm hover:bg-white/20"
-          >
-            Sign out
-          </button>
-        ) : (
-          <button
-            onClick={doLogin}
-            className="rounded bg-white/10 px-3 py-1 text-sm hover:bg-white/20"
-          >
+    <main style={{ padding: 16, maxWidth: 760 }}>
+      <h1 style={{ fontWeight: 700, marginBottom: 12 }}>Agent console</h1>
+
+      {!ready && <p>Loading…</p>}
+
+      {ready && !user && (
+        <div>
+          <p>You’re not signed in.</p>
+          <button onClick={doLogin} style={{ padding: "8px 12px" }}>
             Sign in with Google
           </button>
-        )}
-      </header>
-
-      {user ? (
-        <div className="space-y-1 text-sm text-white/80">
-          <div>Signed in as: {user.displayName || user.email}</div>
-          <div className="text-white/60">{user.uid}</div>
         </div>
-      ) : (
-        <p className="text-white/70 text-sm">Please sign in to continue.</p>
+      )}
+
+      {ready && user && (
+        <div>
+          <p style={{ marginBottom: 8 }}>
+            Signed in as <strong>{user.email}</strong>
+          </p>
+          <button onClick={doLogout} style={{ padding: "8px 12px" }}>
+            Sign out
+          </button>
+        </div>
       )}
     </main>
   );
