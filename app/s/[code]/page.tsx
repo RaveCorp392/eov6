@@ -1,154 +1,234 @@
-// app/s/[code]/page.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
-
-import { db } from "@/lib/firebase";
+import React, { useEffect, useState, ChangeEvent } from "react";
 import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
+  db,
+  storage,
   serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
+  collection,
+  addDoc,
+  storageRef,
+  uploadBytes,
+  getDownloadURL,
+  query,
+  orderBy,
+  onSnapshot,
+} from "@/lib/firebase";
 
-type Msg = { id: string; role: "agent" | "caller" | "system"; text?: string; ts?: any };
+type PageProps = { params: { code: string } };
 
-export default function CallerSessionPage() {
-  const params = useParams<{ code: string }>();
-  const code = (params?.code || "").toString();
+type Event =
+  | { id: string; type: "CHAT"; role: "CALLER" | "AGENT"; text: string; ts?: any }
+  | {
+      id: string;
+      type: "DETAILS";
+      name: string;
+      email: string;
+      phone: string;
+      ts?: any;
+    }
+  | {
+      id: string;
+      type: "FILE";
+      role: "CALLER" | "AGENT";
+      name: string;
+      size: number;
+      url: string;
+      contentType?: string;
+      ts?: any;
+    }
+  | { id: string; [k: string]: any };
 
-  const [messages, setMessages] = useState<Msg[]>([]);
+export default function CallerSessionPage({ params }: PageProps) {
+  const sessionCode = params.code;
+
+  // simple local UI state
   const [text, setText] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [sendingDetails, setSendingDetails] = useState(false);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [uploading, setUploading] = useState(false);
 
-  const listRef = useRef<HTMLDivElement>(null);
-
-  // Subscribe to messages for autoscroll / feedback
+  // Subscribe to the session events so the caller page can show the same feed
   useEffect(() => {
-    if (!code) return;
-    const q = query(collection(db, "sessions", code, "messages"), orderBy("ts", "asc"));
-    return onSnapshot(q, (snap) => {
-      const next = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      setMessages(next);
-      // autoscroll
-      setTimeout(() => listRef.current?.scrollTo({ top: 999999, behavior: "smooth" }), 0);
+    const q = query(
+      collection(db, "sessions", sessionCode, "events"),
+      orderBy("ts", "asc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setEvents(
+        snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Event[]
+      );
     });
-  }, [code]);
+    return () => unsub();
+  }, [sessionCode]);
 
   async function sendChat() {
-    if (!text.trim()) return;
-    await addDoc(collection(db, "sessions", code, "messages"), {
-      role: "caller",
-      text,
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    await addDoc(collection(db, "sessions", sessionCode, "events"), {
+      type: "CHAT",
+      role: "CALLER",
+      text: trimmed,
       ts: serverTimestamp(),
     });
     setText("");
   }
 
   async function sendDetails() {
+    if (!name.trim() || !email.trim() || !phone.trim()) {
+      alert("Please fill name, email and phone.");
+      return;
+    }
+    setSendingDetails(true);
     try {
-      const metaRef = doc(db, "sessions", code, "meta", "caller");
-      await setDoc(
-        metaRef,
-        {
-          fullName: fullName || "",
-          email: email || "",
-          phone: phone || "",
-          identified: Boolean(fullName || email || phone),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await addDoc(collection(db, "sessions", sessionCode, "events"), {
+        type: "DETAILS",
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        ts: serverTimestamp(),
+      });
+      alert("Details sent!");
+    } catch (e) {
+      console.error(e);
+      alert("Failed to send details. Please try again.");
+    } finally {
+      setSendingDetails(false);
+    }
+  }
 
-      await addDoc(collection(db, "sessions", code, "messages"), {
-        role: "system",
-        text: "Caller details were shared with the agent.",
+  async function onChooseFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 10 MB cap (same as before)
+    const MAX = 10 * 1024 * 1024;
+    if (file.size > MAX) {
+      alert("Max file size is 10 MB.");
+      e.target.value = "";
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const path = `uploads/${sessionCode}/${Date.now()}-${file.name}`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, file, { contentType: file.type || undefined });
+      const url = await getDownloadURL(ref);
+
+      // Write a FILE event—no preview, just metadata + URL.
+      await addDoc(collection(db, "sessions", sessionCode, "events"), {
+        type: "FILE",
+        role: "CALLER",
+        name: file.name,
+        size: file.size,
+        url,
+        contentType: file.type || null,
         ts: serverTimestamp(),
       });
 
-      alert("Details sent!");
-    } catch (e: any) {
-      console.error(e);
-      alert("Failed to send details. Please try again.");
+      alert("Uploaded.");
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
     }
   }
 
   return (
-    <main className="min-h-screen p-4 text-sm text-white bg-[#0b1220]">
-      <h1 className="text-lg font-semibold mb-3">Secure shared chat</h1>
-
-      {/* Chat list */}
-      <div
-        ref={listRef}
-        className="h-[44vh] overflow-y-auto rounded border border-white/10 p-3 mb-3"
-      >
-        {messages.map((m) => (
-          <div key={m.id} className="mb-1">
-            <span className="text-[10px] mr-1 opacity-60">
-              {m.role.toUpperCase()}
-            </span>
-            <span>{m.text}</span>
-          </div>
-        ))}
+    <main style={{ padding: 16, color: "#e6eefb", background: "#0b1220", minHeight: "100vh" }}>
+      <h1 style={{ marginBottom: 8 }}>Secure shared chat</h1>
+      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
+        Visible to agent &amp; caller • Ephemeral: cleared when the session ends.
       </div>
 
-      {/* Send a chat message (kept minimal) */}
-      <div className="flex gap-2 mb-4">
+      {/* Event feed (simple) */}
+      <div style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", marginBottom: 12 }}>
+        {events.map((ev) => {
+          if (ev.type === "CHAT") {
+            return (
+              <div key={ev.id}>
+                {(ev as any).role}:{(ev as any).text}
+              </div>
+            );
+          }
+          if (ev.type === "DETAILS") {
+            const d = ev as any;
+            return (
+              <div key={ev.id}>SYSTEM: Caller details were shared with the agent.</div>
+            );
+          }
+          if (ev.type === "FILE") {
+            const f = ev as any;
+            const kb = Math.round((f.size ?? 0) / 102.4) / 10; // one decimal
+            return (
+              <div key={ev.id}>
+                CALLER file:{" "}
+                <a href={f.url} target="_blank" rel="noreferrer" style={{ color: "#9bd" }}>
+                  {f.name} ({kb} KB)
+                </a>
+              </div>
+            );
+          }
+          return <div key={ev.id}>SYSTEM event</div>;
+        })}
+      </div>
+
+      {/* Chat box */}
+      <div style={{ marginBottom: 16 }}>
         <input
-          className="flex-1 rounded bg-white/5 border border-white/10 px-3 py-2 outline-none"
-          placeholder="Type a message…"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendChat()}
+          placeholder="Type a message…"
+          style={{ width: 260, marginRight: 6 }}
         />
-        <button
-          onClick={sendChat}
-          className="px-4 py-2 rounded bg-white/10 hover:bg-white/20 border border-white/10"
-        >
-          Send
+        <button onClick={sendChat}>Send</button>
+      </div>
+
+      {/* Send details */}
+      <div style={{ marginBottom: 10, fontWeight: 600 }}>Send your details</div>
+      <div style={{ marginBottom: 18 }}>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name"
+          style={{ width: 200, marginRight: 6 }}
+        />
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          style={{ width: 240, marginRight: 6 }}
+        />
+        <input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone"
+          style={{ width: 160, marginRight: 6 }}
+        />
+        <button disabled={sendingDetails} onClick={sendDetails}>
+          {sendingDetails ? "Sending…" : "Send details"}
         </button>
       </div>
 
-      {/* Send your details */}
-      <section className="mb-4">
-        <h3 className="font-semibold mb-2">Send your details</h3>
-        <div className="flex flex-wrap gap-2">
-          <input
-            className="min-w-[220px] rounded bg-white/5 border border-white/10 px-3 py-2"
-            placeholder="Full name"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-          />
-          <input
-            className="min-w-[260px] rounded bg-white/5 border border-white/10 px-3 py-2"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <input
-            className="min-w-[160px] rounded bg-white/5 border border-white/10 px-3 py-2"
-            placeholder="Phone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-          <button
-            onClick={sendDetails}
-            className="px-4 py-2 rounded bg-white/10 hover:bg-white/20 border border-white/10"
-          >
-            Send details
-          </button>
+      {/* Upload — images & PDF only; max 10 MB */}
+      <div style={{ marginTop: 24 }}>
+        <div style={{ marginBottom: 6, fontWeight: 600 }}>File upload (beta)</div>
+        <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
+          Allowed: images &amp; PDF • Max 10 MB
         </div>
-      </section>
-
-      {/* File upload stays (your working component) */}
-      {/* <UploadButton role="caller" code={code} /> */}
+        <input
+          type="file"
+          accept="image/*,application/pdf"
+          disabled={uploading}
+          onChange={onChooseFile}
+        />
+      </div>
     </main>
   );
 }
