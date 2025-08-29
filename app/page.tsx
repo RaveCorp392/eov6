@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -7,7 +7,7 @@ import Link from "next/link";
 const DEFAULT_LEN =
   Number(process.env.NEXT_PUBLIC_CODE_LENGTH ?? 6) || 6;
 
-// Allows prefixes like â€œSQâ€ plus digits, strips spaces and dashes
+// Allows prefixes like “SQ” plus digits, strips spaces and dashes
 function normalizeCode(raw: string) {
   return raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }

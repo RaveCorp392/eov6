@@ -1,4 +1,4 @@
-ï»¿export const dynamic = "force-static";
+export const dynamic = "force-static";
 
 import Link from "next/link";
 import OnePager from "@/content/marketing/onepager.mdx";
@@ -15,12 +15,12 @@ export default function MarketingPage() {
         </div>
 
         <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl">
-          EOV6 â€” Secure details, shared fast.
+          EOV6 — Secure details, shared fast.
         </h1>
 
         <p className="mx-auto mt-4 max-w-2xl text-slate-600">
           Agents get a short code, callers enter it at{" "}
-          <span className="font-semibold">eov6.com</span>, and verified contact details arrive â€”
+          <span className="font-semibold">eov6.com</span>, and verified contact details arrive —
           then auto-expire by policy.
         </p>
 
@@ -57,7 +57,7 @@ export default function MarketingPage() {
 
       {/* Footer */}
       <footer className="mt-16 text-center text-xs text-slate-400">
-        Â© {new Date().getFullYear()} EOV6. All rights reserved.
+        © {new Date().getFullYear()} EOV6. All rights reserved.
       </footer>
     </main>
   );

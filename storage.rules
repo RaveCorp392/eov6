@@ -1,20 +1,18 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Demo-only: allow public read of uploaded files.
-    match /uploads/{code}/{filename} {
-      // 1) Allow reads for demo
-      allow read: if true;
+    // Demo-safe: tight file types + size cap + path shape.
+    match /uploads/{code}/{fileId} {
+      allow read: if true; // public read for demo/agent access (can tighten later)
 
-      // 2) Allow writes when content is image/* or application/pdf and <= 10 MB
-      allow write: if request.resource != null
-        && (request.resource.contentType.matches('image/.*')
-            || request.resource.contentType == 'application/pdf')
-        && request.resource.size < 10 * 1024 * 1024;
+      allow write: if request.resource.size <= 10 * 1024 * 1024      // <= 10 MB
+                   && (request.resource.contentType.matches('image/.*')
+                       || request.resource.contentType == 'application/pdf')
+                   && code.matches('^[0-9]{6}$');
     }
 
-    // Everything else locked down
-    match /{document=**} {
+    // Block anything else
+    match /{allPaths=**} {
       allow read, write: if false;
     }
   }

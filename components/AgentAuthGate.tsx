@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { auth, googleProvider } from "@/lib/firebase";
+import { auth, googleProvider } from "firebase/firestore";
 import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
 
 export default function AgentAuthGate({ children }: { children: ReactNode }) {
@@ -28,7 +28,7 @@ export default function AgentAuthGate({ children }: { children: ReactNode }) {
   if (!user) {
     return (
       <div className="max-w-lg mx-auto p-6 text-center">
-        <h2 className="text-xl font-semibold mb-3">EOV6 — Admin</h2>
+        <h2 className="text-xl font-semibold mb-3">EOV6 � Admin</h2>
         <p className="mb-4 text-slate-600">
           Sign in with Google to open the Agent Console.
         </p>
