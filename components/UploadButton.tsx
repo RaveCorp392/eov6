@@ -1,76 +1,82 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { storage, db, serverTimestamp } from "@/lib/firebase";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { addDoc, collection } from "firebase/firestore";
+import {
+  storage,
+  storageRef,
+  uploadBytes,
+  getDownloadURL,
+  db,
+  collection,
+  addDoc,
+  serverTimestamp,
+} from "@/lib/firebase";
 
 type Props = {
-  code: string;            // 6-digit session code
-  role?: "CALLER" | "AGENT";
+  sessionCode: string;
+  role: "CALLER" | "AGENT";
 };
 
-export default function UploadButton({ code, role = "CALLER" }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+const ACCEPT = "image/*,application/pdf";
+
+export default function UploadButton({ sessionCode, role }: Props) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
 
-  const onPick = () => inputRef.current?.click();
-
-  const onChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    setError(null);
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > MAX_BYTES) {
+      setError("File too large (max 10 MB).");
+      e.target.value = "";
+      return;
+    }
+
     try {
       setBusy(true);
-      setProgress(0);
+      // upload to storage
+      const path = `sessions/${sessionCode}/${Date.now()}-${file.name}`;
+      const ref = storageRef(storage, path);
+      await uploadBytes(ref, file);
+      const url = await getDownloadURL(ref);
 
-      const path = `uploads/${code}/${Date.now()}-${file.name}`;
-      const storageRef = ref(storage, path);
-      const task = uploadBytesResumable(storageRef, file);
-
-      task.on("state_changed", (snap) => {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        setProgress(pct);
-      });
-
-      await task;
-      const url = await getDownloadURL(storageRef);
-
-      // Emit a chat event so the agent sees a clickable file link (no inline preview)
-      await addDoc(collection(db, "sessions", code, "events"), {
-        type: "file",
+      // write event
+      await addDoc(collection(db, "sessions", sessionCode, "events"), {
+        type: "FILE",
+        role,
         name: file.name,
         size: file.size,
         url,
-        path,
-        role,
+        contentType: file.type,
         ts: serverTimestamp(),
       });
-
-      // Reset input so the same file can be picked again if needed
-      if (inputRef.current) inputRef.current.value = "";
-      setProgress(0);
-    } catch (err) {
-      console.error("Upload failed", err);
-      alert("Upload failed. Please try again.");
+    } catch (err: any) {
+      console.error(err);
+      setError("Upload failed. Please try again.");
     } finally {
       setBusy(false);
+      // reset input so same filename can be reselected
+      if (inputRef.current) inputRef.current.value = "";
     }
-  };
+  }
 
   return (
-    <div style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-      <button onClick={onPick} disabled={busy}>
-        {busy ? `Uploading ${progress}%` : "Choose file"}
-      </button>
+    <div className="flex items-center gap-3">
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,application/pdf"
-        style={{ display: "none" }}
-        onChange={onChange}
+        accept={ACCEPT}
+        onChange={onPick}
+        aria-label="Choose file to upload"
+        className="block text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-sky-500 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-black hover:file:bg-sky-400 file:cursor-pointer file:focus:outline-none file:focus:ring-2 file:focus:ring-sky-400/60"
+        disabled={busy}
       />
+      {busy && <span className="text-xs text-white/70">Uploading…</span>}
+      {error && <span className="text-xs text-rose-300">{error}</span>}
     </div>
   );
 }
