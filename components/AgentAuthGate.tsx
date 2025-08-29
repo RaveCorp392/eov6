@@ -1,8 +1,17 @@
 "use client";
 
+// AgentAuthGate.tsx (top of file)
 import { ReactNode, useEffect, useState } from "react";
-import { auth, googleProvider } from "firebase/firestore";
-import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
+
+import {
+  auth,
+  googleProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  User,
+} from "@/lib/firebase";
+
 
 export default function AgentAuthGate({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

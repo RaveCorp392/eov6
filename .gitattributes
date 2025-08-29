@@ -1,0 +1,7 @@
+# Force text files to be UTF-8 and normalized to LF in the repo
+* text=auto eol=lf
+*.ts  text
+*.tsx text
+*.js  text
+*.css text
+*.md  text
