@@ -1,137 +1,176 @@
-// app/page.tsx
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 
 export default function JoinPage() {
   const router = useRouter();
-  const [code, setCode] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [raw, setRaw] = React.useState<string>('');
+  const code = React.useMemo(
+    () => raw.replace(/\D/g, '').slice(0, 6),
+    [raw]
+  );
 
-  // autofocus when mounted
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  // Auto-navigate when 6 digits entered (optional, still leaves Join button)
+  React.useEffect(() => {
+    // no auto-join; keep it explicit per your preference
+  }, [code]);
 
-  const normalized = (v: string) => v.replace(/\D/g, '').slice(0, 6);
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRaw(e.target.value);
+  };
 
-  function onChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setCode(normalized(e.target.value));
-  }
-
-  function onPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+  const onPaste: React.ClipboardEventHandler<HTMLInputElement> = (e) => {
     const pasted = e.clipboardData.getData('text');
-    const next = normalized(pasted);
-    if (next.length) {
+    const digits = (pasted || '').replace(/\D/g, '').slice(0, 6);
+    if (digits) {
       e.preventDefault();
-      setCode(next);
+      setRaw(digits);
     }
-  }
+  };
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === 'Enter' && code.length === 6) {
+      doJoin();
+    }
+  };
+
+  const doJoin = () => {
     if (code.length === 6) {
-      // route to the caller session
       router.push(`/s/${code}`);
     }
-  }
+  };
 
-  const canJoin = code.length === 6;
+  // Styles are inline to guarantee centering & sizing independent of globals.
+  const styles = {
+    shell: {
+      minHeight: '100dvh',
+      display: 'grid',
+      placeItems: 'center',
+    } as React.CSSProperties,
+    card: {
+      width: 'min(680px, 92vw)',
+      display: 'grid',
+      gap: 16,
+      textAlign: 'center' as const,
+    },
+    title: { fontSize: 28, fontWeight: 700, margin: 0 },
+    label: { fontSize: 16, opacity: 0.9 },
+    inputRow: {
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      gap: 12,
+      alignItems: 'center',
+      justifyItems: 'center',
+    },
+    input: {
+      width: '100%',
+      fontFamily:
+        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+      fontSize: 32,
+      lineHeight: '48px',
+      height: 56,
+      letterSpacing: '6px',
+      textAlign: 'center' as const,
+      padding: '4px 12px',
+      borderRadius: 12,
+      border: '1px solid var(--line, #1e293b)',
+      background: '#0b1327',
+      color: 'var(--fg, #e6f2ff)',
+      outline: 'none',
+    } as React.CSSProperties,
+    joinBtn: {
+      height: 56,
+      padding: '0 20px',
+      fontSize: 18,
+      fontWeight: 600,
+      borderRadius: 12,
+      border: '1px solid var(--line, #1e293b)',
+      background: code.length === 6 ? '#2563eb' : '#0b1327',
+      color: code.length === 6 ? '#fff' : 'var(--fg, #e6f2ff)',
+      cursor: code.length === 6 ? 'pointer' : 'not-allowed',
+      opacity: code.length === 6 ? 1 : 0.6,
+    } as React.CSSProperties,
+    actions: {
+      display: 'flex',
+      gap: 12,
+      justifyContent: 'center',
+      flexWrap: 'wrap' as const,
+      marginTop: 4,
+    },
+    actionBtn: {
+      padding: '10px 14px',
+      borderRadius: 10,
+      border: '1px solid var(--line, #1e293b)',
+      background: '#0b1327',
+      color: 'var(--fg, #e6f2ff)',
+      cursor: 'pointer',
+    },
+    tip: { fontSize: 13, opacity: 0.8, marginTop: 2 },
+    watermark: { fontSize: 12, opacity: 0.5, marginTop: 8 },
+  };
 
   return (
-    <main
-      className="
-        fixed inset-0           /* break out of any global layout quirks */
-        flex items-center justify-center
-        px-4
-      "
-    >
-      <section className="w-full max-w-xl">
-        <header className="mb-6 text-center">
-          <h1 className="text-2xl sm:text-3xl font-semibold">Join your secure session</h1>
-        </header>
+    <main style={styles.shell}>
+      <section style={styles.card}>
+        <h1 style={styles.title}>Join your secure session</h1>
 
-        <form onSubmit={onSubmit} className="w-full">
-          {/* Input row */}
-          <div className="w-full flex items-center justify-center gap-3">
-            <input
-              ref={inputRef}
-              inputMode="numeric"
-              pattern="[0-9]*"
-              aria-label="6-digit code"
-              placeholder="— — — — — —"
-              value={code}
-              onChange={onChange}
-              onPaste={onPaste}
-              className="
-                block
-                w-[360px] sm:w-[420px] max-w-full
-                rounded-xl border border-white/20 bg-white/5
-                px-4 py-4
-                text-center text-2xl sm:text-3xl font-medium
-                tracking-[0.45em] [letter-spacing:0.45em]
-                caret-white
-                placeholder:opacity-70 placeholder:text-center
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-              "
-            />
+        <label style={styles.label} htmlFor="code">
+          Enter the 6-digit code your agent gave you.
+        </label>
 
-            <button
-              type="submit"
-              disabled={!canJoin}
-              className="
-                h-[56px]
-                px-5 sm:px-6 rounded-xl
-                text-base sm:text-lg font-semibold
-                bg-blue-600 text-white
-                disabled:opacity-50 disabled:cursor-not-allowed
-                hover:bg-blue-500 transition-colors
-              "
-            >
-              Join
-            </button>
-          </div>
+        <div style={styles.inputRow}>
+          <input
+            id="code"
+            type="text"
+            inputMode="numeric"
+            aria-label="6 digit code"
+            placeholder="— — — — — —"
+            value={code || raw} // shows digits; placeholder shows dashes when empty
+            onChange={onChange}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            style={styles.input}
+            maxLength={12} // raw may include spaces/dashes when typing; we sanitize anyway
+          />
 
-          {/* Helper text */}
-          <p className="mt-3 text-center text-sm opacity-80">
-            Enter the 6-digit code your agent gave you.
-          </p>
+          <button
+            type="button"
+            onClick={doJoin}
+            disabled={code.length !== 6}
+            style={styles.joinBtn}
+          >
+            Join
+          </button>
+        </div>
 
-          {/* Actions */}
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <Link
-              href="/about"
-              className="
-                inline-flex items-center justify-center
-                px-4 py-2 rounded-lg text-sm font-medium
-                border border-white/20 bg-white/5 hover:bg-white/10 transition-colors
-              "
-            >
-              Learn about EOV6
-            </Link>
+        <div style={styles.actions}>
+          <button
+            type="button"
+            style={styles.actionBtn}
+            onClick={() => location.assign('/about')}
+            aria-label="Learn about EOV6"
+          >
+            Learn about EOV6
+          </button>
 
-            <Link
-              href="/ivr"
-              className="
-                inline-flex items-center justify-center
-                px-4 py-2 rounded-lg text-sm font-medium
-                border border-white/20 bg-white/5 hover:bg-white/10 transition-colors
-              "
-            >
-              Use IVR instead
-            </Link>
-          </div>
+          <button
+            type="button"
+            style={styles.actionBtn}
+            onClick={() => location.assign('/ivr')}
+            aria-label="Use IVR instead"
+          >
+            Use IVR instead
+          </button>
+        </div>
 
-          {/* Tip + watermark */}
-          <div className="mt-6 text-center">
-            <p className="text-sm opacity-70">
-              Tip: you can paste the whole code — we’ll format it automatically.
-            </p>
-            <p className="mt-2 text-xs opacity-40">MW: root-join v3 • ui-polish</p>
-          </div>
-        </form>
+        <p style={styles.tip} className="mono">
+          Tip: you can paste the whole code — we’ll format it automatically.
+        </p>
+
+        <p style={styles.watermark} className="mono">
+          MW: root-join v4 • ui-polish
+        </p>
       </section>
     </main>
   );
