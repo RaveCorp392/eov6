@@ -1,126 +1,138 @@
+// app/page.tsx
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
-export default function Home() {
+export default function JoinPage() {
   const router = useRouter();
-  const [raw, setRaw] = useState<string>('');
+  const [code, setCode] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Focus on load
+  // autofocus when mounted
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Keep only digits, max 6
-  const setDigits = (v: string) => {
-    const digits = (v || '').replace(/\D/g, '').slice(0, 6);
-    setRaw(digits);
-  };
+  const normalized = (v: string) => v.replace(/\D/g, '').slice(0, 6);
 
-  const onPaste: React.ClipboardEventHandler<HTMLInputElement> = (e) => {
+  function onChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setCode(normalized(e.target.value));
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLInputElement>) {
     const pasted = e.clipboardData.getData('text');
-    if (pasted) {
+    const next = normalized(pasted);
+    if (next.length) {
       e.preventDefault();
-      setDigits(pasted);
+      setCode(next);
     }
-  };
+  }
 
-  const join = () => {
-    if (raw.length === 6) router.push(`/s/${raw}`);
-  };
-
-  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      join();
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (code.length === 6) {
+      // route to the caller session
+      router.push(`/s/${code}`);
     }
-  };
+  }
 
-  const disabled = raw.length !== 6;
+  const canJoin = code.length === 6;
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#0b1220] text-[#e6eefb]">
-      <div className="w-full max-w-xl px-6 py-10 text-center">
-        <h1 className="text-2xl md:text-3xl font-semibold mb-6">Join your secure session</h1>
+    <main
+      className="
+        fixed inset-0           /* break out of any global layout quirks */
+        flex items-center justify-center
+        px-4
+      "
+    >
+      <section className="w-full max-w-xl">
+        <header className="mb-6 text-center">
+          <h1 className="text-2xl sm:text-3xl font-semibold">Join your secure session</h1>
+        </header>
 
-        {/* Big input box */}
-        <div className="mb-3 flex justify-center">
-          <input
-            ref={inputRef}
-            aria-label="6-digit code"
-            autoComplete="one-time-code"
-            inputMode="numeric"
-            pattern="\d*"
-            maxLength={6}
-            value={raw}
-            onChange={(e) => setDigits(e.target.value)}
-            onPaste={onPaste}
-            onKeyDown={onKeyDown}
-            className="
-              w-[20rem] md:w-[24rem]
-              text-4xl md:text-5xl font-semibold tracking-[0.5em]
-              text-[#e6eefb] placeholder-[#7f8aa3]
-              text-center px-6 py-4
-              rounded-2xl border border-white/20 bg-white/5
-              outline-none focus:border-blue-400 focus:bg-white/[0.08]
-              transition
-            "
-            placeholder="— — — — — —"
-          />
-        </div>
+        <form onSubmit={onSubmit} className="w-full">
+          {/* Input row */}
+          <div className="w-full flex items-center justify-center gap-3">
+            <input
+              ref={inputRef}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              aria-label="6-digit code"
+              placeholder="— — — — — —"
+              value={code}
+              onChange={onChange}
+              onPaste={onPaste}
+              className="
+                block
+                w-[360px] sm:w-[420px] max-w-full
+                rounded-xl border border-white/20 bg-white/5
+                px-4 py-4
+                text-center text-2xl sm:text-3xl font-medium
+                tracking-[0.45em] [letter-spacing:0.45em]
+                caret-white
+                placeholder:opacity-70 placeholder:text-center
+                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+              "
+            />
 
-        {/* Helper/label under the box */}
-        <p className="text-base md:text-lg text-[#b6c2df] mb-5">
-          Enter the 6-digit code your agent gave you.
-        </p>
+            <button
+              type="submit"
+              disabled={!canJoin}
+              className="
+                h-[56px]
+                px-5 sm:px-6 rounded-xl
+                text-base sm:text-lg font-semibold
+                bg-blue-600 text-white
+                disabled:opacity-50 disabled:cursor-not-allowed
+                hover:bg-blue-500 transition-colors
+              "
+            >
+              Join
+            </button>
+          </div>
 
-        {/* Primary join button */}
-        <div className="mb-6">
-          <button
-            type="button"
-            onClick={join}
-            disabled={disabled}
-            className={`
-              inline-flex items-center justify-center
-              rounded-xl px-6 py-3 text-base md:text-lg font-medium
-              ${disabled
-                ? 'bg-blue-500/30 text-white/50 cursor-not-allowed'
-                : 'bg-blue-500 hover:bg-blue-600 text-white'}
-              transition
-            `}
-          >
-            Join
-          </button>
-        </div>
+          {/* Helper text */}
+          <p className="mt-3 text-center text-sm opacity-80">
+            Enter the 6-digit code your agent gave you.
+          </p>
 
-        {/* Secondary actions as actual buttons */}
-        <div className="flex items-center justify-center gap-3 mb-6">
-          <button
-            type="button"
-            onClick={() => router.push('/about')}
-            className="rounded-xl px-4 py-2 border border-white/20 text-[#e6eefb] hover:bg-white/5 transition"
-          >
-            Learn about EOV6
-          </button>
-          <button
-            type="button"
-            onClick={() => router.push('/ivr')}
-            className="rounded-xl px-4 py-2 border border-white/20 text-[#e6eefb] hover:bg-white/5 transition"
-          >
-            Use IVR instead
-          </button>
-        </div>
+          {/* Actions */}
+          <div className="mt-6 flex items-center justify-center gap-3">
+            <Link
+              href="/about"
+              className="
+                inline-flex items-center justify-center
+                px-4 py-2 rounded-lg text-sm font-medium
+                border border-white/20 bg-white/5 hover:bg-white/10 transition-colors
+              "
+            >
+              Learn about EOV6
+            </Link>
 
-        {/* Tip */}
-        <p className="text-sm text-[#8fa0c5]">
-          Tip: you can paste the whole code — we’ll format it automatically.
-        </p>
+            <Link
+              href="/ivr"
+              className="
+                inline-flex items-center justify-center
+                px-4 py-2 rounded-lg text-sm font-medium
+                border border-white/20 bg-white/5 hover:bg-white/10 transition-colors
+              "
+            >
+              Use IVR instead
+            </Link>
+          </div>
 
-        {/* tiny watermark so we know the build is live */}
-        <p className="mt-8 text-xs text-[#6d7aa0]">MW: root-join v3 • ui-polish</p>
-      </div>
+          {/* Tip + watermark */}
+          <div className="mt-6 text-center">
+            <p className="text-sm opacity-70">
+              Tip: you can paste the whole code — we’ll format it automatically.
+            </p>
+            <p className="mt-2 text-xs opacity-40">MW: root-join v3 • ui-polish</p>
+          </div>
+        </form>
+      </section>
     </main>
   );
 }
