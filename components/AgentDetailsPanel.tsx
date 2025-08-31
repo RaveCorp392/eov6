@@ -1,39 +1,39 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { db } from "@/lib/firebase";
-import { doc, onSnapshot } from "firebase/firestore";
+import React, { useEffect, useState } from 'react';
+import { getCallerDetails } from '@/lib/firebase';
 
-type Props = { code: string };
+type Details = { name?: string; email?: string; phone?: string; notes?: string };
 
-type Caller = {
-  fullName?: string;
-  email?: string;
-  phone?: string;
-  identified?: boolean;
-};
-
-export default function AgentDetailsPanel({ code }: Props) {
-  const [caller, setCaller] = useState<Caller | null>(null);
+export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) {
+  const [details, setDetails] = useState<Details | null>(null);
 
   useEffect(() => {
-    // Listen to sessions/{code}/meta/caller
-    const ref = doc(db, "sessions", code, "meta", "caller");
-    const unsub = onSnapshot(ref, (snap) => {
-      setCaller(snap.exists() ? (snap.data() as Caller) : null);
-    });
-    return () => unsub();
-  }, [code]);
+    let alive = true;
+    async function poll() {
+      try {
+        const d = await getCallerDetails(sessionId) as Details | null;
+        if (alive) setDetails(d);
+      } catch { /* ignore */ }
+    }
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [sessionId]);
 
   return (
-    <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-white/90">Caller details</h3>
-      <div className="text-sm leading-6 text-white/80">
-        <div>Name — {caller?.fullName ?? "— —"}</div>
-        <div>Email — {caller?.email ?? "— —"}</div>
-        <div>Phone — {caller?.phone ?? "— —"}</div>
-        <div>Identified — {caller?.identified ? "Yes" : "No"}</div>
-      </div>
+    <section className="panel" style={{ width: 'min(36rem, 92vw)' }}>
+      <h2 style={{ margin: '0 0 8px 0' }}>Caller details</h2>
+      {!details ? (
+        <div className="small">No details yet.</div>
+      ) : (
+        <ul style={{ margin: 0, paddingLeft: 16 }}>
+          {details.name && <li><b>Name:</b> {details.name}</li>}
+          {details.email && <li><b>Email:</b> {details.email}</li>}
+          {details.phone && <li><b>Phone:</b> {details.phone}</li>}
+          {details.notes && <li><b>Notes:</b> {details.notes}</li>}
+        </ul>
+      )}
     </section>
   );
 }

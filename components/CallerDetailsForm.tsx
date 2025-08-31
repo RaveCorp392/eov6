@@ -1,79 +1,90 @@
+// components/CallerDetailsForm.tsx
 "use client";
 
 import { useState } from "react";
-import { db } from "@/lib/firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { postDetails, uploadFile, type CallerDetails } from "@/lib/firebase";
 
-type Props = {
-  code: string; // session code
-};
+type Props = { sessionId: string };
 
-export default function CallerDetailsForm({ code }: Props) {
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail]     = useState("");
-  const [phone, setPhone]     = useState("");
-  const [busy, setBusy]       = useState(false);
+export default function CallerDetailsForm({ sessionId }: Props) {
+  const [form, setForm] = useState<CallerDetails>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  async function onSend() {
-    if (busy) return;
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
     setBusy(true);
+    setErr(null);
     try {
-      // Write to a stable location the agent panel will read:
-      // sessions/{code}/meta/caller
-      await setDoc(
-        doc(db, "sessions", code, "meta", "caller"),
-        {
-          fullName,
-          email,
-          phone,
-          identified: !!(fullName || email || phone),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      alert("Details sent!");
-      // Optional: clear inputs
-      // setFullName(""); setEmail(""); setPhone("");
-    } catch (e) {
-      console.error(e);
-      alert("Failed to send details. Please try again.");
+      await postDetails(sessionId, form);
+    } catch (e: any) {
+      setErr(e.message ?? "Failed to send details");
     } finally {
       setBusy(false);
     }
   }
 
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const url = await uploadFile(sessionId, f);
+      setForm((x) => ({ ...x, uploadedUrl: url }));
+    } catch (e: any) {
+      setErr(e.message ?? "Upload failed");
+    } finally {
+      setBusy(false);
+      e.currentTarget.value = "";
+    }
+  }
+
   return (
-    <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-white/90">Send your details</h3>
-      <div className="flex gap-2">
+    <form onSubmit={onSubmit} className="panel" style={{ maxWidth: 560 }}>
+      <div className="mb-2 small">Share your details with the agent (optional)</div>
+
+      <input
+        className="input mb-2"
+        placeholder="Your name"
+        value={form.name ?? ""}
+        onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))}
+      />
+      <input
+        className="input mb-2"
+        placeholder="you@example.com"
+        value={form.email ?? ""}
+        onChange={(e) => setForm((x) => ({ ...x, email: e.target.value }))}
+        inputMode="email"
+      />
+      <input
+        className="input mb-3"
+        placeholder="0400 000 000"
+        value={form.phone ?? ""}
+        onChange={(e) => setForm((x) => ({ ...x, phone: e.target.value }))}
+        inputMode="tel"
+      />
+
+      <div className="mb-2">
+        <label className="small">File upload (images & PDF, up to 10 MB)</label>
         <input
-          className="min-w-[14rem] rounded px-2 py-1 text-sm bg-white/5 text-white border border-white/10"
-          placeholder="Full name"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
+          type="file"
+          className="input mt-1"
+          accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+          onChange={onPickFile}
         />
-        <input
-          className="min-w-[18rem] rounded px-2 py-1 text-sm bg-white/5 text-white border border-white/10"
-          placeholder="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          className="min-w-[12rem] rounded px-2 py-1 text-sm bg-white/5 text-white border border-white/10"
-          placeholder="Phone"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
-        <button
-          onClick={onSend}
-          disabled={busy}
-          className="rounded bg-white/10 hover:bg-white/20 px-3 py-1 text-sm text-white border border-white/20"
-        >
-          {busy ? "Sending…" : "Send details"}
-        </button>
+        {form.uploadedUrl && (
+          <div className="small mt-1">
+            Uploaded: <a href={form.uploadedUrl}>preview</a>
+          </div>
+        )}
       </div>
-    </section>
+
+      {err && <div className="small" style={{ color: "#fca5a5" }}>{err}</div>}
+
+      <button className="button" disabled={busy}>
+        {busy ? "Sending…" : "Send details"}
+      </button>
+    </form>
   );
 }
