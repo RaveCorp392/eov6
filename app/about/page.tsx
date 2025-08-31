@@ -1,61 +1,68 @@
-export const metadata = {
-  title: "About EOV6",
-  description: "What EOV6 is, how it works, and how we keep data safe.",
-};
+'use client';
+
+import Link from 'next/link';
 
 export default function AboutPage() {
   return (
-    <main className="max-w-3xl mx-auto p-6 leading-relaxed">
-      <h1 className="text-2xl font-semibold mb-4">About EOV6</h1>
+    <main
+      className="col"
+      style={{
+        minHeight: '100vh',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 16,
+      }}
+    >
+      <section className="panel" style={{ width: '100%', maxWidth: 640 }}>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700 }}>About EOV6</h1>
+        <p className="small" style={{ marginTop: 4 }}>Ephemeral one-visit secure chat</p>
 
-      <p className="mb-6">
-        EOV6 (“Ephemeral One-Visit v6”) is a tiny, secure bridge for agents and
-        callers to share short messages and files during a live interaction.
-        Sessions are temporary and cleared automatically by policy when the
-        session ends.
-      </p>
+        <div style={{ height: 12 }} />
 
-      <section className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">How it works</h2>
-        <ol className="list-decimal pl-5 space-y-1">
-          <li>The agent creates a session and reads a six-digit code to the caller.</li>
-          <li>The caller enters the code at <span className="mono">eov6.com</span>.</li>
-          <li>Both sides can exchange short messages and upload a file (image or PDF).</li>
-          <li>When the session ends, data is cleared as part of our ephemerality policy.</li>
-        </ol>
-      </section>
-
-      <section className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">Privacy & data retention</h2>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>Chats and files are <strong>ephemeral</strong> and removed at the end of the session.</li>
-          <li>No profiling, no background analytics on chat contents.</li>
-          <li>Only the session participants can see the shared data.</li>
-        </ul>
-      </section>
-
-      <section className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">Accessibility</h2>
-        <p className="mb-2">
-          We aim to meet WCAG 2.2 AA for colour contrast, focus states, labels,
-          and keyboard support. Current highlights:
-        </p>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>High-contrast theme and visible focus rings.</li>
-          <li>Keyboard first: <span className="mono">Enter</span> sends, <span className="mono">Shift+Enter</span> new line.</li>
-          <li>ARIA labels on the join input and buttons.</li>
-        </ul>
-      </section>
-
-      <section className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">Contact</h2>
         <p>
-          Questions or feedback? Reach us at{" "}
-          <a className="underline" href="mailto:hello@eov6.com">hello@eov6.com</a>.
+          EOV6 lets an agent and a caller share a temporary, secure chat for the
+          duration of a support session. When the session ends, the transcript and any
+          shared files are cleared according to policy.
+        </p>
+
+        <h2 style={{ fontSize: 18, marginTop: 18 }}>How it works</h2>
+        <ol style={{ paddingLeft: 18, marginTop: 8 }}>
+          <li>Agent creates a session and gives the caller a 6-digit code.</li>
+          <li>Caller goes to <span className="mono">eov6.com</span> and enters the code.</li>
+          <li>Both parties can chat and exchange permitted files during the session.</li>
+          <li>Ending the session clears the shared chat for both sides.</li>
+        </ol>
+
+        <h2 style={{ fontSize: 18, marginTop: 18 }}>Privacy & data handling</h2>
+        <p>
+          EOV6 is built around ephemeral retention. We store only what’s needed to run the
+          current session. When a session ends, shared data is cleared by design.
+        </p>
+
+        <h2 style={{ fontSize: 18, marginTop: 18 }}>Accessibility</h2>
+        <p>
+          We’re aligning with WCAG AA guidance on contrast, focus states, keyboard
+          navigation, and scalable text. If something doesn’t work for you, please let us
+          know so we can fix it.
+        </p>
+
+        <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
+          <Link href="/" className="button" aria-label="Back to join screen">
+            Back to join
+          </Link>
+          <a
+            className="button"
+            href="mailto:hello@eov6.com?subject=EOV6%20feedback"
+            aria-label="Email feedback"
+          >
+            Send feedback
+          </a>
+        </div>
+
+        <p className="small" style={{ marginTop: 12 }}>
+          Build: UI polish stream • {new Date().toISOString().slice(0, 10)}
         </p>
       </section>
-
-      <p className="small">Build: v0.1 – live test environment.</p>
     </main>
   );
 }
