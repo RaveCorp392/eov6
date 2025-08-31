@@ -1,68 +1,126 @@
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
-  const [code, setCode] = useState("");
-  const r = useRouter();
+  const router = useRouter();
+  const [raw, setRaw] = useState<string>('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  function formatSix(val: string) {
-    return val.replace(/\D/g, "").slice(0, 6);
-  }
+  // Focus on load
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
-  function onChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setCode(formatSix(e.target.value));
-  }
+  // Keep only digits, max 6
+  const setDigits = (v: string) => {
+    const digits = (v || '').replace(/\D/g, '').slice(0, 6);
+    setRaw(digits);
+  };
 
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    const c = formatSix(code);
-    if (c.length === 6) r.push(`/s/${c}`);
-  }
+  const onPaste: React.ClipboardEventHandler<HTMLInputElement> = (e) => {
+    const pasted = e.clipboardData.getData('text');
+    if (pasted) {
+      e.preventDefault();
+      setDigits(pasted);
+    }
+  };
 
-  const placeholder = "－ － －  － － －"; // visual clue of 6 digits
+  const join = () => {
+    if (raw.length === 6) router.push(`/s/${raw}`);
+  };
+
+  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      join();
+    }
+  };
+
+  const disabled = raw.length !== 6;
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#0b1220] text-[#e6eefb]">
-      <form onSubmit={onSubmit} className="w-full max-w-md text-center">
-        <h1 className="mb-6 text-2xl font-semibold">Join your secure session</h1>
+    <main className="min-h-screen flex items-center justify-center bg-[#0b1220] text-[#e6eefb]">
+      <div className="w-full max-w-xl px-6 py-10 text-center">
+        <h1 className="text-2xl md:text-3xl font-semibold mb-6">Join your secure session</h1>
 
-        <label className="mb-2 block text-sm text-white/70" htmlFor="code">
-          Enter the 6-digit code your agent gave you.
-        </label>
-
-        <input
-          id="code"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          autoComplete="one-time-code"
-          value={code}
-          onChange={onChange}
-          className="w-full rounded-2xl border border-white/15 bg-white/5 px-5 py-4 text-center text-3xl tracking-[0.4em] placeholder:tracking-[0.25em] placeholder:text-white/30 focus:outline-none"
-          placeholder={placeholder}
-          aria-label="6 digit code"
-        />
-
-        <button
-          type="submit"
-          disabled={code.length !== 6}
-          className="mt-4 w-full rounded-xl bg-blue-600 px-4 py-3 text-white disabled:opacity-40"
-        >
-          Join
-        </button>
-
-        <div className="mt-6 flex flex-col items-center gap-2 text-sm">
-          <a href="/about" className="underline">Learn about EOV6</a>
-          <div className="flex gap-3">
-            <a href="/ivr" className="rounded-lg border border-white/15 px-3 py-2 underline">
-              Use IVR instead
-            </a>
-          </div>
+        {/* Big input box */}
+        <div className="mb-3 flex justify-center">
+          <input
+            ref={inputRef}
+            aria-label="6-digit code"
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            pattern="\d*"
+            maxLength={6}
+            value={raw}
+            onChange={(e) => setDigits(e.target.value)}
+            onPaste={onPaste}
+            onKeyDown={onKeyDown}
+            className="
+              w-[20rem] md:w-[24rem]
+              text-4xl md:text-5xl font-semibold tracking-[0.5em]
+              text-[#e6eefb] placeholder-[#7f8aa3]
+              text-center px-6 py-4
+              rounded-2xl border border-white/20 bg-white/5
+              outline-none focus:border-blue-400 focus:bg-white/[0.08]
+              transition
+            "
+            placeholder="— — — — — —"
+          />
         </div>
 
-        <p className="mt-6 text-xs text-white/40">Tip: you can paste the whole code — we’ll format it automatically.</p>
-      </form>
+        {/* Helper/label under the box */}
+        <p className="text-base md:text-lg text-[#b6c2df] mb-5">
+          Enter the 6-digit code your agent gave you.
+        </p>
+
+        {/* Primary join button */}
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={join}
+            disabled={disabled}
+            className={`
+              inline-flex items-center justify-center
+              rounded-xl px-6 py-3 text-base md:text-lg font-medium
+              ${disabled
+                ? 'bg-blue-500/30 text-white/50 cursor-not-allowed'
+                : 'bg-blue-500 hover:bg-blue-600 text-white'}
+              transition
+            `}
+          >
+            Join
+          </button>
+        </div>
+
+        {/* Secondary actions as actual buttons */}
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <button
+            type="button"
+            onClick={() => router.push('/about')}
+            className="rounded-xl px-4 py-2 border border-white/20 text-[#e6eefb] hover:bg-white/5 transition"
+          >
+            Learn about EOV6
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/ivr')}
+            className="rounded-xl px-4 py-2 border border-white/20 text-[#e6eefb] hover:bg-white/5 transition"
+          >
+            Use IVR instead
+          </button>
+        </div>
+
+        {/* Tip */}
+        <p className="text-sm text-[#8fa0c5]">
+          Tip: you can paste the whole code — we’ll format it automatically.
+        </p>
+
+        {/* tiny watermark so we know the build is live */}
+        <p className="mt-8 text-xs text-[#6d7aa0]">MW: root-join v3 • ui-polish</p>
+      </div>
     </main>
   );
 }
