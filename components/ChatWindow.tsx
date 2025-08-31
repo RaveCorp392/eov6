@@ -1,129 +1,131 @@
-// components/ChatWindow.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 type Role = "AGENT" | "CALLER";
 
-type ChatWindowProps = {
-  sessionCode: string;
-  role: Role;
-};
+type ChatEvent =
+  | { id: string; type: "TEXT"; text: string; role: Role; createdAt?: any }
+  | { id: string; type: "FILE"; name: string; url: string; size?: number; role: Role; createdAt?: any }
+  | { id: string; type: "DETAILS"; role: Role; createdAt?: any };
 
-// NOTE: Replace these stubs with your existing data layer (subscribe/send).
-type Msg = { id: string; from: Role | "SYSTEM"; text: string };
-async function sendMessageStub(_session: string, _role: Role, _text: string) {}
-function useMessagesStub(_session: string) {
-  const [msgs] = useState<Msg[]>([]);
-  return msgs;
+interface Props {
+  sessionId: string;
+  role: Role;
+  className?: string;
 }
 
-export default function ChatWindow({ sessionCode, role }: ChatWindowProps) {
-  // If you already have hooks for messages and send, plug them here.
-  const messages = useMessagesStub(sessionCode);
-  const [text, setText] = useState("");
-  const listRef = useRef<HTMLDivElement>(null);
+export default function ChatWindow({ sessionId, role, className = "" }: Props) {
+  const [events, setEvents] = useState<ChatEvent[]>([]);
+  const [input, setInput] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll on new messages
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages.length]);
+    const qy = query(
+      collection(db, "sessions", sessionId, "events"),
+      orderBy("createdAt", "asc")
+    );
+    const unsub = onSnapshot(qy, (snap) => {
+      const rows: ChatEvent[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      setEvents(rows);
+      // autoscroll
+      requestAnimationFrame(() => {
+        boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight, behavior: "smooth" });
+      });
+    });
+    return () => unsub();
+  }, [sessionId]);
 
-  async function send() {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    await sendMessageStub(sessionCode, role, text); // keep original whitespace
-    setText("");
+  async function sendMessage() {
+    const text = input.trim();
+    if (!text) return;
+    await addDoc(collection(db, "sessions", sessionId, "events"), {
+      type: "TEXT",
+      text,                    // keep \n — we render with whitespace-pre-wrap
+      role,
+      createdAt: serverTimestamp(),
+    });
+    setInput("");
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void send();
+      void sendMessage();
     }
+    // Shift+Enter falls through to create a newline
   }
 
   return (
-    <div className="w-full flex justify-center">
+    <div className={`mx-auto w-full max-w-xl`}>
+      {/* Chat area */}
       <div
-        className="
-          w-full max-w-[720px]
-          rounded-2xl border border-white/10 bg-[#0f1730]/60
-          shadow-[0_10px_30px_rgba(0,0,0,0.3)]
-          p-0 overflow-hidden
-        "
+        ref={boxRef}
+        className={`h-[70vh] overflow-y-auto rounded-xl border border-white/10 bg-white/5 p-3 ${className}`}
+        aria-live="polite"
       >
-        {/* Messages */}
-        <div
-          ref={listRef}
-          className="
-            h-[70vh] overflow-y-auto p-4
-            space-y-3
-          "
-        >
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`
-                max-w-[85%] rounded-2xl px-4 py-3
-                ${m.from === "AGENT"
-                  ? "ml-auto bg-blue-600/90 text-white"
-                  : m.from === "CALLER"
-                  ? "mr-auto bg-white/10 text-[#e6eefb] border border-white/10"
-                  : "mx-auto bg-yellow-500/15 text-yellow-200 border border-yellow-500/20"}
-              `}
-            >
-              {/* PRE-WRAP → Shift+Enter renders as new lines */}
-              <div className="whitespace-pre-wrap break-words text-[15px] leading-6">
-                {m.text}
-              </div>
-            </div>
-          ))}
-
-          {messages.length === 0 && (
-            <div className="text-center text-white/45 pt-10 text-sm">
-              No messages yet. Say hello!
-            </div>
-          )}
-        </div>
-
-        {/* Composer */}
-        <div className="border-t border-white/10 p-3">
-          <div className="flex gap-2 items-end">
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder="Type a message…  (Enter = send, Shift+Enter = newline)"
-              rows={2}
-              className="
-                flex-1 resize-y min-h-[44px] max-h-[160px]
-                rounded-xl px-3 py-2
-                bg-[#0b1220] text-[#e6eefb] placeholder-white/35
-                border border-white/15 focus:border-white/35 outline-none
-              "
-            />
-
-            <button
-              onClick={() => void send()}
-              disabled={!text.trim()}
-              className="
-                shrink-0 rounded-xl px-4 h-[44px]
-                bg-blue-600 text-white font-medium
-                disabled:opacity-50 disabled:cursor-not-allowed
-                hover:bg-blue-500 transition
-              "
-            >
-              Send
-            </button>
-          </div>
-
-          <p className="mt-2 text-xs text-white/45">
-            Press <span className="text-white">Enter</span> to send,{" "}
-            <span className="text-white">Shift+Enter</span> for a new line.
-          </p>
-        </div>
+        {events.length === 0 && (
+          <p className="text-xs text-white/60">No messages yet. Say hello!</p>
+        )}
+        <ul className="space-y-2">
+          {events.map((ev) => {
+            const mine = ev.role === role;
+            return (
+              <li key={ev.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                <div
+                  className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap leading-5 ${
+                    ev.type === "FILE"
+                      ? mine
+                        ? "bg-blue-600/30 text-blue-50"
+                        : "bg-white/10 text-blue-100"
+                      : mine
+                        ? "bg-blue-600/30 text-blue-50"
+                        : "bg-white/10 text-white"
+                  }`}
+                >
+                  {ev.type === "TEXT" && <span>{(ev as any).text}</span>}
+                  {ev.type === "FILE" && (
+                    <a
+                      href={(ev as any).url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                    >
+                      {(ev as any).name}
+                    </a>
+                  )}
+                  {ev.type === "DETAILS" && <span className="italic opacity-80">Caller details shared</span>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
+
+      {/* Composer */}
+      <div className="mt-3 flex items-end gap-2">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          rows={2}
+          className="flex-1 rounded-lg border border-white/10 bg-white/5 p-2 text-sm text-white placeholder-white/40 focus:outline-none"
+          placeholder="Type a message... (Enter = send, Shift+Enter = newline)"
+        />
+        <button
+          onClick={sendMessage}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          disabled={!input.trim()}
+        >
+          Send
+        </button>
+      </div>
+
+      <p className="mt-1 text-[11px] text-white/50">
+        Press <kbd>Enter</kbd> to send, <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line.
+      </p>
     </div>
   );
 }
