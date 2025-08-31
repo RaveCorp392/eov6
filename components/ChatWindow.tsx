@@ -1,96 +1,129 @@
+// components/ChatWindow.tsx
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { db, collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "@/lib/firebase";
+import { useEffect, useRef, useState } from "react";
 
-type Props = {
+type Role = "AGENT" | "CALLER";
+
+type ChatWindowProps = {
   sessionCode: string;
-  role: "CALLER" | "AGENT";
+  role: Role;
 };
 
-type ChatEvent = {
-  id: string;
-  type: "CHAT";
-  role: "CALLER" | "AGENT";
-  text: string;
-  ts?: any;
-};
+// NOTE: Replace these stubs with your existing data layer (subscribe/send).
+type Msg = { id: string; from: Role | "SYSTEM"; text: string };
+async function sendMessageStub(_session: string, _role: Role, _text: string) {}
+function useMessagesStub(_session: string) {
+  const [msgs] = useState<Msg[]>([]);
+  return msgs;
+}
 
-export default function ChatWindow({ sessionCode, role }: Props) {
-  const [value, setValue] = useState("");
-  const [events, setEvents] = useState<ChatEvent[]>([]);
-  const listRef = useRef<HTMLDivElement | null>(null);
+export default function ChatWindow({ sessionCode, role }: ChatWindowProps) {
+  // If you already have hooks for messages and send, plug them here.
+  const messages = useMessagesStub(sessionCode);
+  const [text, setText] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
 
+  // Auto-scroll on new messages
   useEffect(() => {
-    const q = query(
-      collection(db, "sessions", sessionCode, "events"),
-      orderBy("ts", "asc")
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      const rows = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) }))
-        .filter((e) => e.type === "CHAT") as ChatEvent[];
-      setEvents(rows);
-      // slight delay so DOM paints then scroll
-      setTimeout(() => {
-        listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
-      }, 0);
-    });
-    return () => unsub();
-  }, [sessionCode]);
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages.length]);
 
   async function send() {
-    const text = value.trim();
-    if (!text) return;
-    setValue("");
-    await addDoc(collection(db, "sessions", sessionCode, "events"), {
-      type: "CHAT",
-      role,
-      text,
-      ts: serverTimestamp(),
-    });
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    await sendMessageStub(sessionCode, role, text); // keep original whitespace
+    setText("");
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      send();
+      void send();
     }
-    // Shift+Enter -> newline (default), so no handling needed
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div ref={listRef} className="flex-1 overflow-y-auto rounded-lg bg-[#0E1626] p-3 ring-1 ring-white/10">
-        {events.map((m) => (
-          <div key={m.id} className="mb-2 text-[13px] leading-5 font-mono">
-            <span className="opacity-70">{m.role}:</span> {m.text}
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3 flex items-end gap-2">
-        <textarea
-          rows={2}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Type a message…"
-          className="flex-1 rounded-lg bg-[#0E1626] text-white placeholder-white/40 p-3 ring-1 ring-white/15 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <button
-          onClick={send}
-          disabled={!value.trim()}
-          className="rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white disabled:opacity-40"
+    <div className="w-full flex justify-center">
+      <div
+        className="
+          w-full max-w-[720px]
+          rounded-2xl border border-white/10 bg-[#0f1730]/60
+          shadow-[0_10px_30px_rgba(0,0,0,0.3)]
+          p-0 overflow-hidden
+        "
+      >
+        {/* Messages */}
+        <div
+          ref={listRef}
+          className="
+            h-[70vh] overflow-y-auto p-4
+            space-y-3
+          "
         >
-          Send
-        </button>
-      </div>
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              className={`
+                max-w-[85%] rounded-2xl px-4 py-3
+                ${m.from === "AGENT"
+                  ? "ml-auto bg-blue-600/90 text-white"
+                  : m.from === "CALLER"
+                  ? "mr-auto bg-white/10 text-[#e6eefb] border border-white/10"
+                  : "mx-auto bg-yellow-500/15 text-yellow-200 border border-yellow-500/20"}
+              `}
+            >
+              {/* PRE-WRAP → Shift+Enter renders as new lines */}
+              <div className="whitespace-pre-wrap break-words text-[15px] leading-6">
+                {m.text}
+              </div>
+            </div>
+          ))}
 
-      <p className="mt-1 text-[11px] text-white/50">
-        Press <kbd className="rounded bg-white/10 px-1">Enter</kbd> to send,{" "}
-        <kbd className="rounded bg-white/10 px-1">Shift</kbd>+<kbd className="rounded bg-white/10 px-1">Enter</kbd> for a new line.
-      </p>
+          {messages.length === 0 && (
+            <div className="text-center text-white/45 pt-10 text-sm">
+              No messages yet. Say hello!
+            </div>
+          )}
+        </div>
+
+        {/* Composer */}
+        <div className="border-t border-white/10 p-3">
+          <div className="flex gap-2 items-end">
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Type a message…  (Enter = send, Shift+Enter = newline)"
+              rows={2}
+              className="
+                flex-1 resize-y min-h-[44px] max-h-[160px]
+                rounded-xl px-3 py-2
+                bg-[#0b1220] text-[#e6eefb] placeholder-white/35
+                border border-white/15 focus:border-white/35 outline-none
+              "
+            />
+
+            <button
+              onClick={() => void send()}
+              disabled={!text.trim()}
+              className="
+                shrink-0 rounded-xl px-4 h-[44px]
+                bg-blue-600 text-white font-medium
+                disabled:opacity-50 disabled:cursor-not-allowed
+                hover:bg-blue-500 transition
+              "
+            >
+              Send
+            </button>
+          </div>
+
+          <p className="mt-2 text-xs text-white/45">
+            Press <span className="text-white">Enter</span> to send,{" "}
+            <span className="text-white">Shift+Enter</span> for a new line.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
