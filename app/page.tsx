@@ -1,142 +1,140 @@
 // app/page.tsx
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 export default function JoinPage() {
-  const router = useRouter();
   const [code, setCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
-  // Normalise to digits only, max 6
-  function handleChange(raw: string) {
-    const digits = raw.replace(/\D/g, "").slice(0, 6);
-    setCode(digits);
-  }
-
-  function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
-    const txt = e.clipboardData.getData("text");
-    handleChange(txt);
-    e.preventDefault();
+  useEffect(() => {
+    // autofocus the field
     inputRef.current?.focus();
+  }, []);
+
+  function setFromPaste(v: string) {
+    // Accept paste of full strings (e.g. “code 123456”), keep only first 6 digits
+    const onlyDigits = (v.match(/\d/g) || []).join("").slice(0, 6);
+    setCode(onlyDigits);
   }
 
-  function handleSubmit(e?: React.FormEvent) {
+  async function onSubmit(e?: React.FormEvent) {
     e?.preventDefault();
-    if (code.length === 6) router.push(`/s/${code}`);
+    if (code.length !== 6 || submitting) return;
+    setSubmitting(true);
+    try {
+      router.push(`/s/${code}`);
+    } finally {
+      setSubmitting(false);
+    }
   }
-
-  // Visual: entered digits + remaining dashes, spaced
-  const display = useMemo(() => {
-    const filled = code.split("");
-    const remaining = Array(Math.max(0, 6 - filled.length)).fill("–"); // en dash
-    const out = [...filled, ...remaining].join(" ");
-    return out;
-  }, [code]);
 
   return (
-    <main className="min-h-screen bg-[#0b1220] text-[#e6eefb] flex items-center justify-center p-6">
-      <div className="w-full max-w-xl">
-        <h1 className="text-xl sm:text-2xl font-semibold mb-2">
+    <main
+      className="min-h-screen flex items-center justify-center"
+      style={{ background: "#0b1220", color: "#e6eefb" }}
+    >
+      <div className="w-full max-w-xl px-6">
+        <h1 className="text-2xl md:text-3xl font-semibold mb-6">
           Join your secure session
         </h1>
-        <p className="text-sm opacity-80 mb-6">
+
+        <p className="text-sm opacity-80 mb-8">
           Enter the 6-digit code your agent gave you. Data is cleared
           automatically by policy.
         </p>
 
-        {/* Single input with overlayed dashed display */}
-        <form onSubmit={handleSubmit} className="mb-5">
-          <div
-            className="relative mx-auto"
-            aria-label="Enter six digit code"
-            role="group"
-          >
-            {/* Visible formatted layer */}
-            <div
-              className="select-none text-center font-mono tracking-[0.35em] sm:tracking-[0.45em] text-3xl sm:text-4xl leading-[1.1] py-4 px-4
-                         rounded-2xl bg-[#0e1528] border border-white/10 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]
-                         outline-none"
-              onClick={() => inputRef.current?.focus()}
-            >
-              {display}
-            </div>
+        <form onSubmit={onSubmit} className="flex flex-col items-center gap-6">
+          {/* One big field with dashed placeholders */}
+          <div className="w-full">
+            <label htmlFor="code" className="sr-only">
+              6 digit code
+            </label>
 
-            {/* Real input (transparent), captures typing/paste, mobile numeric keypad */}
             <input
+              id="code"
               ref={inputRef}
-              type="text"
               inputMode="numeric"
               pattern="[0-9]*"
               autoComplete="one-time-code"
-              aria-label="Six digit code"
-              title="Six digit code"
+              maxLength={6}
               value={code}
-              onChange={(e) => handleChange(e.target.value)}
-              onPaste={handlePaste}
-              className="absolute inset-0 w-full h-full bg-transparent text-transparent caret-white
-                         tracking-[0.35em] sm:tracking-[0.45em] text-3xl sm:text-4xl
-                         rounded-2xl outline-none px-4 py-4"
-            />
-          </div>
-
-          <div className="mt-3 text-xs opacity-70">
-            Tip: you can paste a full code; we’ll format it automatically.
-          </div>
-
-          <div className="mt-5 flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={code.length !== 6}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Join
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setCode("");
-                inputRef.current?.focus();
+              onChange={(e) => setFromPaste(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter submits
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onSubmit();
+                }
               }}
-              className="text-sm opacity-80 hover:opacity-100 underline decoration-white/30"
-            >
-              Clear
-            </button>
-          </div>
-        </form>
+              className="
+                w-full text-center tracking-[0.35em]
+                rounded-2xl bg-[#0f172a] border border-[#1e2a44]
+                focus:border-[#4aa8ff] outline-none
+                placeholder-[#33415f]
+                mx-auto
+              "
+              // BIG type scale
+              style={{
+                fontSize: "2.25rem", // ~36px
+                lineHeight: "3rem",
+                padding: "1.25rem 1rem",
+                color: "#e6eefb",
+              }}
+              placeholder="— — — — — —"
+              aria-label="6 digit code"
+            />
 
-        {/* Lightweight footer links */}
-        <div className="text-sm space-y-2">
-          <div>
-            <a
+            <div className="mt-2 text-xs opacity-70 text-center">
+              Tip: you can paste a full code; we’ll format it automatically.
+            </div>
+          </div>
+
+          {/* Primary action */}
+          <button
+            type="submit"
+            disabled={code.length !== 6 || submitting}
+            className="
+              w-full md:w-64 rounded-2xl py-3 text-base font-medium
+              bg-[#3b82f6] text-white disabled:opacity-40
+              hover:bg-[#2563eb] transition
+            "
+          >
+            {submitting ? "Joining…" : "Join"}
+          </button>
+
+          {/* Secondary actions */}
+          <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+            <Link
               href="/marketing"
-              className="text-[inherit] underline decoration-white/30 hover:opacity-100 opacity-80"
+              className="
+                flex-1 md:flex-none text-center rounded-2xl py-3
+                bg-[#1b253d] text-[#e6eefb] hover:bg-[#1f2b48] transition
+              "
             >
               Learn about EOV6
-            </a>
-          </div>
-          <div className="opacity-80">
-            Agents: go to{" "}
-            <a
-              href="/agent"
-              className="text-[inherit] underline decoration-white/30"
+            </Link>
+
+            <Link
+              href="/ivr"
+              className="
+                flex-1 md:flex-none text-center rounded-2xl py-3
+                bg-[#1b253d] text-[#e6eefb] hover:bg-[#1f2b48] transition
+              "
             >
-              Agent Console
-            </a>
-            .
-          </div>
-          <div className="text-xs opacity-60">
-            By continuing you agree to ephemeral retention and our acceptable
-            use.
+              IVR instructions
+            </Link>
           </div>
 
-          {/* Tiny watermark so we can verify the correct build */}
-          <div className="text-[10px] opacity-50 pt-2">
-            MW: root-join v2 • single-box • dashes
+          {/* tiny watermark to confirm deploy */}
+          <div className="text-[10px] opacity-50 mt-2 text-center">
+            ui-polish • one-field-six • {new Date().toISOString().slice(0, 10)}
           </div>
-        </div>
+        </form>
       </div>
     </main>
   );
