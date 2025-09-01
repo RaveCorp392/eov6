@@ -1,12 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { postDetails } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 type Props = {
-  sessionId?: string;   // support legacy prop name
-  code?: string;        // ...or new prop name
+  /** session code/id used in your URLs */
+  code: string;
+  /** caller-side typically true for identity fields, agent-side usually false */
+  showIdentityFields?: boolean;
+  /** agent-side notes toggle */
+  showNotes?: boolean;
+  /** label for the submit button */
+  submitLabel?: string;
+  /** called after successful save */
   onSubmitted?: () => void;
+  /** who is editing: "AGENT" | "CALLER" */
+  actor?: "AGENT" | "CALLER";
 };
 
 type CallerDetails = {
@@ -17,8 +27,14 @@ type CallerDetails = {
   notes?: string;
 };
 
-export default function CallerDetailsForm({ sessionId, code, onSubmitted }: Props) {
-  const session = sessionId || code || "";
+export default function CallerDetailsForm({
+  code,
+  showIdentityFields = true,
+  showNotes = false,
+  submitLabel = "Save details",
+  onSubmitted,
+  actor = "CALLER",
+}: Props) {
   const [form, setForm] = useState<CallerDetails>({
     name: "",
     phone: "",
@@ -32,27 +48,39 @@ export default function CallerDetailsForm({ sessionId, code, onSubmitted }: Prop
 
   const update =
     (k: keyof CallerDetails) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
-    };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session) {
+    if (!code) {
       setErr("Missing session code.");
       return;
     }
     setSending(true);
     setErr(null);
     try {
-      // Strip empty fields
+      // write to a *document* inside the subcollection to avoid odd-segment path
+      const ref = doc(db, "sessions", code, "details", "profile");
+
+      // strip empty fields
       const payload: CallerDetails = Object.fromEntries(
         Object.entries(form).filter(([, v]) => `${v ?? ""}`.trim() !== "")
       ) as CallerDetails;
 
-      await postDetails(session, payload);
+      await setDoc(
+        ref,
+        {
+          ...payload,
+          updatedAt: serverTimestamp(),
+          updatedBy: actor,
+        },
+        { merge: true }
+      );
+
       setOk(true);
       onSubmitted?.();
+      setTimeout(() => setOk(false), 1500);
     } catch (e) {
       console.error(e);
       setErr("Failed to save details.");
@@ -63,41 +91,45 @@ export default function CallerDetailsForm({ sessionId, code, onSubmitted }: Prop
 
   return (
     <form onSubmit={submit} className="space-y-3 max-w-xl">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <input
-          className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-          placeholder="Name"
-          value={form.name ?? ""}
-          onChange={update("name")}
-        />
-        <input
-          className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-          placeholder="Language (optional)"
-          value={form.language ?? ""}
-          onChange={update("language")}
-        />
-        <input
-          className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-          placeholder="Phone"
-          value={form.phone ?? ""}
-          onChange={update("phone")}
-        />
-        <input
-          className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-          placeholder="Email"
-          type="email"
-          value={form.email ?? ""}
-          onChange={update("email")}
-        />
-      </div>
+      {showIdentityFields && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input
+            className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
+            placeholder="Name"
+            value={form.name ?? ""}
+            onChange={update("name")}
+          />
+          <input
+            className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
+            placeholder="Language (optional)"
+            value={form.language ?? ""}
+            onChange={update("language")}
+          />
+          <input
+            className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
+            placeholder="Phone"
+            value={form.phone ?? ""}
+            onChange={update("phone")}
+          />
+          <input
+            className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
+            placeholder="Email"
+            type="email"
+            value={form.email ?? ""}
+            onChange={update("email")}
+          />
+        </div>
+      )}
 
-      <textarea
-        className="w-full rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-        rows={3}
-        placeholder="Notes (optional)"
-        value={form.notes ?? ""}
-        onChange={update("notes")}
-      />
+      {showNotes && (
+        <textarea
+          className="w-full rounded-xl border border-slate-700 bg-[#0b1327] p-3"
+          rows={3}
+          placeholder="Notes for agent (private to console)"
+          value={form.notes ?? ""}
+          onChange={update("notes")}
+        />
+      )}
 
       <div className="flex items-center gap-3">
         <button
@@ -105,7 +137,7 @@ export default function CallerDetailsForm({ sessionId, code, onSubmitted }: Prop
           disabled={sending}
           className="rounded-xl bg-sky-600 px-4 py-2 text-white disabled:opacity-60"
         >
-          {sending ? "Saving…" : "Save details"}
+          {sending ? "Saving…" : submitLabel}
         </button>
         {ok && <span className="text-emerald-400 text-sm">Saved ✓</span>}
         {err && <span className="text-red-400 text-sm">{err}</span>}

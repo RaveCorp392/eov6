@@ -1,23 +1,34 @@
-// app/s/[code]/page.tsx
 import ChatWindow from "@/components/ChatWindow";
+import FileUploader from "@/components/FileUploader";
 import CallerDetailsForm from "@/components/CallerDetailsForm";
 
 type PageProps = { params: { code: string } };
 
-export default function CallerSessionPage({ params }: PageProps) {
-  const sessionId = params.code;
+export default function CallerPage({ params }: PageProps) {
+  const code = params.code;
 
   return (
-    <main className="p-4">
-      <h1 className="mb-1 text-xl font-semibold">Secure shared chat</h1>
-      <div className="small mb-2">
-        Visible to agent & caller • Ephemeral: cleared when the session ends.
+    <main className="min-h-screen bg-[#0b1220] text-[#e6eefb] p-4 sm:p-8">
+      <header className="mb-4">
+        <h1 className="text-xl font-semibold">Secure shared chat</h1>
+        <p className="mt-1 text-xs opacity-70">Visible to agent &amp; caller · Ephemeral when session ends</p>
+      </header>
+
+      <section className="mb-6">
+        <CallerDetailsForm
+          code={code}
+          showIdentityFields
+          showNotes={false}
+          submitLabel="Save details"
+          actor="CALLER"
+        />
+      </section>
+
+      <div className="mb-3 flex justify-end">
+        <FileUploader code={code} role="caller" enabled />
       </div>
 
-      <section className="flex gap-6 items-start">
-        <CallerDetailsForm sessionId={sessionId} />
-        <ChatWindow sessionId={sessionId} role="CALLER" />
-      </section>
+      <ChatWindow sessionCode={code} role="CALLER" />
     </main>
   );
 }

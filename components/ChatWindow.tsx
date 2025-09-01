@@ -4,16 +4,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getMessages, sendMessage } from "@/lib/firebase";
 import type { ChatMessage, Role } from "@/lib/firebase";
 
-/** Normalize outgoing text: keep intended newlines, trim stray spaces */
 function normalizeOutgoing(text: string) {
   return text.replace(/\r\n/g, "\n").trim();
 }
 
 type ChatWindowProps = {
-  /** Accept either prop name — both map to the same session code */
   sessionId?: string;
   sessionCode?: string;
-  /** Who is typing on this device (as defined by your types) */
   role: Role; // "AGENT" | "CALLER"
 };
 
@@ -21,7 +18,6 @@ function FileBubble({ msg }: { msg: any }) {
   const file = msg?.file ?? {};
   const href = file.downloadURL || file.url;
   const isImage = (file.contentType || "").startsWith("image/");
-
   return (
     <div className="space-y-2">
       <div className="text-xs opacity-80">{file.name || "Attachment"}</div>
@@ -52,10 +48,8 @@ export default function ChatWindow(props: ChatWindowProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const [sending, setSending] = useState(false);
 
-  // Subscribe to messages for this session
   useEffect(() => {
     if (!session) return;
-
     const unsub = getMessages(session, (msgs: ChatMessage[] = []) => {
       const safe: ChatMessage[] = (msgs || []).map((m, i) => ({
         ...m,
@@ -63,17 +57,11 @@ export default function ChatWindow(props: ChatWindowProps) {
       }));
       setMessages(safe);
     });
-
     return () => {
-      try {
-        typeof unsub === "function" && unsub();
-      } catch {
-        /* no-op */
-      }
+      try { typeof unsub === "function" && unsub(); } catch {}
     };
   }, [session]);
 
-  // Autoscroll on new messages
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length]);
@@ -81,14 +69,12 @@ export default function ChatWindow(props: ChatWindowProps) {
   const doSend = useCallback(async () => {
     const text = normalizeOutgoing(input);
     if (!text || !session || sending) return;
-
     setSending(true);
     try {
-      // IMPORTANT: only send fields that exist on ChatMessage (minus id)
       await sendMessage(session, {
         text,
-        sender: props.role,   // "AGENT" | "CALLER"
-        ts: Date.now(),       // optional; backend may set canonical timestamp
+        sender: props.role,  // "AGENT" | "CALLER"
+        ts: Date.now(),
       });
       setInput("");
     } finally {
@@ -105,23 +91,19 @@ export default function ChatWindow(props: ChatWindowProps) {
 
   return (
     <div className="w-full flex justify-center">
-      {/* Outer column constrained ~1/3 of desktop width */}
-      <div className="mx-auto w-full max-w-xl">
-        {/* Chat viewport */}
+      {/* 1/3 width on large screens */}
+      <div className="mx-auto w-full md:max-w-[560px] lg:max-w-[33vw]">
         <div
           className="h-[70vh] overflow-y-auto rounded-2xl border border-[var(--line,#1e293b)] bg-[var(--panel,#0f172a)] p-4"
           aria-live="polite"
         >
           {messages.length === 0 ? (
-            <p className="text-sm text-[var(--muted,#94a3b8)]">
-              No messages yet. Say hello!
-            </p>
+            <p className="text-sm text-[var(--muted,#94a3b8)]">No messages yet. Say hello!</p>
           ) : (
             <ul className="flex flex-col gap-3">
               {messages.map((m) => {
                 const isAgent = m.sender === "AGENT";
-                const maybeAny = m as any; // tolerate file/detail messages coming from Firestore
-
+                const maybeAny = m as any;
                 const content =
                   maybeAny?.type === "file" ? (
                     <FileBubble msg={maybeAny} />
@@ -130,10 +112,7 @@ export default function ChatWindow(props: ChatWindowProps) {
                   );
 
                 return (
-                  <li
-                    key={m.id}
-                    className={`flex ${isAgent ? "justify-start" : "justify-end"}`}
-                  >
+                  <li key={m.id} className={`flex ${isAgent ? "justify-start" : "justify-end"}`}>
                     <div className="max-w-[75%]">
                       <div
                         className={`text-xs mb-1 ${
@@ -160,7 +139,6 @@ export default function ChatWindow(props: ChatWindowProps) {
           )}
         </div>
 
-        {/* Composer */}
         <div className="mt-3 flex items-start gap-2">
           <textarea
             className="min-h-[44px] flex-1 resize-y rounded-xl border border-[var(--line,#1e293b)] bg-[#0b1327] p-3 text-[var(--fg,#e6f2ff)] outline-none focus:ring-2 focus:ring-sky-500"
