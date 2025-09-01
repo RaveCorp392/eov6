@@ -1,21 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
 type Props = {
-  /** session code/id used in your URLs */
   code: string;
-  /** caller-side typically true for identity fields, agent-side usually false */
   showIdentityFields?: boolean;
-  /** agent-side notes toggle */
   showNotes?: boolean;
-  /** label for the submit button */
   submitLabel?: string;
-  /** called after successful save */
   onSubmitted?: () => void;
-  /** who is editing: "AGENT" | "CALLER" */
   actor?: "AGENT" | "CALLER";
 };
 
@@ -35,16 +29,34 @@ export default function CallerDetailsForm({
   onSubmitted,
   actor = "CALLER",
 }: Props) {
-  const [form, setForm] = useState<CallerDetails>({
-    name: "",
-    phone: "",
-    email: "",
-    language: "",
-    notes: "",
-  });
+  const [form, setForm] = useState<CallerDetails>({});
   const [sending, setSending] = useState(false);
   const [ok, setOk] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Prefill on mount
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const ref = doc(db, "sessions", code, "details", "profile");
+        const snap = await getDoc(ref);
+        if (alive && snap.exists()) {
+          const data = snap.data() as CallerDetails;
+          setForm({
+            name: data.name ?? "",
+            phone: data.phone ?? "",
+            email: data.email ?? "",
+            language: data.language ?? "",
+            notes: data.notes ?? "",
+          });
+        }
+      } catch (e) {
+        console.warn("details prefill failed", e);
+      }
+    })();
+    return () => { alive = false; };
+  }, [code]);
 
   const update =
     (k: keyof CallerDetails) =>
@@ -53,34 +65,17 @@ export default function CallerDetailsForm({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code) {
-      setErr("Missing session code.");
-      return;
-    }
     setSending(true);
     setErr(null);
     try {
-      // write to a *document* inside the subcollection to avoid odd-segment path
       const ref = doc(db, "sessions", code, "details", "profile");
-
-      // strip empty fields
       const payload: CallerDetails = Object.fromEntries(
         Object.entries(form).filter(([, v]) => `${v ?? ""}`.trim() !== "")
       ) as CallerDetails;
-
-      await setDoc(
-        ref,
-        {
-          ...payload,
-          updatedAt: serverTimestamp(),
-          updatedBy: actor,
-        },
-        { merge: true }
-      );
-
+      await setDoc(ref, { ...payload, updatedAt: serverTimestamp(), updatedBy: actor }, { merge: true });
       setOk(true);
       onSubmitted?.();
-      setTimeout(() => setOk(false), 1500);
+      setTimeout(() => setOk(false), 1200);
     } catch (e) {
       console.error(e);
       setErr("Failed to save details.");
@@ -90,58 +85,39 @@ export default function CallerDetailsForm({
   };
 
   return (
-    <form onSubmit={submit} className="space-y-3 max-w-xl">
+    <form onSubmit={submit} className="form">
       {showIdentityFields && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input
-            className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-            placeholder="Name"
-            value={form.name ?? ""}
-            onChange={update("name")}
-          />
-          <input
-            className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-            placeholder="Language (optional)"
-            value={form.language ?? ""}
-            onChange={update("language")}
-          />
-          <input
-            className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-            placeholder="Phone"
-            value={form.phone ?? ""}
-            onChange={update("phone")}
-          />
-          <input
-            className="rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-            placeholder="Email"
-            type="email"
-            value={form.email ?? ""}
-            onChange={update("email")}
-          />
+        <div className="grid">
+          <input placeholder="Name" value={form.name ?? ""} onChange={update("name")} />
+          <input placeholder="Language (optional)" value={form.language ?? ""} onChange={update("language")} />
+          <input placeholder="Phone" value={form.phone ?? ""} onChange={update("phone")} />
+          <input placeholder="Email" type="email" value={form.email ?? ""} onChange={update("email")} />
         </div>
       )}
 
       {showNotes && (
-        <textarea
-          className="w-full rounded-xl border border-slate-700 bg-[#0b1327] p-3"
-          rows={3}
-          placeholder="Notes for agent (private to console)"
-          value={form.notes ?? ""}
-          onChange={update("notes")}
-        />
+        <textarea rows={3} placeholder="Notes for agent (private to console)" value={form.notes ?? ""} onChange={update("notes")} />
       )}
 
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={sending}
-          className="rounded-xl bg-sky-600 px-4 py-2 text-white disabled:opacity-60"
-        >
-          {sending ? "Saving…" : submitLabel}
-        </button>
-        {ok && <span className="text-emerald-400 text-sm">Saved ✓</span>}
-        {err && <span className="text-red-400 text-sm">{err}</span>}
+      <div className="actions">
+        <button type="submit" disabled={sending}>{sending ? "Saving…" : submitLabel}</button>
+        {ok && <span className="ok">Saved ✓</span>}
+        {err && <span className="err">{err}</span>}
       </div>
+
+      <style jsx>{`
+        .form { max-width: 720px; display: grid; gap: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        input, textarea {
+          background: #0b1327; color: #e6eefb; border: 1px solid #1e293b; border-radius: 12px; padding: 10px;
+        }
+        textarea { width: 100%; }
+        .actions { display: flex; gap: 10px; align-items: center; }
+        button { background: #0284c7; color: #fff; border: 1px solid #1e293b; border-radius: 12px; padding: 8px 12px; }
+        button:disabled { opacity: 0.6; }
+        .ok { color: #34d399; font-size: 12px; }
+        .err { color: #fca5a5; font-size: 12px; }
+      `}</style>
     </form>
   );
 }

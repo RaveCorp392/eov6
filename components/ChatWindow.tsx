@@ -4,34 +4,30 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getMessages, sendMessage } from "@/lib/firebase";
 import type { ChatMessage, Role } from "@/lib/firebase";
 
-function normalizeOutgoing(text: string) {
-  return text.replace(/\r\n/g, "\n").trim();
-}
-
 type ChatWindowProps = {
   sessionId?: string;
   sessionCode?: string;
   role: Role; // "AGENT" | "CALLER"
 };
 
-function FileBubble({ msg }: { msg: any }) {
-  const file = msg?.file ?? {};
-  const href = file.downloadURL || file.url;
-  const isImage = (file.contentType || "").startsWith("image/");
+function normalizeOutgoing(text: string) {
+  return text.replace(/\r\n/g, "\n").trim();
+}
+
+function FileBubble({ href, name }: { href: string; name?: string }) {
+  const isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(href);
   return (
-    <div className="space-y-2">
-      <div className="text-xs opacity-80">{file.name || "Attachment"}</div>
-      {isImage && href ? (
+    <div className="fileBubble">
+      <div className="fileName">{name || "Attachment"}</div>
+      {isImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
         <a href={href} target="_blank" rel="noreferrer">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={href} alt={file.name || "image"} className="max-w-full rounded-xl" />
-        </a>
-      ) : href ? (
-        <a href={href} target="_blank" rel="noreferrer" className="underline break-all">
-          {href}
+          <img src={href} alt={name || "image"} />
         </a>
       ) : (
-        <div className="opacity-70">File uploaded</div>
+        <a className="fileLink" href={href} target="_blank" rel="noreferrer">
+          {href}
+        </a>
       )}
     </div>
   );
@@ -44,17 +40,14 @@ export default function ChatWindow(props: ChatWindowProps) {
   );
 
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[] | any[]>([]);
   const [sending, setSending] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!session) return;
-    const unsub = getMessages(session, (msgs: ChatMessage[] = []) => {
-      const safe: ChatMessage[] = (msgs || []).map((m, i) => ({
-        ...m,
-        id: (m as any).id ?? `${i}`,
-      }));
+    const unsub = getMessages(session, (msgs: any[] = []) => {
+      const safe = (msgs || []).map((m: any, i: number) => ({ id: m.id ?? `${i}`, ...m }));
       setMessages(safe);
     });
     return () => {
@@ -71,11 +64,7 @@ export default function ChatWindow(props: ChatWindowProps) {
     if (!text || !session || sending) return;
     setSending(true);
     try {
-      await sendMessage(session, {
-        text,
-        sender: props.role,  // "AGENT" | "CALLER"
-        ts: Date.now(),
-      });
+      await sendMessage(session, { text, sender: props.role, ts: Date.now() });
       setInput("");
     } finally {
       setSending(false);
@@ -90,46 +79,29 @@ export default function ChatWindow(props: ChatWindowProps) {
   };
 
   return (
-    <div className="w-full flex justify-center">
-      {/* 1/3 width on large screens */}
-      <div className="mx-auto w-full md:max-w-[560px] lg:max-w-[33vw]">
-        <div
-          className="h-[70vh] overflow-y-auto rounded-2xl border border-[var(--line,#1e293b)] bg-[var(--panel,#0f172a)] p-4"
-          aria-live="polite"
-        >
+    <div className="chatRoot">
+      <div className="chatFrame">
+        <div className="viewport" aria-live="polite">
           {messages.length === 0 ? (
-            <p className="text-sm text-[var(--muted,#94a3b8)]">No messages yet. Say hello!</p>
+            <p className="empty">No messages yet. Say hello!</p>
           ) : (
-            <ul className="flex flex-col gap-3">
-              {messages.map((m) => {
+            <ul className="list">
+              {messages.map((m: any) => {
                 const isAgent = m.sender === "AGENT";
-                const maybeAny = m as any;
-                const content =
-                  maybeAny?.type === "file" ? (
-                    <FileBubble msg={maybeAny} />
-                  ) : (
-                    <div className="whitespace-pre-wrap">{m.text}</div>
-                  );
-
+                // Support both rich file messages and simple text-with-URL fallback
+                const fileHref = m?.file?.downloadURL || m?.file?.url || m?.downloadURL || "";
+                const isFile = m?.type === "file" || (!!fileHref && !m?.text?.trim());
                 return (
-                  <li key={m.id} className={`flex ${isAgent ? "justify-start" : "justify-end"}`}>
-                    <div className="max-w-[75%]">
-                      <div
-                        className={`text-xs mb-1 ${
-                          isAgent
-                            ? "text-sky-300 opacity-80"
-                            : "text-emerald-300 opacity-80 text-right"
-                        }`}
-                      >
-                        {isAgent ? "Agent" : "You"}
-                      </div>
-                      <div
-                        className={`rounded-2xl px-4 py-2 leading-relaxed ${
-                          isAgent ? "bg-sky-600 text-white" : "bg-slate-700 text-white"
-                        }`}
-                      >
-                        {content}
-                      </div>
+                  <li key={m.id} className={`row ${isAgent ? "left" : "right"}`}>
+                    <div className={`who ${isAgent ? "agent" : "caller"}`}>
+                      {isAgent ? "Agent" : "You"}
+                    </div>
+                    <div className={`bubble ${isAgent ? "agent" : "caller"}`}>
+                      {isFile ? (
+                        <FileBubble href={fileHref} name={m?.file?.name} />
+                      ) : (
+                        <div className="text">{m.text}</div>
+                      )}
                     </div>
                   </li>
                 );
@@ -139,30 +111,80 @@ export default function ChatWindow(props: ChatWindowProps) {
           )}
         </div>
 
-        <div className="mt-3 flex items-start gap-2">
+        <div className="composer">
           <textarea
-            className="min-h-[44px] flex-1 resize-y rounded-xl border border-[var(--line,#1e293b)] bg-[#0b1327] p-3 text-[var(--fg,#e6f2ff)] outline-none focus:ring-2 focus:ring-sky-500"
+            rows={2}
             placeholder="Type a message… (Enter = send, Shift+Enter = newline)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            rows={2}
           />
-          <button
-            className="h-[44px] shrink-0 rounded-xl border border-[var(--line,#1e293b)] bg-sky-600 px-4 text-white hover:brightness-110 disabled:opacity-60"
-            onClick={() => void doSend()}
-            disabled={!input.trim() || sending}
-            type="button"
-          >
+          <button onClick={() => void doSend()} disabled={!input.trim() || sending} type="button">
             Send
           </button>
         </div>
 
-        <p className="mt-2 text-xs text-[var(--muted,#94a3b8)]">
-          Press <span className="kbd">Enter</span> to send,&nbsp;
-          <span className="kbd">Shift+Enter</span> for a new line.
+        <p className="hint">
+          Press <kbd>Enter</kbd> to send,&nbsp;<kbd>Shift+Enter</kbd> for a new line.
         </p>
       </div>
+
+      {/* Local CSS so this looks right even if Tailwind isn't applied */}
+      <style jsx>{`
+        .chatRoot { width: 100%; display: flex; justify-content: center; }
+        .chatFrame { width: 100%; max-width: 560px; }
+        @media (min-width: 1024px) { .chatFrame { max-width: 33vw; } }
+
+        .viewport {
+          height: 70vh;
+          overflow-y: auto;
+          background: #0f172a;
+          border: 1px solid #1e293b;
+          border-radius: 16px;
+          padding: 16px;
+        }
+        .empty { color: #94a3b8; font-size: 0.9rem; }
+
+        .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+        .row { display: flex; }
+        .row.left  { justify-content: flex-start; }
+        .row.right { justify-content: flex-end; }
+
+        .who { font-size: 12px; margin: 0 8px 6px 8px; opacity: 0.85; }
+        .who.agent { color: #7dd3fc; }    /* sky-300 */
+        .who.caller { color: #6ee7b7; text-align: right; } /* emerald-300 */
+
+        .bubble {
+          max-width: 75%;
+          padding: 10px 14px;
+          border-radius: 18px;
+          line-height: 1.45;
+          color: white;
+          white-space: pre-wrap;
+        }
+        .bubble.agent { background: #0369a1; }  /* sky-700 */
+        .bubble.caller { background: #334155; } /* slate-700 */
+
+        .fileBubble { display: grid; gap: 8px; }
+        .fileName { font-size: 12px; opacity: 0.85; }
+        .fileLink { text-decoration: underline; word-break: break-all; }
+        .fileBubble img { max-width: 100%; border-radius: 12px; }
+
+        .composer { display: flex; gap: 8px; margin-top: 12px; align-items: flex-start; }
+        .composer textarea {
+          flex: 1; min-height: 44px; resize: vertical;
+          background: #0b1327; color: #e6f2ff;
+          border: 1px solid #1e293b; border-radius: 12px; padding: 10px;
+          outline: none;
+        }
+        .composer textarea:focus { box-shadow: 0 0 0 2px #0284c7; }
+        .composer button {
+          height: 44px; padding: 0 14px; border-radius: 12px;
+          color: white; background: #0284c7; border: 1px solid #1e293b;
+        }
+        .composer button:disabled { opacity: 0.6; }
+        .hint { color: #94a3b8; font-size: 12px; margin-top: 6px; }
+      `}</style>
     </div>
   );
 }
