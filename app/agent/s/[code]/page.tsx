@@ -1,5 +1,6 @@
 import ChatWindow from "@/components/ChatWindow";
 import CallerDetailsForm from "@/components/CallerDetailsForm";
+import DetailsHeader from "@/components/DetailsHeader";
 
 type PageProps = { params: { code: string } };
 
@@ -13,8 +14,16 @@ export default function AgentSessionPage({ params }: PageProps) {
         <div className="mt-1 text-xs opacity-70">Session <strong className="font-semibold">{code}</strong></div>
       </header>
 
+      {/* Read-only caller info above chat */}
+      <DetailsHeader code={code} />
+
+      {/* Chat */}
       <section className="mb-6">
-        {/* Agent-only notes field */}
+        <ChatWindow sessionCode={code} role="AGENT" />
+      </section>
+
+      {/* Centered notes below chat */}
+      <section className="flex justify-center">
         <CallerDetailsForm
           code={code}
           showIdentityFields={false}
@@ -23,8 +32,6 @@ export default function AgentSessionPage({ params }: PageProps) {
           actor="AGENT"
         />
       </section>
-
-      <ChatWindow sessionCode={code} role="AGENT" />
     </main>
   );
 }

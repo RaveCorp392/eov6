@@ -14,21 +14,16 @@ export default function CallerPage({ params }: PageProps) {
         <p className="mt-1 text-xs opacity-70">Visible to agent &amp; caller · Ephemeral when session ends</p>
       </header>
 
-      <section className="mb-6">
-        <CallerDetailsForm
-          code={code}
-          showIdentityFields
-          showNotes={false}
-          submitLabel="Save details"
-          actor="CALLER"
-        />
+      <section className="mx-auto w-full" style={{maxWidth: '560px'}}>
+        <CallerDetailsForm code={code} showIdentityFields showNotes={false} submitLabel="Save details" actor="CALLER" />
+        <div className="mt-2">
+          <FileUploader code={code} role="caller" enabled />
+        </div>
       </section>
 
-      <div className="mb-3 flex justify-end">
-        <FileUploader code={code} role="caller" enabled />
-      </div>
-
-      <ChatWindow sessionCode={code} role="CALLER" />
+      <section className="mt-4">
+        <ChatWindow sessionCode={code} role="CALLER" />
+      </section>
     </main>
   );
 }

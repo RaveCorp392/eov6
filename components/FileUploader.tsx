@@ -43,14 +43,16 @@ export default function FileUploader({ code, role, enabled = true }: Props) {
       await task;
       const downloadURL = await getDownloadURL(objectRef);
 
-      // 1) Rich file message (if your getMessages returns all fields, UI shows preview)
-      // 2) Text fallback so it *always* appears even if unknown fields are dropped
       await addDoc(collection(db, "sessions", code, "messages"), {
         type: "file",
         role,
         sender: role === "agent" ? "AGENT" : "CALLER",
-        file: { name: file.name, size: file.size, contentType: file.type, storagePath: path, downloadURL, url: downloadURL },
-        text: downloadURL,                 // <= fallback so it renders now
+        file: {
+          name: file.name, size: file.size, contentType: file.type,
+          storagePath: path, downloadURL, url: downloadURL
+        },
+        text: downloadURL, // fallback so it renders even if UI ignores 'file'
+        ts: Date.now(),    // for queries that orderBy('ts')
         createdAt: serverTimestamp(),
       });
 
@@ -74,11 +76,11 @@ export default function FileUploader({ code, role, enabled = true }: Props) {
       {err && <p className="err">{err}</p>}
 
       <style jsx>{`
-        .uploader { display: grid; gap: 6px; }
-        button { border-radius: 10px; background: #0284c7; color: #fff; padding: 6px 10px; border: 1px solid #1e293b; }
+        .uploader { display: flex; gap: 8px; justify-content: flex-end; }
+        button { border-radius: 10px; background: #0284c7; color: #fff; padding: 6px 12px; border: 1px solid #1e293b; }
         button:disabled { opacity: 0.6; }
-        .ok { color: #34d399; font-size: 12px; }
-        .err { color: #fca5a5; font-size: 12px; }
+        .ok { color: #34d399; font-size: 12px; align-self: center; }
+        .err { color: #fca5a5; font-size: 12px; align-self: center; }
       `}</style>
     </div>
   );

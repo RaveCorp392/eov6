@@ -106,13 +106,14 @@ export default function CallerDetailsForm({
       </div>
 
       <style jsx>{`
-        .form { max-width: 720px; display: grid; gap: 10px; }
+        .form { width: 100%; max-width: 560px; }
+        @media (min-width: 1024px) { .form { max-width: 33vw; } }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         input, textarea {
           background: #0b1327; color: #e6eefb; border: 1px solid #1e293b; border-radius: 12px; padding: 10px;
         }
         textarea { width: 100%; }
-        .actions { display: flex; gap: 10px; align-items: center; }
+        .actions { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
         button { background: #0284c7; color: #fff; border: 1px solid #1e293b; border-radius: 12px; padding: 8px 12px; }
         button:disabled { opacity: 0.6; }
         .ok { color: #34d399; font-size: 12px; }

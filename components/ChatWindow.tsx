@@ -43,7 +43,14 @@ export default function ChatWindow(props: ChatWindowProps) {
   const [messages, setMessages] = useState<ChatMessage[] | any[]>([]);
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Autofocus on mount
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // Subscribe to messages
   useEffect(() => {
     if (!session) return;
     const unsub = getMessages(session, (msgs: any[] = []) => {
@@ -55,6 +62,7 @@ export default function ChatWindow(props: ChatWindowProps) {
     };
   }, [session]);
 
+  // Autoscroll
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length]);
@@ -66,6 +74,7 @@ export default function ChatWindow(props: ChatWindowProps) {
     try {
       await sendMessage(session, { text, sender: props.role, ts: Date.now() });
       setInput("");
+      textareaRef.current?.focus(); // keep focus after send
     } finally {
       setSending(false);
     }
@@ -88,7 +97,6 @@ export default function ChatWindow(props: ChatWindowProps) {
             <ul className="list">
               {messages.map((m: any) => {
                 const isAgent = m.sender === "AGENT";
-                // Support both rich file messages and simple text-with-URL fallback
                 const fileHref = m?.file?.downloadURL || m?.file?.url || m?.downloadURL || "";
                 const isFile = m?.type === "file" || (!!fileHref && !m?.text?.trim());
                 return (
@@ -113,6 +121,7 @@ export default function ChatWindow(props: ChatWindowProps) {
 
         <div className="composer">
           <textarea
+            ref={textareaRef}
             rows={2}
             placeholder="Type a message… (Enter = send, Shift+Enter = newline)"
             value={input}
@@ -129,19 +138,15 @@ export default function ChatWindow(props: ChatWindowProps) {
         </p>
       </div>
 
-      {/* Local CSS so this looks right even if Tailwind isn't applied */}
+      {/* Local CSS */}
       <style jsx>{`
         .chatRoot { width: 100%; display: flex; justify-content: center; }
         .chatFrame { width: 100%; max-width: 560px; }
         @media (min-width: 1024px) { .chatFrame { max-width: 33vw; } }
 
         .viewport {
-          height: 70vh;
-          overflow-y: auto;
-          background: #0f172a;
-          border: 1px solid #1e293b;
-          border-radius: 16px;
-          padding: 16px;
+          height: 70vh; overflow-y: auto; background: #0f172a;
+          border: 1px solid #1e293b; border-radius: 16px; padding: 16px;
         }
         .empty { color: #94a3b8; font-size: 0.9rem; }
 
@@ -151,19 +156,15 @@ export default function ChatWindow(props: ChatWindowProps) {
         .row.right { justify-content: flex-end; }
 
         .who { font-size: 12px; margin: 0 8px 6px 8px; opacity: 0.85; }
-        .who.agent { color: #7dd3fc; }    /* sky-300 */
-        .who.caller { color: #6ee7b7; text-align: right; } /* emerald-300 */
+        .who.agent { color: #7dd3fc; }
+        .who.caller { color: #6ee7b7; text-align: right; }
 
         .bubble {
-          max-width: 75%;
-          padding: 10px 14px;
-          border-radius: 18px;
-          line-height: 1.45;
-          color: white;
-          white-space: pre-wrap;
+          max-width: 75%; padding: 10px 14px; border-radius: 18px;
+          line-height: 1.45; color: white; white-space: pre-wrap;
         }
-        .bubble.agent { background: #0369a1; }  /* sky-700 */
-        .bubble.caller { background: #334155; } /* slate-700 */
+        .bubble.agent { background: #0369a1; }
+        .bubble.caller { background: #334155; }
 
         .fileBubble { display: grid; gap: 8px; }
         .fileName { font-size: 12px; opacity: 0.85; }
