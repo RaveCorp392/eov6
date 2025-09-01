@@ -1,5 +1,7 @@
 ﻿// lib/firebase.ts
 import { initializeApp, getApp, getApps } from "firebase/app";
+
+// (Auth is optional for your flows, but re-exporting keeps parity with older imports)
 import {
   getAuth,
   GoogleAuthProvider,
@@ -8,6 +10,7 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
+
 import {
   getFirestore,
   serverTimestamp,
@@ -19,8 +22,9 @@ import {
   onSnapshot,
   query,
   orderBy,
-  type DocumentData,
+  type Timestamp,
 } from "firebase/firestore";
+
 import {
   getStorage,
   ref as storageRef,
@@ -28,7 +32,18 @@ import {
   getDownloadURL,
 } from "firebase/storage";
 
-/** App init (ENV names match your .env) */
+/** Roles used by chat UI */
+export type Role = "AGENT" | "CALLER";
+
+/** Message shape used across UI + adapter */
+export type ChatMessage = {
+  id?: string;                // doc id (optional while mapping)
+  text: string;
+  sender: Role;
+  ts?: number | Timestamp;    // unix ms or Firestore Timestamp
+};
+
+// ---- App init ---------------------------------------------------------------
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -37,129 +52,90 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
 };
-
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-/** Singletons */
+// Singletons
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-/** Types */
-export type ChatRole = "AGENT" | "CALLER";
-export type ChatMessage = {
-  id?: string;
-  role: ChatRole;
-  text: string;
-  createdAt: any; // Firestore Timestamp | serverTimestamp placeholder
-};
-export type CallerDetails = {
-  name?: string;
-  email?: string;
-  phone?: string;
-  uploadedUrl?: string;
-};
-
-/** Collections helpers */
-const sessionRef = (sessionId: string) => doc(db, "sessions", sessionId);
-const messagesCol = (sessionId: string) =>
-  collection(db, "sessions", sessionId, "messages");
-const detailsDoc = (sessionId: string) =>
-  doc(db, "sessions", sessionId, "meta", "caller");
-
-/** === Chat === */
-
-/** sendMessage: used by UI (Enter=send, Shift+Enter=newline) */
-export async function sendMessage(
-  sessionId: string,
-  role: ChatRole,
-  text: string
-) {
-  const trimmed = text.replace(/\r/g, "");
-  if (!trimmed) return;
-  await addDoc(messagesCol(sessionId), {
-    role,
-    text: trimmed,
-    createdAt: serverTimestamp(),
-  } as ChatMessage);
-}
-
-/** getMessages: realtime listener used by UI */
+// ---- Chat API ---------------------------------------------------------------
+/** Subscribe to messages ordered by timestamp; returns an unsubscribe */
 export function getMessages(
   sessionId: string,
-  onChange: (msgs: ChatMessage[]) => void
+  cb: (msgs: ChatMessage[]) => void
 ) {
-  const q = query(messagesCol(sessionId), orderBy("createdAt", "asc"));
+  const q = query(
+    collection(db, "sessions", sessionId, "messages"),
+    orderBy("ts", "asc")
+  );
   return onSnapshot(q, (snap) => {
-    const out: ChatMessage[] = [];
-    snap.forEach((d) => {
-      const data = d.data() as DocumentData;
-      out.push({
+    const msgs: ChatMessage[] = snap.docs.map((d) => {
+      const data = d.data() as any;
+      const rawSender = (data?.sender ?? "CALLER") as Role;
+      const sender: Role = rawSender === "AGENT" ? "AGENT" : "CALLER";
+      return {
         id: d.id,
-        role: (data.role as ChatRole) ?? "CALLER",
-        text: (data.text as string) ?? "",
-        createdAt: data.createdAt ?? null,
-      });
+        text: String(data?.text ?? ""),
+        sender,
+        ts: (data?.ts as any) ?? undefined,
+      };
     });
-    onChange(out);
+    cb(msgs);
   });
 }
 
-/** Ensure session doc exists (cheap upsert) */
-export async function ensureSession(sessionId: string) {
-  await setDoc(
-    sessionRef(sessionId),
-    { createdAt: serverTimestamp() },
-    { merge: true }
-  );
+/** Add a message; backend sets canonical timestamp if not provided */
+export async function sendMessage(
+  sessionId: string,
+  m: Omit<ChatMessage, "id">
+): Promise<void> {
+  const col = collection(db, "sessions", sessionId, "messages");
+  await addDoc(col, {
+    text: m.text,
+    sender: m.sender,
+    ts: m.ts ?? serverTimestamp(),
+  });
 }
 
-/** === Details === */
-
-/** postDetails: caller submits (name/email/phone) */
-export async function postDetails(sessionId: string, details: CallerDetails) {
+// ---- Caller details API -----------------------------------------------------
+export async function saveCallerDetails(
+  sessionId: string,
+  details: { name?: string; email?: string; phone?: string }
+): Promise<void> {
+  const ref = doc(db, "sessions", sessionId, "details");
   await setDoc(
-    detailsDoc(sessionId),
+    ref,
     { ...details, updatedAt: serverTimestamp() },
     { merge: true }
   );
 }
 
-/** getCallerDetails: agent reads */
-export async function getCallerDetails(
-  sessionId: string
-): Promise<CallerDetails | null> {
-  const snap = await getDoc(detailsDoc(sessionId));
-  return snap.exists() ? (snap.data() as CallerDetails) : null;
+export async function fetchCallerDetails(sessionId: string): Promise<any> {
+  const ref = doc(db, "sessions", sessionId, "details");
+  const snap = await getDoc(ref);
+  return snap.exists() ? snap.data() : {};
 }
 
-/** === Uploads (images/PDF only) === */
-
-const ALLOWED_MIME = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "application/pdf",
-]);
-
-/** uploadFile: returns public URL (store it into details if you like) */
-export async function uploadFile(
+// ---- Uploads API ------------------------------------------------------------
+export async function uploadToStorage(
   sessionId: string,
   file: File
-): Promise<string> {
-  if (!ALLOWED_MIME.has(file.type)) {
-    throw new Error("Only images (png/jpg/webp/gif) and PDF are allowed.");
-  }
-  const key = `sessions/${sessionId}/${Date.now()}_${file.name}`;
-  const ref = storageRef(storage, key);
+): Promise<{ url: string; path: string }> {
+  const path = `sessions/${sessionId}/uploads/${Date.now()}-${file.name}`;
+  const ref = storageRef(storage, path);
   await uploadBytes(ref, file);
   const url = await getDownloadURL(ref);
-  return url;
+  return { url, path };
 }
 
-/** Re-exports used across the app (OK with isolatedModules) */
+// ---- Aliases to match UI imports (stops “has no exported member” TS errors) -
+export const postDetails = saveCallerDetails;
+export const getCallerDetails = fetchCallerDetails;
+export const uploadFile = uploadToStorage;
+
+// ---- Re-exports (keep parity with prior file) -------------------------------
 export {
   onAuthStateChanged,
   signInWithPopup,
@@ -177,4 +153,4 @@ export {
   uploadBytes,
   getDownloadURL,
 };
-export type { User };
+export type { Timestamp, User };

@@ -1,25 +1,21 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-// NOTE: import the TYPE from your firebase adapter so it matches exactly
 import { getMessages, sendMessage } from "@/lib/firebase";
-import type { ChatMessage } from "@/lib/firebase";
+import type { ChatMessage, Role } from "@/lib/firebase";
 
-/** Who is typing on this screen */
-export type Role = "AGENT" | "CALLER";
+/** Normalize outgoing text: keep intended newlines, trim stray spaces */
+function normalizeOutgoing(text: string) {
+  return text.replace(/\r\n/g, "\n").trim();
+}
 
 type ChatWindowProps = {
   /** Many places call this sessionId or sessionCode — we accept either */
   sessionId?: string;
   sessionCode?: string;
   /** Who is typing on this device */
-  role: Role;
+  role: Role; // "AGENT" | "CALLER"
 };
-
-/** Utility: normalize newlines, and trim stray spaces */
-function normalizeOutgoing(text: string) {
-  return text.replace(/\r\n/g, "\n").trim();
-}
 
 export default function ChatWindow(props: ChatWindowProps) {
   const session = useMemo(
@@ -35,15 +31,17 @@ export default function ChatWindow(props: ChatWindowProps) {
   // Subscribe to messages for this session
   useEffect(() => {
     if (!session) return;
-    // Your firebase adapter should return an unsubscribe function.
-    const unsub = getMessages(session, (msgs: ChatMessage[]) => {
-      // Ensure we always provide an id so React list keys are stable
+
+    // getMessages returns an unsubscribe
+    const unsub = getMessages(session, (msgs: ChatMessage[] = []) => {
+      // Ensure an id exists without assuming a ts property
       const safe: ChatMessage[] = (msgs || []).map((m, i) => ({
         ...m,
-        id: m.id ?? `${i}-${m.ts ?? ""}`,
+        id: m.id ?? `${i}`,
       }));
       setMessages(safe);
     });
+
     return () => {
       try {
         typeof unsub === "function" && unsub();
@@ -67,7 +65,7 @@ export default function ChatWindow(props: ChatWindowProps) {
       await sendMessage(session, {
         text,
         sender: props.role,
-        ts: Date.now(),
+        ts: Date.now(), // optional; backend may set canonical timestamp
       });
       setInput("");
     } finally {
@@ -97,11 +95,11 @@ export default function ChatWindow(props: ChatWindowProps) {
             </p>
           ) : (
             <ul className="flex flex-col gap-3">
-              {messages.map((m, idx) => {
+              {messages.map((m) => {
                 const isAgent = m.sender === "AGENT";
                 return (
                   <li
-                    key={m.id ?? `${idx}-${m.ts ?? ""}`}
+                    key={m.id}
                     className={`flex ${isAgent ? "justify-start" : "justify-end"}`}
                   >
                     <div className="max-w-[75%]">
