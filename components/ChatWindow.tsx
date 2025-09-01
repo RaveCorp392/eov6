@@ -10,12 +10,36 @@ function normalizeOutgoing(text: string) {
 }
 
 type ChatWindowProps = {
-  /** Many places call this sessionId or sessionCode — we accept either */
+  /** Accept either prop name — both map to the same session code */
   sessionId?: string;
   sessionCode?: string;
-  /** Who is typing on this device */
+  /** Who is typing on this device (as defined by your types) */
   role: Role; // "AGENT" | "CALLER"
 };
+
+function FileBubble({ msg }: { msg: any }) {
+  const file = msg?.file ?? {};
+  const href = file.downloadURL || file.url;
+  const isImage = (file.contentType || "").startsWith("image/");
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs opacity-80">{file.name || "Attachment"}</div>
+      {isImage && href ? (
+        <a href={href} target="_blank" rel="noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={href} alt={file.name || "image"} className="max-w-full rounded-xl" />
+        </a>
+      ) : href ? (
+        <a href={href} target="_blank" rel="noreferrer" className="underline break-all">
+          {href}
+        </a>
+      ) : (
+        <div className="opacity-70">File uploaded</div>
+      )}
+    </div>
+  );
+}
 
 export default function ChatWindow(props: ChatWindowProps) {
   const session = useMemo(
@@ -32,12 +56,10 @@ export default function ChatWindow(props: ChatWindowProps) {
   useEffect(() => {
     if (!session) return;
 
-    // getMessages returns an unsubscribe
     const unsub = getMessages(session, (msgs: ChatMessage[] = []) => {
-      // Ensure an id exists without assuming a ts property
       const safe: ChatMessage[] = (msgs || []).map((m, i) => ({
         ...m,
-        id: m.id ?? `${i}`,
+        id: (m as any).id ?? `${i}`,
       }));
       setMessages(safe);
     });
@@ -62,10 +84,11 @@ export default function ChatWindow(props: ChatWindowProps) {
 
     setSending(true);
     try {
+      // IMPORTANT: only send fields that exist on ChatMessage (minus id)
       await sendMessage(session, {
         text,
-        sender: props.role,
-        ts: Date.now(), // optional; backend may set canonical timestamp
+        sender: props.role,   // "AGENT" | "CALLER"
+        ts: Date.now(),       // optional; backend may set canonical timestamp
       });
       setInput("");
     } finally {
@@ -84,7 +107,7 @@ export default function ChatWindow(props: ChatWindowProps) {
     <div className="w-full flex justify-center">
       {/* Outer column constrained ~1/3 of desktop width */}
       <div className="mx-auto w-full max-w-xl">
-        {/* Chat viewport (scroll-contained) */}
+        {/* Chat viewport */}
         <div
           className="h-[70vh] overflow-y-auto rounded-2xl border border-[var(--line,#1e293b)] bg-[var(--panel,#0f172a)] p-4"
           aria-live="polite"
@@ -97,6 +120,15 @@ export default function ChatWindow(props: ChatWindowProps) {
             <ul className="flex flex-col gap-3">
               {messages.map((m) => {
                 const isAgent = m.sender === "AGENT";
+                const maybeAny = m as any; // tolerate file/detail messages coming from Firestore
+
+                const content =
+                  maybeAny?.type === "file" ? (
+                    <FileBubble msg={maybeAny} />
+                  ) : (
+                    <div className="whitespace-pre-wrap">{m.text}</div>
+                  );
+
                 return (
                   <li
                     key={m.id}
@@ -113,11 +145,11 @@ export default function ChatWindow(props: ChatWindowProps) {
                         {isAgent ? "Agent" : "You"}
                       </div>
                       <div
-                        className={`whitespace-pre-wrap rounded-2xl px-4 py-2 leading-relaxed ${
+                        className={`rounded-2xl px-4 py-2 leading-relaxed ${
                           isAgent ? "bg-sky-600 text-white" : "bg-slate-700 text-white"
                         }`}
                       >
-                        {m.text}
+                        {content}
                       </div>
                     </div>
                   </li>

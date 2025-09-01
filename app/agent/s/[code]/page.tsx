@@ -1,36 +1,30 @@
-// app/agent/s/[code]/page.tsx
 import ChatWindow from "@/components/ChatWindow";
-import { getCallerDetails } from "@/lib/firebase";
+import FileUploader from "@/components/FileUploader";
 
-type PageProps = { params: { code: string } };
+type PageProps = {
+  params: { code: string };
+};
 
-export default async function AgentConsolePage({ params }: PageProps) {
-  const sessionId = params.code;
-  const details = await getCallerDetails(sessionId);
+export default function AgentSessionPage({ params }: PageProps) {
+  const sessionCode = params.code;
 
   return (
-    <main className="p-4">
-      <h1 className="mb-1 text-xl font-semibold">Agent console</h1>
-      <div className="small mb-4">Session <strong className="mono">{sessionId}</strong></div>
-
-      <section className="flex gap-6 items-start">
-        <div className="panel" style={{ maxWidth: 560 }}>
-          <h2 className="mb-2 font-semibold">Caller details</h2>
-          {details ? (
-            <ul className="small" style={{ lineHeight: 1.6 }}>
-              {details.name && <li><b>Name:</b> {details.name}</li>}
-              {details.email && <li><b>Email:</b> {details.email}</li>}
-              {details.phone && <li><b>Phone:</b> {details.phone}</li>}
-              {details.uploadedUrl && (
-                <li><b>Upload:</b> <a href={details.uploadedUrl}>view</a></li>
-              )}
-            </ul>
-          ) : (
-            <div className="small">No details yet.</div>
-          )}
+    <main className="min-h-screen bg-[#0b1220] text-[#e6eefb] p-4 sm:p-8">
+      <header className="mb-4">
+        <h1 className="text-xl font-semibold">Agent console</h1>
+        <div className="mt-1 text-xs opacity-70">
+          Session <strong className="font-semibold">{sessionCode}</strong>
         </div>
+      </header>
 
-        <ChatWindow sessionId={sessionId} role="AGENT" />
+      {/* Tools row (right-aligned). Keep this separate from ChatWindow props */}
+      <div className="mb-3 flex justify-end">
+        <FileUploader code={sessionCode} role="agent" enabled />
+      </div>
+
+      {/* Chat window */}
+      <section>
+        <ChatWindow sessionCode={sessionCode} role="AGENT" />
       </section>
     </main>
   );
