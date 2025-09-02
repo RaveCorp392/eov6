@@ -17,32 +17,82 @@ function normalizeOutgoing(text: string) {
 function fileNameFromHref(href: string): string {
   try {
     const u = new URL(href);
-    const last = u.pathname.split("/").pop() || "";
-    // strip query + decode
-    return decodeURIComponent(last.split("?")[0] || last);
+    const last = (u.pathname.split("/").pop() || "").split("?")[0];
+    return decodeURIComponent(last || "Attachment");
   } catch {
-    const last = href.split("/").pop() || href;
-    return decodeURIComponent((last.split("?")[0] || last));
+    const last = (href.split("/").pop() || "").split("?")[0];
+    return decodeURIComponent(last || "Attachment");
   }
 }
 
-function FileBubble({ href, name }: { href: string; name?: string }) {
-  const display = name || fileNameFromHref(href) || "Attachment";
-  const isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(display) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(href);
+type FileKind = "image" | "pdf" | "file";
+function getFileKind(href: string, contentType?: string): FileKind {
+  const h = href.toLowerCase();
+  const ct = (contentType || "").toLowerCase();
+  if (ct.includes("pdf") || /\.pdf($|\?)/.test(h)) return "pdf";
+  if (ct.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)($|\?)/.test(h)) return "image";
+  return "file";
+}
+
+function Icon({ kind }: { kind: FileKind }) {
+  // tiny inline SVGs – no external deps
+  if (kind === "pdf") {
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+        <path fill="#ef4444" d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <path fill="#fff" d="M14 2v6h6" />
+        <text x="7" y="17" fontSize="8" fill="#fff" fontFamily="system-ui, sans-serif">PDF</text>
+      </svg>
+    );
+  }
+  if (kind === "image") {
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+        <rect x="3" y="3" width="18" height="18" rx="2" fill="#38bdf8"/>
+        <circle cx="9" cy="9" r="2.2" fill="#fff"/>
+        <path d="M5 17l5-5 3 3 3-2 3 4H5z" fill="#0ea5e9"/>
+      </svg>
+    );
+  }
   return (
-    <div className="fileBubble">
-      <div className="fileName">Attachment</div>
-      {isImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <a href={href} target="_blank" rel="noreferrer" title={display}>
-          <img src={href} alt={display} />
-        </a>
-      ) : (
-        <a className="fileLink" href={href} target="_blank" rel="noreferrer" title={href}>
-          {display}
-        </a>
-      )}
-    </div>
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+      <path fill="#818cf8" d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <path fill="#c7d2fe" d="M14 2v6h6" />
+    </svg>
+  );
+}
+
+function FileChip({
+  href,
+  name,
+  contentType,
+}: {
+  href: string;
+  name?: string;
+  contentType?: string;
+}) {
+  const display = name || fileNameFromHref(href);
+  const kind = getFileKind(href, contentType);
+  return (
+    <a className="fileChip" href={href} target="_blank" rel="noreferrer" title={display}>
+      <span className="chipIcon"><Icon kind={kind} /></span>
+      <span className="chipLabel">{display}</span>
+      <style jsx>{`
+        .fileChip {
+          display: inline-flex; gap: 8px; align-items: center;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid #1e293b;
+          border-radius: 12px; padding: 8px 10px;
+          text-decoration: none; color: #e6eefb;
+          max-width: 100%; overflow: hidden;
+        }
+        .chipIcon { flex: 0 0 auto; display: inline-flex; }
+        .chipLabel {
+          display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          max-width: 22rem; /* keeps it tidy inside the bubble */
+        }
+      `}</style>
+    </a>
   );
 }
 
@@ -60,26 +110,27 @@ export default function ChatWindow(props: ChatWindowProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
-  // Focus + keep composer in view on mount (both pages)
+  // Focus + bring composer fully into view (caller + agent)
   useEffect(() => {
-    // preventScroll avoids page jumping on focus
     try { textareaRef.current?.focus({ preventScroll: true } as any); } catch { textareaRef.current?.focus(); }
-    textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // ensure bottom of page is visible once mounted
+    setTimeout(() => {
+      textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+      }
+    }, 0);
   }, []);
 
-  // Live messages
   useEffect(() => {
     if (!session) return;
     const unsub = getMessages(session, (msgs: any[] = []) => {
       const safe = (msgs || []).map((m: any, i: number) => ({ id: m.id ?? `${i}`, ...m }));
       setMessages(safe);
     });
-    return () => {
-      try { typeof unsub === "function" && unsub(); } catch {}
-    };
+    return () => { try { typeof unsub === "function" && unsub(); } catch {} };
   }, [session]);
 
-  // Autoscroll the viewport on new messages
   useEffect(() => {
     if (viewportRef.current) {
       viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
@@ -94,14 +145,17 @@ export default function ChatWindow(props: ChatWindowProps) {
     try {
       await sendMessage(session, { text, sender: props.role, ts: Date.now() });
       setInput("");
-      // Keep focus and keep composer visible
       try { textareaRef.current?.focus({ preventScroll: true } as any); } catch { textareaRef.current?.focus(); }
-      setTimeout(() => {
-        textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      // make sure we land fully at the bottom (caller page tweak)
+      requestAnimationFrame(() => {
+        textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
         if (viewportRef.current) {
           viewportRef.current.scrollTo({ top: viewportRef.current.scrollHeight, behavior: "smooth" });
         }
-      }, 0);
+        if (typeof window !== "undefined") {
+          window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+        }
+      });
     } finally {
       setSending(false);
     }
@@ -124,6 +178,7 @@ export default function ChatWindow(props: ChatWindowProps) {
             <ul className="list">
               {messages.map((m: any) => {
                 const isAgent = m.sender === "AGENT";
+
                 // URL-only text → treat as file/link
                 const urlOnly = typeof m.text === "string" && /^(https?:\/\/\S+)$/i.test(m.text.trim());
                 const hrefFromText = urlOnly ? m.text.trim() : "";
@@ -145,7 +200,11 @@ export default function ChatWindow(props: ChatWindowProps) {
                     </div>
                     <div className={`bubble ${isAgent ? "agent" : "caller"}`}>
                       {isFile ? (
-                        <FileBubble href={fileHref} name={m?.file?.name} />
+                        <FileChip
+                          href={fileHref}
+                          name={m?.file?.name}
+                          contentType={m?.file?.contentType}
+                        />
                       ) : (
                         <div className="text">{m.text}</div>
                       )}
@@ -177,7 +236,6 @@ export default function ChatWindow(props: ChatWindowProps) {
         </p>
       </div>
 
-      {/* Local CSS (works even if Tailwind isn't applied) */}
       <style jsx>{`
         .chatRoot { width: 100%; display: flex; justify-content: center; }
         .chatFrame { width: 100%; max-width: 560px; margin: 0 auto; }
@@ -204,11 +262,6 @@ export default function ChatWindow(props: ChatWindowProps) {
         }
         .bubble.agent { background: #0369a1; }
         .bubble.caller { background: #334155; }
-
-        .fileBubble { display: grid; gap: 8px; }
-        .fileName { font-size: 12px; opacity: 0.85; }
-        .fileLink { text-decoration: underline; word-break: break-all; }
-        .fileBubble img { max-width: 100%; border-radius: 12px; }
 
         .composer { display: flex; gap: 8px; margin-top: 12px; align-items: flex-start; }
         .composer textarea {
