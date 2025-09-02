@@ -34,7 +34,6 @@ export default function CallerDetailsForm({
   const [ok, setOk] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Prefill on mount
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -106,7 +105,7 @@ export default function CallerDetailsForm({
       </div>
 
       <style jsx>{`
-        .form { width: 100%; max-width: 560px; }
+        .form { width: 100%; max-width: 560px; margin: 0 auto; } /* <-- center itself */
         @media (min-width: 1024px) { .form { max-width: 33vw; } }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         input, textarea {

@@ -18,12 +18,12 @@ export default function AgentSessionPage({ params }: PageProps) {
       <DetailsHeader code={code} />
 
       {/* Chat centered */}
-      <section className="flex justify-center mb-6">
+      <section style={{ display: "flex", justifyContent: "center", marginBottom: "1.5rem" }}>
         <ChatWindow sessionCode={code} role="AGENT" />
       </section>
 
       {/* Notes centered and width-matched */}
-      <section className="flex justify-center">
+      <section style={{ display: "flex", justifyContent: "center" }}>
         <CallerDetailsForm
           code={code}
           showIdentityFields={false}

@@ -14,19 +14,32 @@ function normalizeOutgoing(text: string) {
   return text.replace(/\r\n/g, "\n").trim();
 }
 
+function fileNameFromHref(href: string): string {
+  try {
+    const u = new URL(href);
+    const last = u.pathname.split("/").pop() || "";
+    // strip query + decode
+    return decodeURIComponent(last.split("?")[0] || last);
+  } catch {
+    const last = href.split("/").pop() || href;
+    return decodeURIComponent((last.split("?")[0] || last));
+  }
+}
+
 function FileBubble({ href, name }: { href: string; name?: string }) {
-  const isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(href);
+  const display = name || fileNameFromHref(href) || "Attachment";
+  const isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(display) || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(href);
   return (
     <div className="fileBubble">
-      <div className="fileName">{name || "Attachment"}</div>
+      <div className="fileName">Attachment</div>
       {isImage ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <a href={href} target="_blank" rel="noreferrer">
-          <img src={href} alt={name || "image"} />
+        <a href={href} target="_blank" rel="noreferrer" title={display}>
+          <img src={href} alt={display} />
         </a>
       ) : (
-        <a className="fileLink" href={href} target="_blank" rel="noreferrer">
-          {href}
+        <a className="fileLink" href={href} target="_blank" rel="noreferrer" title={href}>
+          {display}
         </a>
       )}
     </div>
@@ -42,20 +55,19 @@ export default function ChatWindow(props: ChatWindowProps) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[] | any[]>([]);
   const [sending, setSending] = useState(false);
+
   const endRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
-  // Autofocus + bring composer into view on mount (caller & agent)
+  // Focus + keep composer in view on mount (both pages)
   useEffect(() => {
-    textareaRef.current?.focus();
-    // ensure the composer is in view on first paint
-    setTimeout(() => {
-      textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }, 0);
+    // preventScroll avoids page jumping on focus
+    try { textareaRef.current?.focus({ preventScroll: true } as any); } catch { textareaRef.current?.focus(); }
+    textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, []);
 
-  // Subscribe to messages
+  // Live messages
   useEffect(() => {
     if (!session) return;
     const unsub = getMessages(session, (msgs: any[] = []) => {
@@ -67,7 +79,7 @@ export default function ChatWindow(props: ChatWindowProps) {
     };
   }, [session]);
 
-  // Autoscroll the internal viewport (and the endRef for safety)
+  // Autoscroll the viewport on new messages
   useEffect(() => {
     if (viewportRef.current) {
       viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
@@ -82,7 +94,14 @@ export default function ChatWindow(props: ChatWindowProps) {
     try {
       await sendMessage(session, { text, sender: props.role, ts: Date.now() });
       setInput("");
-      textareaRef.current?.focus(); // keep focus after send
+      // Keep focus and keep composer visible
+      try { textareaRef.current?.focus({ preventScroll: true } as any); } catch { textareaRef.current?.focus(); }
+      setTimeout(() => {
+        textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (viewportRef.current) {
+          viewportRef.current.scrollTo({ top: viewportRef.current.scrollHeight, behavior: "smooth" });
+        }
+      }, 0);
     } finally {
       setSending(false);
     }
@@ -105,8 +124,7 @@ export default function ChatWindow(props: ChatWindowProps) {
             <ul className="list">
               {messages.map((m: any) => {
                 const isAgent = m.sender === "AGENT";
-
-                // Detect URL-only text as a "file/link"
+                // URL-only text → treat as file/link
                 const urlOnly = typeof m.text === "string" && /^(https?:\/\/\S+)$/i.test(m.text.trim());
                 const hrefFromText = urlOnly ? m.text.trim() : "";
 
@@ -159,10 +177,10 @@ export default function ChatWindow(props: ChatWindowProps) {
         </p>
       </div>
 
-      {/* Local CSS */}
+      {/* Local CSS (works even if Tailwind isn't applied) */}
       <style jsx>{`
         .chatRoot { width: 100%; display: flex; justify-content: center; }
-        .chatFrame { width: 100%; max-width: 560px; }
+        .chatFrame { width: 100%; max-width: 560px; margin: 0 auto; }
         @media (min-width: 1024px) { .chatFrame { max-width: 33vw; } }
 
         .viewport {
