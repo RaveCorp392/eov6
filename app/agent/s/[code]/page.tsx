@@ -14,15 +14,15 @@ export default function AgentSessionPage({ params }: PageProps) {
         <div className="mt-1 text-xs opacity-70">Session <strong className="font-semibold">{code}</strong></div>
       </header>
 
-      {/* Read-only caller info above chat */}
+      {/* Read-only caller info centered and width-matched */}
       <DetailsHeader code={code} />
 
-      {/* Chat */}
-      <section className="mb-6">
+      {/* Chat centered */}
+      <section className="flex justify-center mb-6">
         <ChatWindow sessionCode={code} role="AGENT" />
       </section>
 
-      {/* Centered notes below chat */}
+      {/* Notes centered and width-matched */}
       <section className="flex justify-center">
         <CallerDetailsForm
           code={code}

@@ -11,25 +11,23 @@ export default function DetailsHeader({ code }: Props) {
 
   useEffect(() => {
     const ref = doc(db, "sessions", code, "details", "profile");
-    const unsub = onSnapshot(ref, (snap) => {
-      setD((snap.data() as any) || {});
-    });
+    const unsub = onSnapshot(ref, (snap) => setD((snap.data() as any) || {}));
     return () => unsub();
   }, [code]);
 
   return (
-    <div className="wrap">
-      <div className="pill"><strong>Name:</strong>&nbsp;{d.name || "—"}</div>
-      <div className="pill"><strong>Phone:</strong>&nbsp;{d.phone || "—"}</div>
-      <div className="pill"><strong>Email:</strong>&nbsp;{d.email || "—"}</div>
-      <div className="pill"><strong>Lang:</strong>&nbsp;{d.language || "—"}</div>
-
+    <div className="outer">
+      <div className="wrap">
+        <div className="pill"><strong>Name:</strong>&nbsp;{d.name || "—"}</div>
+        <div className="pill"><strong>Phone:</strong>&nbsp;{d.phone || "—"}</div>
+        <div className="pill"><strong>Email:</strong>&nbsp;{d.email || "—"}</div>
+        <div className="pill"><strong>Lang:</strong>&nbsp;{d.language || "—"}</div>
+      </div>
       <style jsx>{`
+        .outer { width: 100%; display: flex; justify-content: center; }
         .wrap {
-          width: 100%;
-          max-width: 560px;
-          display: flex; flex-wrap: wrap; gap: 8px;
-          margin-bottom: 10px;
+          width: 100%; max-width: 560px;
+          display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;
         }
         @media (min-width: 1024px) { .wrap { max-width: 33vw; } }
         .pill {

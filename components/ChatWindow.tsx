@@ -44,10 +44,15 @@ export default function ChatWindow(props: ChatWindowProps) {
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
 
-  // Autofocus on mount
+  // Autofocus + bring composer into view on mount (caller & agent)
   useEffect(() => {
     textareaRef.current?.focus();
+    // ensure the composer is in view on first paint
+    setTimeout(() => {
+      textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, 0);
   }, []);
 
   // Subscribe to messages
@@ -62,8 +67,11 @@ export default function ChatWindow(props: ChatWindowProps) {
     };
   }, [session]);
 
-  // Autoscroll
+  // Autoscroll the internal viewport (and the endRef for safety)
   useEffect(() => {
+    if (viewportRef.current) {
+      viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
+    }
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length]);
 
@@ -90,15 +98,28 @@ export default function ChatWindow(props: ChatWindowProps) {
   return (
     <div className="chatRoot">
       <div className="chatFrame">
-        <div className="viewport" aria-live="polite">
+        <div ref={viewportRef} className="viewport" aria-live="polite">
           {messages.length === 0 ? (
             <p className="empty">No messages yet. Say hello!</p>
           ) : (
             <ul className="list">
               {messages.map((m: any) => {
                 const isAgent = m.sender === "AGENT";
-                const fileHref = m?.file?.downloadURL || m?.file?.url || m?.downloadURL || "";
-                const isFile = m?.type === "file" || (!!fileHref && !m?.text?.trim());
+
+                // Detect URL-only text as a "file/link"
+                const urlOnly = typeof m.text === "string" && /^(https?:\/\/\S+)$/i.test(m.text.trim());
+                const hrefFromText = urlOnly ? m.text.trim() : "";
+
+                const fileHref =
+                  m?.file?.downloadURL ||
+                  m?.file?.url ||
+                  m?.downloadURL ||
+                  hrefFromText;
+
+                const isFile =
+                  m?.type === "file" ||
+                  (!!fileHref && (urlOnly || !m?.text?.trim()));
+
                 return (
                   <li key={m.id} className={`row ${isAgent ? "left" : "right"}`}>
                     <div className={`who ${isAgent ? "agent" : "caller"}`}>
