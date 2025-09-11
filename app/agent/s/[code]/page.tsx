@@ -1,37 +1,108 @@
-import ChatWindow from "@/components/ChatWindow";
-import CallerDetailsForm from "@/components/CallerDetailsForm";
-import DetailsHeader from "@/components/DetailsHeader";
+// app/agent/[code]/page.tsx
+'use client';
 
-type PageProps = { params: { code: string } };
+import { useEffect, useState } from 'react';
+import { doc, onSnapshot, addDoc, collection, query, orderBy } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import ConsentGate from '@/components/ConsentGate';
+import AckModal from '@/components/AckModal';
 
-export default function AgentSessionPage({ params }: PageProps) {
+type Msg = { id: string; role: 'caller'|'agent'|'system'; text?: string; createdAt?: any; type?: string };
+
+export default function AgentSessionPage({ params }: { params: { code: string } }) {
   const code = params.code;
+  const [session, setSession] = useState<any>(null);
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [showAck, setShowAck] = useState(false);
+
+  useEffect(() => {
+    const unsub1 = onSnapshot(doc(db, 'sessions', code), (snap) => setSession({ id: code, ...snap.data() }));
+    const q = query(collection(db, 'sessions', code, 'messages'), orderBy('createdAt', 'asc'));
+    const unsub2 = onSnapshot(q, (ss) => setMessages(ss.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
+    return () => { unsub1(); unsub2(); };
+  }, [code]);
+
+  const consentAccepted = Boolean(session?.consent?.accepted);
+  const blocked = Boolean(session?.policySnapshot?.required) && !consentAccepted;
+
+  async function send(text: string) {
+    if (!text.trim() || blocked) return;
+    await addDoc(collection(db, 'sessions', code, 'messages'), {
+      role: 'agent',
+      type: 'text',
+      text,
+      createdAt: new Date(),
+    });
+  }
 
   return (
-    <main className="min-h-screen bg-[#0b1220] text-[#e6eefb] p-4 sm:p-8">
-      <header className="mb-4">
-        <h1 className="text-xl font-semibold">Agent console</h1>
-        <div className="mt-1 text-xs opacity-70">Session <strong className="font-semibold">{code}</strong></div>
-      </header>
+    <ConsentGate
+      code={code}
+      policy={session?.policySnapshot}
+      consentAccepted={consentAccepted}
+      role="agent"
+    >
+      <div className="mx-auto max-w-4xl p-4 space-y-3">
+        <header className="mb-2 flex items-center justify-between">
+          <div className="text-slate-600 dark:text-slate-300">Agent • Session {code}</div>
+          <div className="flex gap-2">
+            <button
+              className="rounded-lg border px-3 py-1"
+              onClick={() => setShowAck(true)}
+              disabled={blocked}
+            >
+              Send acknowledgement…
+            </button>
+          </div>
+        </header>
 
-      {/* Read-only caller info centered and width-matched */}
-      <DetailsHeader code={code} />
+        <div className="h-[60vh] overflow-auto rounded-lg border border-slate-200 dark:border-slate-800 p-3 bg-white/60 dark:bg-slate-900/60">
+          {messages.map(m => (
+            <div key={m.id} className="mb-2">
+              <span className="text-xs text-slate-500 mr-2">{m.role}</span>
+              <span className="text-slate-900 dark:text-slate-100">{m.text}</span>
+            </div>
+          ))}
+        </div>
 
-      {/* Chat centered */}
-      <section style={{ display: "flex", justifyContent: "center", marginBottom: "1.5rem" }}>
-        <ChatWindow sessionCode={code} role="AGENT" />
-      </section>
+        <div className="flex gap-2">
+          <input
+            disabled={blocked}
+            id="msg"
+            className="flex-1 rounded-lg border px-3 py-2 disabled:opacity-50"
+            placeholder={blocked ? 'Awaiting caller consent…' : 'Type a message'}
+            onKeyDown={async (e) => {
+              const el = e.currentTarget as HTMLInputElement;
+              if (e.key === 'Enter') {
+                await send(el.value);
+                el.value = '';
+              }
+            }}
+          />
+          <button
+            disabled={blocked}
+            className="rounded-lg bg-blue-600 text-white px-4 py-2 disabled:opacity-50"
+            onClick={async () => {
+              const el = document.getElementById('msg') as HTMLInputElement | null;
+              if (!el) return;
+              await send(el.value);
+              el.value = '';
+            }}
+          >
+            Send
+          </button>
+        </div>
 
-      {/* Notes centered and width-matched */}
-      <section style={{ display: "flex", justifyContent: "center" }}>
-        <CallerDetailsForm
-          code={code}
-          showIdentityFields={false}
-          showNotes
-          submitLabel="Save notes"
-          actor="AGENT"
-        />
-      </section>
-    </main>
+        {showAck && (
+          <AckModal
+            code={code}
+            title="Community Recovery Acknowledgement"
+            body={`By proceeding, I acknowledge I have received and understand the Community Recovery information provided.\n\nThis acknowledgement will be recorded with this session.`}
+            requireName
+            onClose={() => setShowAck(false)}
+          />
+        )}
+      </div>
+    </ConsentGate>
   );
 }
