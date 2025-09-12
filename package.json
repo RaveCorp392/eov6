@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "echo no-lint",
+    "lint": "next lint --no-cache",
+    "typecheck": "tsc --noEmit",
+    "preflight": "npm run typecheck && npm run lint",
     "postbuild": "next-sitemap"
   },
   "dependencies": {

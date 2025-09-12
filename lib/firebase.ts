@@ -1,156 +1,123 @@
 ﻿// lib/firebase.ts
-import { initializeApp, getApp, getApps } from "firebase/app";
+'use client';
 
-// (Auth is optional for your flows, but re-exporting keeps parity with older imports)
+import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  serverTimestamp,
+  onSnapshot,
+  query,
+  orderBy,
+  getDoc,
+  doc,
+  type Unsubscribe,
+} from 'firebase/firestore';
 import {
   getAuth,
   GoogleAuthProvider,
-  onAuthStateChanged,
   signInWithPopup,
+  onAuthStateChanged,
   signOut,
   type User,
-} from "firebase/auth";
+} from 'firebase/auth';
+import { getStorage } from 'firebase/storage'; // ⟵ NEW
 
-import {
-  getFirestore,
-  serverTimestamp,
-  collection,
-  doc,
-  setDoc,
-  addDoc,
-  getDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  type Timestamp,
-} from "firebase/firestore";
-
-import {
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
-
-/** Roles used by chat UI */
-export type Role = "AGENT" | "CALLER";
-
-/** Message shape used across UI + adapter */
-export type ChatMessage = {
-  id?: string;                // doc id (optional while mapping)
-  text: string;
-  sender: Role;
-  ts?: number | Timestamp;    // unix ms or Firestore Timestamp
-};
-
-// ---- App init ---------------------------------------------------------------
+/* =========
+   Config
+   ========= */
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyAxK8Uh1l78LyOepNLneV9xyjFNfrRsGz4',
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'eov6-4e929.firebaseapp.com',
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'eov6-4e929',
+  storageBucket:
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'eov6-4e929.firebasestorage.app',
+  messagingSenderId:
+    process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '926090330101',
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:926090330101:web:26a2f5f5d67defcd5b2abc',
 };
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Singletons
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
+const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const storage = getStorage(app);
+export const auth = getAuth(app);
+export const storage = getStorage(app); // ⟵ NEW
 
-// ---- Chat API ---------------------------------------------------------------
-/** Subscribe to messages ordered by timestamp; returns an unsubscribe */
+export const googleProvider = new GoogleAuthProvider();
+export { onAuthStateChanged, signInWithPopup, signOut };
+export type { User };
+
+/* =========
+   Types
+   ========= */
+export type Role = 'caller' | 'agent' | 'system';
+
+export type ChatMessage = {
+  id?: string;
+  role: Role;
+  type: 'text' | 'system';
+  text: string;
+  createdAt: any;
+  [k: string]: any;
+};
+
+/* =========
+   Chat helpers
+   ========= */
 export function getMessages(
   sessionId: string,
-  cb: (msgs: ChatMessage[]) => void
-) {
+  onData: (messages: ChatMessage[]) => void
+): Unsubscribe {
   const q = query(
-    collection(db, "sessions", sessionId, "messages"),
-    orderBy("ts", "asc")
+    collection(db, 'sessions', sessionId, 'messages'),
+    orderBy('createdAt', 'asc')
   );
   return onSnapshot(q, (snap) => {
-    const msgs: ChatMessage[] = snap.docs.map((d) => {
-      const data = d.data() as any;
-      const rawSender = (data?.sender ?? "CALLER") as Role;
-      const sender: Role = rawSender === "AGENT" ? "AGENT" : "CALLER";
-      return {
-        id: d.id,
-        text: String(data?.text ?? ""),
-        sender,
-        ts: (data?.ts as any) ?? undefined,
-      };
-    });
-    cb(msgs);
+    const rows: ChatMessage[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+    onData(rows);
   });
 }
 
-/** Add a message; backend sets canonical timestamp if not provided */
-export async function sendMessage(
-  sessionId: string,
-  m: Omit<ChatMessage, "id">
-): Promise<void> {
-  const col = collection(db, "sessions", sessionId, "messages");
-  await addDoc(col, {
-    text: m.text,
-    sender: m.sender,
-    ts: m.ts ?? serverTimestamp(),
-  });
+type LegacyMsgPayload = { text: string; sender?: Role; role?: Role; ts?: number; [k: string]: any };
+
+export async function sendMessage(sessionId: string, role: Role, text: string): Promise<void>;
+export async function sendMessage(sessionId: string, payload: LegacyMsgPayload): Promise<void>;
+export async function sendMessage(sessionId: string, arg2: any, arg3?: any) {
+  let text: string;
+  let role: Role;
+  let extra: Record<string, any> = {};
+
+  if (typeof arg2 === 'string') {
+    role = arg2 as Role;
+    text = String(arg3 ?? '');
+  } else {
+    const p = arg2 as LegacyMsgPayload;
+    text = p.text ?? '';
+    role = (p.sender || p.role || 'caller') as Role;
+    extra = { ...p };
+    delete extra.text;
+    delete (extra as any).sender;
+    delete (extra as any).role;
+    if (p.ts) extra.clientTs = p.ts;
+  }
+
+  if (!text.trim()) return;
+
+  await addDoc(collection(db, 'sessions', sessionId, 'messages'), {
+    role,
+    type: 'text',
+    text,
+    createdAt: serverTimestamp(),
+    ...extra,
+  } as ChatMessage);
 }
 
-// ---- Caller details API -----------------------------------------------------
-export async function saveCallerDetails(
-  sessionId: string,
-  details: { name?: string; email?: string; phone?: string }
-): Promise<void> {
-  const ref = doc(db, "sessions", sessionId, "details");
-  await setDoc(
-    ref,
-    { ...details, updatedAt: serverTimestamp() },
-    { merge: true }
-  );
+export async function getCallerDetails(sessionId: string): Promise<Record<string, any>> {
+  const try1 = await getDoc(doc(db, 'sessions', sessionId, 'details', 'caller'));
+  if (try1.exists()) return try1.data() as any;
+
+  const try2 = await getDoc(doc(db, 'sessions', sessionId, 'details'));
+  if (try2.exists()) return try2.data() as any;
+
+  return {};
 }
-
-export async function fetchCallerDetails(sessionId: string): Promise<any> {
-  const ref = doc(db, "sessions", sessionId, "details");
-  const snap = await getDoc(ref);
-  return snap.exists() ? snap.data() : {};
-}
-
-// ---- Uploads API ------------------------------------------------------------
-export async function uploadToStorage(
-  sessionId: string,
-  file: File
-): Promise<{ url: string; path: string }> {
-  const path = `sessions/${sessionId}/uploads/${Date.now()}-${file.name}`;
-  const ref = storageRef(storage, path);
-  await uploadBytes(ref, file);
-  const url = await getDownloadURL(ref);
-  return { url, path };
-}
-
-// ---- Aliases to match UI imports (stops “has no exported member” TS errors) -
-export const postDetails = saveCallerDetails;
-export const getCallerDetails = fetchCallerDetails;
-export const uploadFile = uploadToStorage;
-
-// ---- Re-exports (keep parity with prior file) -------------------------------
-export {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-  serverTimestamp,
-  collection,
-  doc,
-  setDoc,
-  addDoc,
-  getDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  storageRef,
-  uploadBytes,
-  getDownloadURL,
-};
-export type { Timestamp, User };

@@ -1,82 +1,74 @@
+// components/UploadButton.tsx
 "use client";
 
-import React, { useRef, useState } from "react";
-import {
-  storage,
-  storageRef,
-  uploadBytes,
-  getDownloadURL,
-  db,
-  collection,
-  addDoc,
-  serverTimestamp,
-} from "@/lib/firebase";
+import { useRef, useState } from "react";
+import { db, storage } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 type Props = {
-  sessionCode: string;
-  role: "CALLER" | "AGENT";
+  sessionId: string;
+  role: "caller" | "agent";
+  disabled?: boolean;
 };
 
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-const ACCEPT = "image/*,application/pdf";
-
-export default function UploadButton({ sessionCode, role }: Props) {
+export default function UploadButton({ sessionId, role, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    setError(null);
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > MAX_BYTES) {
-      setError("File too large (max 10 MB).");
-      e.target.value = "";
-      return;
-    }
-
+    setBusy(true);
     try {
-      setBusy(true);
-      // upload to storage
-      const path = `sessions/${sessionCode}/${Date.now()}-${file.name}`;
-      const ref = storageRef(storage, path);
-      await uploadBytes(ref, file);
-      const url = await getDownloadURL(ref);
+      // storage path: uploads/<session>/<timestamp>-<filename>
+      const key = `uploads/${sessionId}/${Date.now()}-${file.name}`;
+      const fileRef = ref(storage, key);
 
-      // write event
-      await addDoc(collection(db, "sessions", sessionCode, "events"), {
-        type: "FILE",
+      // simple one-shot upload (fine for MVP)
+      await uploadBytes(fileRef, file, { contentType: file.type });
+
+      const url = await getDownloadURL(fileRef);
+
+      // drop a "file" message into the chat
+      await addDoc(collection(db, "sessions", sessionId, "messages"), {
         role,
+        type: "file",
         name: file.name,
         size: file.size,
+        mime: file.type || "application/octet-stream",
         url,
-        contentType: file.type,
-        ts: serverTimestamp(),
+        createdAt: serverTimestamp(),
       });
-    } catch (err: any) {
-      console.error(err);
-      setError("Upload failed. Please try again.");
+    } catch (err) {
+      console.error("upload failed", err);
+      alert("Upload failed. Please try again.");
     } finally {
       setBusy(false);
-      // reset input so same filename can be reselected
+      // clear chooser so the same file can be reselected
       if (inputRef.current) inputRef.current.value = "";
     }
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <>
       <input
         ref={inputRef}
         type="file"
-        accept={ACCEPT}
-        onChange={onPick}
-        aria-label="Choose file to upload"
-        className="block text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-sky-500 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-black hover:file:bg-sky-400 file:cursor-pointer file:focus:outline-none file:focus:ring-2 file:focus:ring-sky-400/60"
-        disabled={busy}
+        className="hidden"
+        onChange={onPickFile}
+        disabled={disabled || busy}
       />
-      {busy && <span className="text-xs text-white/70">Uploading…</span>}
-      {error && <span className="text-xs text-rose-300">{error}</span>}
-    </div>
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={disabled || busy}
+        className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
+        title={busy ? "Uploading…" : "Upload a file"}
+      >
+        {busy ? "Uploading…" : "Upload"}
+      </button>
+    </>
   );
 }
