@@ -22,7 +22,7 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
-    await sendMessage(code, { text, sender: role, type: "text" });
+    await sendMessage(code, role, text);
     setInput("");
   }, [code, input, role]);
 
@@ -72,12 +72,24 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
 
         {showUpload && (
           <>
-            <input ref={fileRef} type="file" className="hidden" onChange={async (e) => {
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
+              const okType = file.type.startsWith('image/') || file.type === 'application/pdf' || /\.(png|jpe?g|gif|webp|bmp|svg|pdf)$/i.test(file.name);
+              if (!okType) {
+                alert('Please select an image or PDF file.');
+                e.currentTarget.value = '';
+                return;
+              }
               const url = await uploadFileToSession(code, file);
               await sendMessage(code, { sender: role, type: "file", url, text: file.name });
-            }} />
+            }}
+            />
             <button
               disabled={disabled}
               onClick={() => fileRef.current?.click()}

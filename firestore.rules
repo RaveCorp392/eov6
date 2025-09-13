@@ -1,13 +1,12 @@
-// EOV6 Firestore rules — “middle” security suitable for MVP
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---------- helpers ----------
+    // -------- helpers ----------
     function isSignedIn() { return request.auth != null; }
     function isAdmin() { return isSignedIn() && request.auth.token.admin == true; }
 
-    // ---------- contact form ----------
+    // -------- contact form -------
     match /contacts/{id} {
       allow create: if
         request.resource.data.keys().hasOnly(['email','name','message','createdAt','source','status']) &&
@@ -22,67 +21,75 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    // ---------- entitlements (server-only writes) ----------
+    // -------- entitlements (read-only to self) -------
     match /entitlements/{email} {
--  allow read: if isSignedIn()
--              && request.auth.token.email != null
--              && lower(request.auth.token.email) == email;
-+  allow read: if isSignedIn()
-+              && request.auth.token.email != null
-+              && request.auth.token.email == email;
-   allow create, update, delete: if false;
-}
-
+      allow read: if isSignedIn()
+                  && request.auth.token.email != null
+                  && lower(request.auth.token.email) == email;
+      allow create, update, delete: if false;
     }
 
-    // ---------- orgs / members ----------
+    // -------- orgs + members -------
     match /orgs/{orgId} {
-      allow read: if true;                  // tighten later if desired
-      allow write: if isAdmin();
+      function isMember() {
+        return isSignedIn()
+               && exists(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid));
+      }
+      function myRole() {
+        return isMember()
+               ? get(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid)).data.role
+               : null;
+      }
+      function isManager() { return myRole() in ['owner','admin']; }
+
+      allow read: if isMember() || isAdmin();
+      allow update, delete: if isManager() || isAdmin();
+      allow create: if isAdmin();
 
       match /members/{uid} {
-        allow read: if true;                // roster is not sensitive here
-        allow write: if isAdmin();          // only admins manage members
+        allow read: if isMember() || isAdmin();
+        allow create, update, delete: if isAdmin()
+                                      || (isMember() && (myRole() == 'owner'
+                                          || (myRole() == 'admin' && uid != request.auth.uid)
+                                          || (uid == request.auth.uid)));
       }
     }
 
-    // ---------- sessions ----------
-    // MVP: public read, controlled writes
+    // -------- sessions (middle setting for dev/pilot) -------
+    // Everyone can read. Creates allowed for messages with a constrained schema.
     match /sessions/{code} {
+      // Read the session doc
       allow read: if true;
+      // Allow updating the session doc so agents can set ackRequest etc.
+      allow create, update: if true;
+      allow delete: if false;
 
-      // Clients create sessions from the app (MVP). Tighten later if needed.
-      allow create: if true;
-
-      // Allow only specific root-field updates from clients:
-      // - consent (caller accepting)
-      // - ackRequest (agent sets or caller clears)
-      allow update: if request.resource.data.diff(resource.data)
-                        .changedKeys()
-                        .hasOnly(['consent','ackRequest']);
-
-      // Caller/agent profile & notes live here; OK to edit from either side.
-      match /details/{docId} {
-        allow read: if true;
-        allow write: if true;
-      }
-
-      // Chat messages
+      // Messages subcollection
       match /messages/{msgId} {
         allow read: if true;
-
-        // Create allowed if:
-        //  - consent accepted, OR
-        //  - system message (e.g., ack accepted), OR
-        //  - admin
         allow create: if
-          (get(/databases/$(database)/documents/sessions/$(code)).data.consent.accepted == true)
-          || (request.resource.data.type == 'system')
-          || isAdmin();
-
-        // No client updates/deletes to messages
+          request.resource.data.role in ['caller','agent','system'] &&
+          request.resource.data.type in ['text','system','file'] &&
+          request.resource.data.text is string &&
+          request.resource.data.text.size() <= 4000 &&
+          // if it is a file, it must include a non-empty url
+          (request.resource.data.type != 'file'
+             || (request.resource.data.url is string && request.resource.data.url.size() > 0));
         allow update, delete: if false;
+      }
+
+      // Caller details (name/email/phone/notes)
+      match /details/{docId} {
+        allow read: if true;
+        allow create, update: if
+          request.resource.data.keys().hasOnly(['name','email','phone','notes','updatedAt']) &&
+          (!('name' in request.resource.data) || request.resource.data.name is string) &&
+          (!('email' in request.resource.data) || request.resource.data.email is string) &&
+          (!('phone' in request.resource.data) || request.resource.data.phone is string) &&
+          (!('notes' in request.resource.data) || request.resource.data.notes is string);
+        allow delete: if false;
       }
     }
   }
 }
+

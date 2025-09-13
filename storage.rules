@@ -1,19 +1,15 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Demo-safe: tight file types + size cap + path shape.
-    match /uploads/{code}/{fileId} {
-      allow read: if true; // public read for demo/agent access (can tighten later)
-
-      allow write: if request.resource.size <= 10 * 1024 * 1024      // <= 10 MB
-                   && (request.resource.contentType.matches('image/.*')
-                       || request.resource.contentType == 'application/pdf')
-                   && code.matches('^[0-9]{6}$');
-    }
-
-    // Block anything else
-    match /{allPaths=**} {
-      allow read, write: if false;
+    // Session uploads: images or PDFs under 10MB. Reads open for now.
+    match /sessions/{code}/{allPaths=**} {
+      allow read: if true;
+      allow write: if
+        request.resource.size < 10 * 1024 * 1024 &&
+        (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType == 'application/pdf'
+        );
     }
   }
 }

@@ -4,14 +4,14 @@ import { useEffect, useState } from "react";
 import { requestAck, saveDetails, watchDetails } from "@/lib/firebase";
 
 export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) {
-  const [form, setForm] = useState({ name: "", notes: "" });
+  const [form, setForm] = useState<{ name: string; email: string; phone: string; notes?: string }>({ name: "", email: "", phone: "", notes: "" });
 
   useEffect(() => {
-    const unsub = watchDetails(sessionId, (d) => setForm({ name: d?.name || "", notes: d?.notes || "" }));
+    const unsub = watchDetails(sessionId, (d) => setForm({ name: d?.name || "", email: d?.email || "", phone: d?.phone || "", notes: d?.notes || "" }));
     return () => unsub();
   }, [sessionId]);
 
-  async function save(k: "name" | "notes", v: string) {
+  async function save(k: "name" | "email" | "phone" | "notes", v: string) {
     setForm((f) => ({ ...f, [k]: v }));
     await saveDetails(sessionId, { [k]: v });
   }
@@ -32,9 +32,29 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
         />
       </div>
       <div>
+        <div className="text-xs opacity-70">Caller email</div>
+        <input
+          value={form.email}
+          onChange={(e) => save("email", e.target.value)}
+          type="email"
+          placeholder="name@example.com"
+          className="w-full mt-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1"
+        />
+      </div>
+      <div>
+        <div className="text-xs opacity-70">Caller phone</div>
+        <input
+          value={form.phone}
+          onChange={(e) => save("phone", e.target.value)}
+          inputMode="tel"
+          placeholder="(555) 555-5555"
+          className="w-full mt-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1"
+        />
+      </div>
+      <div>
         <div className="text-xs opacity-70">Agent notes</div>
         <textarea
-          value={form.notes}
+          value={form.notes || ""}
           onChange={(e) => save("notes", e.target.value)}
           placeholder="Notes visible to agents only"
           className="w-full mt-1 h-28 rounded-lg bg-white/5 border border-white/10 px-2 py-1"
