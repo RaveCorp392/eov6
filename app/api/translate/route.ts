@@ -1,89 +1,112 @@
-import "server-only";
+﻿import "server-only";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-import { NextResponse } from "next/server";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { NextRequest, NextResponse } from "next/server";
+import { adminDb, admin } from "@/lib/firebaseAdmin";
 import { stripe } from "@/lib/stripe";
-import "@/lib/firebaseAdmin";
-
-const adminDb = getFirestore();
-const GOOGLE_KEY = process.env.GOOGLE_TRANSLATE_API_KEY!;
-const FREE_PREVIEWS = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
-
-const ISO = new Set(["en","fr","es","de","it","pt","nl","sv","pl","ru","zh","ja","ko"]);
-
-async function translateWithGoogle(text: string, target: string) {
-  if (!GOOGLE_KEY) throw new Error("No GOOGLE_TRANSLATE_API_KEY");
-  const url = "https://translation.googleapis.com/language/translate/v2?key=" + GOOGLE_KEY;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ q: text, target }),
-  });
-  if (!res.ok) throw new Error(`Translate failed: ${res.status}`);
-  const data = await res.json();
-  const out = data?.data?.translations?.[0]?.translatedText ?? "";
-  return String(out);
-}
-
-export async function POST(req: Request) {
+import { LANG_INDEX } from "@/lib/languages";
+async function sendTranslateMeterEvent(stripe: any, customerId: string) {
   try {
-    const { code, text, target, commit } = await req.json();
-    if (!code || typeof text !== "string") {
-      return NextResponse.json({ error: "Missing code/text" }, { status: 400 });
+    // Try modern nested path first (some SDKs expose billing.meterEvents)
+    const create =
+      stripe?.billing?.meterEvents?.create ??
+      stripe?.meterEvents?.create; // older/beta shapes
+
+    if (typeof create === "function") {
+      await create({
+        event_name: "eov6.translate.accepted",
+        payload: { stripe_customer_id: customerId, value: "1" },
+      });
+      return "metered";
     }
-    const tgt = (String(target || "en").toLowerCase());
-    if (!ISO.has(tgt)) return NextResponse.json({ error: "Unsupported target" }, { status: 400 });
-
-    if (!commit) {
-      const snap = await adminDb.doc(`sessions/${code}`).get();
-      const used = Number(snap.get("translatePreviewCount") || 0);
-      if (used >= FREE_PREVIEWS) {
-        return NextResponse.json({ error: "preview-limit", limit: FREE_PREVIEWS }, { status: 429 });
-      }
-      const translatedText = await translateWithGoogle(text, tgt);
-      await adminDb.doc(`sessions/${code}`).set({ translatePreviewCount: FieldValue.increment(1) }, { merge: true });
-      return NextResponse.json({ translatedText, previewsRemaining: Math.max(0, FREE_PREVIEWS - used - 1) });
-    }
-
-    const translatedText = await translateWithGoogle(text, tgt);
-
-    await adminDb.collection("sessions").doc(code).collection("messages").add({
-      role: "agent",
-      type: "text",
-      text: translatedText,
-      createdAt: FieldValue.serverTimestamp(),
-      createdAtMs: Date.now(),
-      meta: { translated: true, originalText: text, target: tgt },
-    });
-
-    const detailsTry = await adminDb.doc(`sessions/${code}/details/caller`).get();
-    const email = detailsTry.get("email");
-
-    let metered = "skipped (no email)";
-    if (email) {
-      try {
-        const customers = await stripe.customers.list({ email, limit: 1 });
-        const customer = customers.data[0];
-        if (customer) {
-          await (stripe as any).meterEvents.create({
-            event_name: "eov6.translate.accepted",
-            payload: { stripe_customer_id: customer.id, value: "1" },
-          });
-          metered = "billed";
-        } else {
-          metered = "backfill (no customer)";
-          await adminDb.collection("meter_backfill").add({ event: "eov6.translate.accepted", email, code, ts: Date.now() });
-        }
-      } catch (e) {
-        metered = "backfill (error)";
-        await adminDb.collection("meter_backfill").add({ event: "eov6.translate.accepted", email, code, ts: Date.now(), err: String(e) });
-      }
-    }
-
-    return NextResponse.json({ ok: true, metered });
-  } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
+    // SDK doesn’t support meter events — let caller backfill
+    return "unsupported";
+  } catch {
+    return "error";
   }
 }
+
+const GOOGLE_KEY = process.env.GOOGLE_TRANSLATE_API_KEY!;
+const FREE_LIMIT = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
+
+async function googleTranslate(text: string, target: string) {
+  const url = "https://translation.googleapis.com/language/translate/v2";
+  const res = await fetch(`${url}?key=${GOOGLE_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ q: text, target, source: "auto", format: "text" }),
+  });
+  if (!res.ok) throw new Error(`translate http ${res.status}`);
+  const j = await res.json();
+  const t = j?.data?.translations?.[0];
+  return { translatedText: t?.translatedText as string, src: t?.detectedSourceLanguage as string|undefined };
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { code, text, commit, target, sender, agentLang, callerLang } = await req.json();
+    if (!code || !text?.trim()) return NextResponse.json({ error: "bad-request" }, { status: 400 });
+    const sessionRef = adminDb.collection("sessions").doc(String(code));
+    const snap = await sessionRef.get(); if (!snap.exists) return NextResponse.json({ error: "no-session" }, { status: 404 });
+
+    if (!commit) { // preview limit
+      const used = Number(snap.get("translatePreviewCount") ?? 0);
+      if (used >= FREE_LIMIT) return NextResponse.json({ error: "preview-limit", limit: FREE_LIMIT }, { status: 429 });
+    }
+
+    const tgt = (target || (sender === "agent" ? (callerLang || "en") : (agentLang || "en"))).toLowerCase();
+    if (!LANG_INDEX.has(tgt)) return NextResponse.json({ error: "bad-target" }, { status: 400 });
+
+    const { translatedText, src } = await googleTranslate(text, tgt);
+
+    if (!commit) {
+      await sessionRef.set({ translatePreviewCount: admin.firestore.FieldValue.increment(1) }, { merge: true });
+      return NextResponse.json({ translatedText });
+    }
+
+    const now = admin.firestore.Timestamp.now(); const createdAtMs = Date.now();
+    await sessionRef.collection("messages").add({
+      role: sender === "caller" ? "caller" : "agent",
+      type: "text",
+      text: translatedText,
+      createdAt: now, createdAtMs,
+      orig: { text, lang: sender === "agent" ? (agentLang || "en") : (callerLang || "en") },
+      lang: { src: src || "auto", tgt },
+      meta: { translated: true },
+    });
+
+    const orgId = snap.get("orgId");
+    let metered: string | undefined;
+    const orgUnlimited = !!orgId && !!(await adminDb.collection("orgs").doc(String(orgId)).get()).get("features.translateUnlimited");
+    const email = snap.get("details.email") || snap.get("details.caller.email");
+    if (!orgUnlimited && process.env.STRIPE_SECRET_KEY && email) {
+      try {
+        const list = await stripe.customers.list({ email, limit: 1 });
+        const customer = list.data?.[0];
+        if (customer) {
+          metered = await sendTranslateMeterEvent(stripe as any, customer.id);
+          if (!metered || metered === "unsupported" || metered === "error") {
+            await adminDb.collection("meter_backfill").add({ at: now, reason: "meter-unsupported", email, code });
+            metered = metered ?? "backfill";
+          }
+        } else {
+          await adminDb.collection("meter_backfill").add({ at: now, reason: "no-customer", email, code });
+          metered = "backfill";
+        }
+      } catch (e:any) {
+        await adminDb.collection("meter_backfill").add({ at: now, reason: "stripe-error", error: String(e?.message||e), email, code });
+        metered = "backfill";
+      }
+    }
+    return NextResponse.json({ ok: true, translatedText, metered });
+  } catch (e:any) { return NextResponse.json({ error: String(e?.message||e) }, { status: 500 }); }
+}
+
+
+
+
+
+
+
+
+

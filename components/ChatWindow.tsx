@@ -1,4 +1,4 @@
-// components/ChatWindow.tsx
+﻿// components/ChatWindow.tsx
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { sendMessage, watchMessages, watchSession, type ChatMessage, type Role, uploadFileToSession } from "@/lib/firebase";
@@ -35,7 +35,15 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
         const res = await fetch('/api/translate', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ code, text, target, commit: true }),
+          body: JSON.stringify({
+            code,
+            text,
+            target,
+            commit: true,
+            sender: role,
+            agentLang: session?.translate?.agentLang,
+            callerLang: session?.translate?.callerLang,
+          }),
         });
         const j = await res.json();
         if (!res.ok) throw new Error(j?.error || 'translate failed');
@@ -48,32 +56,31 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
     await sendMessage(code, role, text);
     setInput("");
   }, [code, input, role, session]);
+  function bubbleFor(msg: any) {
+    const mine = msg.role === role;
+    const src = msg?.orig?.text as string | undefined;
+    const srcLang = msg?.orig?.lang as string | undefined;
+    const tgtLang = msg?.lang?.tgt as string | undefined;
+
+    const primary = mine ? (src ?? msg.text ?? "") : (msg.text ?? src ?? "");
+    const secondary = mine
+      ? (msg.meta?.translated && msg.text ? "Translated (" + ((tgtLang || "").toUpperCase()) + "): " + msg.text : "")
+      : (src ? "Original (" + ((srcLang || "").toUpperCase()) + "): " + src : "");
+
+    return (
+      <div key={msg.id} className={"flex " + (mine ? "justify-end" : "justify-start") + " my-1"}>
+        <div className={(mine ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-900") + " rounded-2xl px-3 py-1.5 max-w-[70%]"}>
+          <div className="whitespace-pre-wrap break-words">{primary}</div>
+          {secondary && <div className={("text-xs mt-1 ") + (mine ? "text-blue-100/80" : "text-slate-500")}>{secondary}</div>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="h-[55vh] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/80 dark:bg-slate-900/60">
-        {msgs.map((m, i) => {
-          const mine = m.role === role;
-          const sys = m.type === "system" || m.role === "system";
-          const base = "inline-block max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-5 break-words shadow-sm";
-          return (
-            <div key={i} className={`my-1 flex ${sys ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
-              {sys ? (
-                <span className="text-xs text-amber-800 bg-amber-100 rounded-full px-3 py-1">{m.text}</span>
-              ) : (
-                <span className={base + " " + (mine ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100") }>
-                  {m.type === "file" && m.url ? (
-                    <a href={m.url} target="_blank" className="underline break-all" rel="noreferrer">
-                      {m.text || "file"}
-                    </a>
-                  ) : (
-                    m.text
-                  )}
-                </span>
-              )}
-            </div>
-          );
-        })}
+        {msgs.map(m => bubbleFor(m))}
         <div ref={endRef} />
       </div>
 
@@ -88,7 +95,7 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
               await send();
             }
           }}
-          placeholder={disabled ? "Please accept the privacy notice to chat…" : "Type a message"}
+          placeholder={disabled ? "Please accept the privacy notice to chatâ€¦" : "Type a message"}
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50"
         />
         <button onClick={send} disabled={disabled} className="rounded-lg bg-blue-600 text-white px-4 py-2 disabled:opacity-50">Send</button>
@@ -130,3 +137,4 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
     </div>
   );
 }
+

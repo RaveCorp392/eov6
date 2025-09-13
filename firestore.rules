@@ -68,13 +68,26 @@ service cloud.firestore {
       match /messages/{msgId} {
         allow read: if true;
         allow create: if
-          request.resource.data.role in ['caller','agent','system'] &&
+                    request.resource.data.role in ['caller','agent','system'] &&
           request.resource.data.type in ['text','system','file'] &&
           request.resource.data.text is string &&
           request.resource.data.text.size() <= 4000 &&
-          // if it is a file, it must include a non-empty url
           (request.resource.data.type != 'file'
-             || (request.resource.data.url is string && request.resource.data.url.size() > 0));
+             || (request.resource.data.url is string && request.resource.data.url.size() > 0)) &&
+          (!('orig' in request.resource.data) || (
+            request.resource.data.orig is map &&
+            (!('text' in request.resource.data.orig) || request.resource.data.orig.text is string) &&
+            (!('lang' in request.resource.data.orig) || request.resource.data.orig.lang is string)
+          )) &&
+          (!('lang' in request.resource.data) || (
+            request.resource.data.lang is map &&
+            (!('src' in request.resource.data.lang) || request.resource.data.lang.src is string) &&
+            (!('tgt' in request.resource.data.lang) || request.resource.data.lang.tgt is string)
+          )) &&
+          (!('meta' in request.resource.data) || (
+            request.resource.data.meta is map &&
+            (!('translated' in request.resource.data.meta) || request.resource.data.meta.translated is bool)
+          ));
         allow update, delete: if false;
       }
 
@@ -92,4 +105,5 @@ service cloud.firestore {
     }
   }
 }
+
 
