@@ -35,7 +35,7 @@ export default async function ThanksPage({ searchParams }: Props) {
 
   return (
     <main className="mx-auto max-w-2xl p-8">
-      <h1 className="text-2xl font-semibold">You're all set 🎉</h1>
+      <h1 className="text-2xl font-semibold">You’re all set dYZ%</h1>
       <p className="text-slate-600 mt-2">
         {isSub ? "Your subscription is active." : "Your pass has been activated."}{" "}
         {email ? (<>
@@ -65,3 +65,4 @@ export default async function ThanksPage({ searchParams }: Props) {
     </main>
   );
 }
+

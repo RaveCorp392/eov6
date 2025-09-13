@@ -1,97 +1,88 @@
+// EOV6 Firestore rules — “middle” security suitable for MVP
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSixDigit(code) {
-      return code.matches('^[0-9]{6}$');
+    // ---------- helpers ----------
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && request.auth.token.admin == true; }
+
+    // ---------- contact form ----------
+    match /contacts/{id} {
+      allow create: if
+        request.resource.data.keys().hasOnly(['email','name','message','createdAt','source','status']) &&
+        request.resource.data.email is string &&
+        request.resource.data.name is string &&
+        request.resource.data.message is string &&
+        request.resource.data.createdAt is int &&
+        request.resource.data.email.size() > 0 &&
+        request.resource.data.email.size() <= 200 &&
+        request.resource.data.name.size() <= 200 &&
+        request.resource.data.message.size() <= 4000;
+      allow read, update, delete: if isAdmin();
     }
 
-    function sessionDoc(code) {
-      return get(/databases/$(database)/documents/sessions/$(code));
+    // ---------- entitlements (server-only writes) ----------
+    match /entitlements/{email} {
+-  allow read: if isSignedIn()
+-              && request.auth.token.email != null
+-              && lower(request.auth.token.email) == email;
++  allow read: if isSignedIn()
++              && request.auth.token.email != null
++              && request.auth.token.email == email;
+   allow create, update, delete: if false;
+}
+
     }
 
-    function sessionExists(code) {
-      return exists(/databases/$(database)/documents/sessions/$(code));
-    }
+    // ---------- orgs / members ----------
+    match /orgs/{orgId} {
+      allow read: if true;                  // tighten later if desired
+      allow write: if isAdmin();
 
-    function isActiveSession(code) {
-      return sessionExists(code)
-        && sessionDoc(code).data.active == true
-        && request.time < sessionDoc(code).data.expiresAt;
-    }
-
-    // Agents are authenticated users. You may later add custom claims.
-    function isAgent() {
-      return request.auth != null;
-    }
-
-    // Basic validators for messages
-    function validMessageBody() {
-      return request.resource.data.type in ['text','file','details']
-        && request.resource.data.role in ['agent','caller','system']
-        && request.resource.data.createdAt == request.time
-        // text
-        && (request.resource.data.type != 'text'
-            || (request.resource.data.text is string && request.resource.data.text.size() <= 4000))
-        // file
-        && (request.resource.data.type != 'file'
-            || (
-                request.resource.data.file is map
-                && request.resource.data.file.name is string
-                && request.resource.data.file.size is int
-                && request.resource.data.file.contentType is string
-                && request.resource.data.file.storagePath is string
-                && request.resource.data.file.downloadURL is string
-              ))
-        // details
-        && (request.resource.data.type != 'details'
-            || (
-                request.resource.data.details is map
-                && request.resource.data.details.name is string
-                && request.resource.data.details.email is string
-                && request.resource.data.details.phone is string
-              ));
-    }
-
-    // Sessions collection
-    match /sessions/{code} {
-      allow read: if isActiveSession(code); // both sides can read minimal session doc
-
-      // Session creation/updates by agent app only
-      allow create: if isAgent()
-        && isSixDigit(code)
-        && request.resource.data.active == true
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.expiresAt is timestamp;
-
-      // Allow agents to safely update a few fields (e.g., active/lastActivityAt)
-      allow update: if isAgent()
-        && request.resource.data.keys().hasOnly(['active','lastActivityAt','createdAt','expiresAt','agentId'])
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.expiresAt == resource.data.expiresAt;
-
-      // Messages subcollection
-      match /messages/{msgId} {
-        allow read: if isActiveSession(code);
-
-        // Callers (unauthenticated) can post into an active session ONLY:
-        allow create: if isActiveSession(code)
-          && validMessageBody()
-          && request.resource.data.role in ['caller','system']
-          // guard details visibility (optional)
-          && (request.resource.data.type != 'details' || !('visibleTo' in request.resource.data) || request.resource.data.visibleTo == 'agent');
-
-        // Agents (authenticated) can also post:
-        allow create: if isActiveSession(code)
-          && isAgent()
-          && validMessageBody()
-          && request.resource.data.role in ['agent','system'];
+      match /members/{uid} {
+        allow read: if true;                // roster is not sensitive here
+        allow write: if isAdmin();          // only admins manage members
       }
     }
 
-    // Deny everything else
-    match /{document=**} {
-      allow read, write: if false;
+    // ---------- sessions ----------
+    // MVP: public read, controlled writes
+    match /sessions/{code} {
+      allow read: if true;
+
+      // Clients create sessions from the app (MVP). Tighten later if needed.
+      allow create: if true;
+
+      // Allow only specific root-field updates from clients:
+      // - consent (caller accepting)
+      // - ackRequest (agent sets or caller clears)
+      allow update: if request.resource.data.diff(resource.data)
+                        .changedKeys()
+                        .hasOnly(['consent','ackRequest']);
+
+      // Caller/agent profile & notes live here; OK to edit from either side.
+      match /details/{docId} {
+        allow read: if true;
+        allow write: if true;
+      }
+
+      // Chat messages
+      match /messages/{msgId} {
+        allow read: if true;
+
+        // Create allowed if:
+        //  - consent accepted, OR
+        //  - system message (e.g., ack accepted), OR
+        //  - admin
+        allow create: if
+          (get(/databases/$(database)/documents/sessions/$(code)).data.consent.accepted == true)
+          || (request.resource.data.type == 'system')
+          || isAdmin();
+
+        // No client updates/deletes to messages
+        allow update, delete: if false;
+      }
     }
   }
 }

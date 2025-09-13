@@ -1,59 +1,64 @@
 // components/AckModal.tsx
-'use client';
+"use client";
+import { useState } from "react";
+import { clearAck, saveDetails, sendMessage } from "@/lib/firebase";
 
-import { useState } from 'react';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-
-export default function AckModal(props: {
-  code: string;
-  title: string;
-  body: string;
+type AckRequest = {
+  title?: string;
+  body?: string;
+  text?: string; // fallback support
   requireName?: boolean;
-  onClose?: () => void;
-}) {
-  const [name, setName] = useState('');
-  const [open, setOpen] = useState(true);
+};
+
+interface Props {
+  sessionId: string;
+  ackRequest?: AckRequest | null;
+}
+
+export default function AckModal({ sessionId, ackRequest }: Props) {
+  const [name, setName] = useState("");
+
+  // Narrow so TS knows ackRequest is defined below
+  if (!ackRequest) return null;
+  const request: AckRequest = ackRequest; // narrowed
 
   async function accept() {
-    await addDoc(collection(db, 'sessions', props.code, 'messages'), {
-      role: 'system',
-      type: 'system',
-      text: `Acknowledgement accepted: ${props.title}${props.requireName && name ? ` — Signed: ${name}` : ''}`,
-      createdAt: serverTimestamp(),
+    if (request.requireName && !name.trim()) return;
+    if (name.trim()) await saveDetails(sessionId, { name: name.trim() });
+    await sendMessage(sessionId, {
+      sender: "caller",
+      type: "system",
+      text: `Acknowledgement accepted by ${name?.trim() || "caller"}.`,
     });
-    setOpen(false);
-    props.onClose?.();
+    await clearAck(sessionId);
   }
 
-  if (!open) return null;
+  async function decline() {
+    await sendMessage(sessionId, { sender: "caller", type: "system", text: "Acknowledgement declined." });
+    await clearAck(sessionId);
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" aria-hidden />
-      <div className="relative w-[min(640px,92vw)] rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-2xl">
-        <h2 className="text-xl font-semibold">{props.title}</h2>
-        <div className="mt-4 whitespace-pre-wrap text-sm leading-6">{props.body}</div>
-        {props.requireName && (
+    <div className="fixed inset-0 z-50 grid place-items-center">
+      <div className="absolute inset-0 bg-black/60" />
+      <div className="relative w-[min(600px,92vw)] rounded-2xl bg-white text-slate-900 p-6">
+        <h2 className="text-lg font-semibold">{request.title ?? "Acknowledgement"}</h2>
+        <p className="mt-3 whitespace-pre-wrap">{request.body ?? request.text ?? ""}</p>
+
+        {request.requireName && (
           <input
-            className="mt-4 w-full border rounded px-3 py-2"
+            className="mt-4 w-full rounded-lg border px-3 py-2"
             placeholder="Type your full name to sign"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
         )}
-        <div className="mt-6 flex gap-3 justify-end">
-          <button
-            onClick={() => { setOpen(false); props.onClose?.(); }}
-            className="px-4 py-2 rounded-lg border"
-          >
-            Cancel
+
+        <div className="mt-5 flex gap-3 justify-end">
+          <button onClick={decline} className="px-4 py-2 rounded-lg border">
+            Decline
           </button>
-          <button
-            disabled={props.requireName && !name.trim()}
-            onClick={accept}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50"
-          >
+          <button onClick={accept} className="px-4 py-2 rounded-lg bg-blue-600 text-white">
             Accept
           </button>
         </div>
