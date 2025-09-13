@@ -1,7 +1,7 @@
 // components/ChatWindow.tsx
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { sendMessage, watchMessages, type ChatMessage, type Role, uploadFileToSession } from "@/lib/firebase";
+import { sendMessage, watchMessages, watchSession, type ChatMessage, type Role, uploadFileToSession } from "@/lib/firebase";
 
 type Props = {
   code: string;
@@ -15,16 +15,39 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [session, setSession] = useState<any>(null);
 
   useEffect(() => watchMessages(code, setMsgs), [code]);
+  useEffect(() => watchSession(code, setSession), [code]);
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [msgs.length]);
 
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
+    // live translate if enabled
+    const tx = session?.translate;
+    const live = tx?.enabled === true;
+    const agentLang = tx?.agentLang || 'en';
+    const callerLang = tx?.callerLang || 'en';
+    if (live) {
+      const target = role === 'agent' ? callerLang : agentLang;
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ code, text, target, commit: true }),
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j?.error || 'translate failed');
+        setInput("");
+        return;
+      } catch (e) {
+        alert('Translate/send failed. Sent original instead.');
+      }
+    }
     await sendMessage(code, role, text);
     setInput("");
-  }, [code, input, role]);
+  }, [code, input, role, session]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -86,8 +109,12 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
                 e.currentTarget.value = '';
                 return;
               }
-              const url = await uploadFileToSession(code, file);
-              await sendMessage(code, { sender: role, type: "file", url, text: file.name });
+              try {
+                const url = await uploadFileToSession(code, file);
+                await sendMessage(code, { sender: role, type: "file", url, text: file.name });
+              } catch (e) {
+                alert("Upload failed. If you're running locally, please retry or disable any ad-blockers. (It should work fine on Vercel.)");
+              }
             }}
             />
             <button

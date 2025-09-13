@@ -23,7 +23,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { setDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { setDoc, updateDoc, deleteField, increment } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage'; // ⟵ NEW
 
 /* =========
@@ -215,4 +215,16 @@ export async function uploadFileToSession(code: string, file: File): Promise<str
   const r = ref(storage, `sessions/${code}/${Date.now()}_${file.name}`);
   await uploadBytes(r, file);
   return await getDownloadURL(r);
+}
+
+// --- Translate session config & preview count ---
+export async function setTranslateConfig(
+  code: string,
+  patch: Partial<{ enabled: boolean; agentLang: string; callerLang: string }>
+) {
+  await setDoc(doc(db, 'sessions', code), { translate: patch, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export async function bumpTranslatePreviewCount(code: string) {
+  await updateDoc(doc(db, 'sessions', code), { translatePreviewCount: increment(1) });
 }

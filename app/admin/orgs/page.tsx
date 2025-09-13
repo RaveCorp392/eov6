@@ -104,6 +104,35 @@ export default function OrgSettingsPage() {
           </button>
         </div>
       </div>
+
+      <div className="mt-8 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold">Translate Add-on</div>
+            <p className="text-xs text-slate-500">Unlimited translations for this org. If enabled, per-event metering is skipped.</p>
+          </div>
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={Boolean((form as any).translateUnlimited)}
+              onChange={(e) => setForm((f: any) => ({ ...f, translateUnlimited: e.target.checked }))}
+            />
+            <span className="text-sm">Enable</span>
+          </label>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <button
+            onClick={async () => {
+              const ref = doc(db, 'orgs', orgId);
+              await setDoc(ref, { features: { ...(await (await getDoc(ref)).data()?.features || {}), translateUnlimited: Boolean((form as any).translateUnlimited) } } as any, { merge: true });
+              alert('Translate setting saved.');
+            }}
+            className="px-3 py-2 rounded bg-blue-600 text-white"
+          >
+            Save Translate Setting
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

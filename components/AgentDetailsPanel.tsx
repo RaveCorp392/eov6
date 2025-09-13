@@ -1,68 +1,124 @@
-// components/AgentDetailsPanel.tsx
 "use client";
-import { useEffect, useState } from "react";
-import { requestAck, saveDetails, watchDetails } from "@/lib/firebase";
+import { useEffect, useMemo, useState } from "react";
+import { watchDetails, saveDetails, requestAck, setTranslateConfig, watchSession, sendMessage } from "@/lib/firebase";
+
+const LANGS = [
+  { v: "en", l: "English" }, { v: "fr", l: "French" }, { v: "es", l: "Spanish" },
+  { v: "de", l: "German" }, { v: "it", l: "Italian" }, { v: "pt", l: "Portuguese" },
+];
 
 export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) {
-  const [form, setForm] = useState<{ name: string; email: string; phone: string; notes?: string }>({ name: "", email: "", phone: "", notes: "" });
+  const [caller, setCaller] = useState<any>({});
+  const [notes, setNotes] = useState("");
+  const [tx, setTx] = useState<{ enabled?: boolean; agentLang?: string; callerLang?: string; previews?: number }>({});
 
-  useEffect(() => {
-    const unsub = watchDetails(sessionId, (d) => setForm({ name: d?.name || "", email: d?.email || "", phone: d?.phone || "", notes: d?.notes || "" }));
-    return () => unsub();
+  // hydrate caller + agent notes
+  useEffect(() => watchDetails(sessionId, (d) => {
+    setCaller(d || {});
+    setNotes(d?.notes || "");
+  }), [sessionId]);
+
+  // hydrate translate config + preview count
+  const [sessionObj, setSessionObj] = useState<any>(null);
+  useEffect(() => watchSession(sessionId, (s) => {
+    setSessionObj(s);
+    setTx({
+      enabled: s?.translate?.enabled ?? false,
+      agentLang: s?.translate?.agentLang ?? "en",
+      callerLang: s?.translate?.callerLang ?? "en",
+      previews: s?.translatePreviewCount ?? 0,
+    });
+  }), [sessionId]);
+
+  async function postSystem(text: string) {
+    try { await sendMessage(sessionId, { sender: "agent", type: "system", text }); } catch {}
+  }
+
+  const debouncedSave = useMemo(() => {
+    let t: any; return (value: string) => { clearTimeout(t); t = setTimeout(() => {
+      saveDetails(sessionId, { notes: value });
+    }, 500); };
   }, [sessionId]);
 
-  async function save(k: "name" | "email" | "phone" | "notes", v: string) {
-    setForm((f) => ({ ...f, [k]: v }));
-    await saveDetails(sessionId, { [k]: v });
-  }
-
-  async function sendAck() {
-    await requestAck(sessionId, true);
-  }
-
   return (
-    <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-3">
-      <div>
-        <div className="text-xs opacity-70">Caller name</div>
-        <input
-          value={form.name}
-          onChange={(e) => save("name", e.target.value)}
-          placeholder="Enter caller name"
-          className="w-full mt-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1"
-        />
-      </div>
-      <div>
-        <div className="text-xs opacity-70">Caller email</div>
-        <input
-          value={form.email}
-          onChange={(e) => save("email", e.target.value)}
-          type="email"
-          placeholder="name@example.com"
-          className="w-full mt-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1"
-        />
-      </div>
-      <div>
-        <div className="text-xs opacity-70">Caller phone</div>
-        <input
-          value={form.phone}
-          onChange={(e) => save("phone", e.target.value)}
-          inputMode="tel"
-          placeholder="(555) 555-5555"
-          className="w-full mt-1 rounded-lg bg-white/5 border border-white/10 px-2 py-1"
-        />
-      </div>
-      <div>
-        <div className="text-xs opacity-70">Agent notes</div>
+    <div className="grid gap-4">
+      <section className="rounded-xl border p-4">
+        <h3 className="font-medium mb-2">Caller</h3>
+        <div className="text-sm space-y-1">
+          <div><span className="opacity-60 mr-1">Name:</span>{caller?.name || "—"}</div>
+          <div><span className="opacity-60 mr-1">Email:</span>{caller?.email || "—"}</div>
+          <div><span className="opacity-60 mr-1">Phone:</span>{caller?.phone || "—"}</div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border p-4">
+        <h3 className="font-medium mb-2">Agent notes</h3>
         <textarea
-          value={form.notes || ""}
-          onChange={(e) => save("notes", e.target.value)}
+          className="w-full rounded-md border p-2 min-h-[120px]"
           placeholder="Notes visible to agents only"
-          className="w-full mt-1 h-28 rounded-lg bg-white/5 border border-white/10 px-2 py-1"
+          value={notes}
+          onChange={(e) => { setNotes(e.target.value); debouncedSave(e.target.value); }}
         />
-      </div>
-      <button onClick={sendAck} className="rounded-lg px-3 py-2 bg-amber-400 text-black font-medium">
-        Send acknowledgement
-      </button>
+        <div className="mt-3">
+          <button
+            className="rounded-lg bg-amber-600 text-white px-4 py-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-700"
+            onClick={() => requestAck(sessionId, true)}
+          >
+            Send acknowledgement
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-xl border p-4">
+        <h3 className="font-medium mb-2">Live translate</h3>
+        <label className="flex items-center gap-2 mb-2">
+          <input
+            type="checkbox"
+            checked={!!tx.enabled}
+            onChange={async (e) => {
+              const enabled = e.target.checked;
+              await setTranslateConfig(sessionId, { enabled });
+              const a = String(tx.agentLang || "en").toUpperCase();
+              const c = String(tx.callerLang || "en").toUpperCase();
+              await postSystem(`${enabled ? "Enabled" : "Disabled"} live translation (${a}↔${c}).`);
+            }}
+          />
+          <span>Enable live translate (bi-directional)</span>
+        </label>
+        <div className="flex gap-2">
+          <select
+            className="border rounded-md px-2 py-1"
+            value={tx.agentLang || "en"}
+            onChange={async (e) => {
+              const agentLang = e.target.value;
+              await setTranslateConfig(sessionId, { agentLang });
+              const a = String(agentLang).toUpperCase();
+              const c = String(tx.callerLang || "en").toUpperCase();
+              await postSystem(`Translation languages updated (${a}↔${c}).`);
+            }}
+          >
+            {LANGS.map(x => <option key={x.v} value={x.v}>{x.l}</option>)}
+          </select>
+          <span className="self-center opacity-60">↔</span>
+          <select
+            className="border rounded-md px-2 py-1"
+            value={tx.callerLang || "en"}
+            onChange={async (e) => {
+              const callerLang = e.target.value;
+              await setTranslateConfig(sessionId, { callerLang });
+              const a = String(tx.agentLang || "en").toUpperCase();
+              const c = String(callerLang).toUpperCase();
+              await postSystem(`Translation languages updated (${a}↔${c}).`);
+            }}
+          >
+            {LANGS.map(x => <option key={x.v} value={x.v}>{x.l}</option>)}
+          </select>
+        </div>
+        <div className="text-xs opacity-70 mt-2">Free previews used: {tx.previews ?? 0} / 5</div>
+        {sessionObj?.translate?.requested && (
+          <div className="mt-2 text-xs rounded-md bg-blue-50 text-blue-900 px-2 py-1">Caller requested translation</div>
+        )}
+      </section>
     </div>
   );
 }

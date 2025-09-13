@@ -7,6 +7,8 @@ import ConsentGate from '@/components/ConsentGate';
 import ChatWindow from '@/components/ChatWindow';
 import AckModal from '@/components/AckModal';
 import CallerDetailsForm from '@/components/CallerDetailsForm';
+import TranslateBanner from '@/components/TranslateBanner';
+import { setTranslateConfig, sendMessage } from '@/lib/firebase';
 
 export default function CallerSessionPage({ params }: { params: { code: string } }) {
   const code = params.code;
@@ -30,7 +32,19 @@ export default function CallerSessionPage({ params }: { params: { code: string }
           <div className="text-xs text-slate-500">Ephemeral — clears on finish</div>
         </header>
 
+        {session && <TranslateBanner session={session} />}
         <CallerDetailsForm code={code} />
+        <button
+          className="text-xs underline opacity-70 hover:opacity-100"
+          onClick={async () => {
+            try {
+              await fetch('/api/session/translate-request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, requested: true }) });
+              await sendMessage(code, { sender: 'caller', type: 'system', text: 'Caller requested live translation.' });
+            } catch {}
+          }}
+        >
+          Request translation
+        </button>
 
         <ChatWindow code={code} role="caller" disabled={blocked} showUpload />
         <AckModal sessionId={code} ackRequest={session?.ackRequest} />
@@ -38,4 +52,3 @@ export default function CallerSessionPage({ params }: { params: { code: string }
     </ConsentGate>
   );
 }
-

@@ -1,60 +1,91 @@
 // components/CallerDetailsForm.tsx
-"use client";
-import { useEffect, useState } from "react";
-import { saveDetails, watchDetails } from "@/lib/firebase";
+'use client';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { watchDetails, saveDetails } from '@/lib/firebase';
+
+type Details = { name?: string; email?: string; phone?: string };
 
 export default function CallerDetailsForm({ code }: { code: string }) {
-  const [form, setForm] = useState<{name?: string; email?: string; phone?: string}>({});
+  const [form, setForm] = useState<Details>({});
+  const debTimer = useRef<NodeJS.Timeout | null>(null);
+  const mounted = useRef(false);
 
+  // Live hydrate from Firestore
   useEffect(() => {
-    return watchDetails(code, (d) => setForm({ name: d?.name || "", email: d?.email || "", phone: d?.phone || "" }));
+    const unsub = watchDetails(code, (d) => {
+      setForm((prev) => {
+        // Only update fields that are actually different to avoid clobbering in-flight edits
+        const next: Details = { ...prev };
+        if (d?.name !== undefined && d?.name !== prev.name) next.name = d.name;
+        if (d?.email !== undefined && d?.email !== prev.email) next.email = d.email;
+        if (d?.phone !== undefined && d?.phone !== prev.phone) next.phone = d.phone;
+        return next;
+      });
+    });
+    mounted.current = true;
+    return () => unsub();
   }, [code]);
 
-  async function saveField<K extends keyof typeof form>(k: K, v: string) {
-    setForm((f) => ({ ...f, [k]: v }));
-    await saveDetails(code, { [k]: v } as any);
-  }
+  // Debounced full-save (captures browser autofill bursts)
+  const scheduleSaveAll = (next: Details, delay = 600) => {
+    if (debTimer.current) clearTimeout(debTimer.current);
+    debTimer.current = setTimeout(async () => {
+      await saveDetails(code, {
+        name: next.name?.trim() || '',
+        email: next.email?.trim() || '',
+        phone: next.phone?.trim() || '',
+      });
+    }, delay);
+  };
+
+  // On first mount, try to capture any autofill that happened before React bound events
+  useEffect(() => {
+    const t = setTimeout(() => {
+      scheduleSaveAll(form, 100); // quick sync
+    }, 800);
+    return () => clearTimeout(t);
+  }, []);
+
+  const setField = (k: keyof Details) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = { ...form, [k]: e.target.value };
+    setForm(next);
+    scheduleSaveAll(next); // save all together
+  };
+
+  const blurSaveOne = async () => {
+    // No-op: bulk save is already debounced; blur just ensures we don't drop the last field
+    scheduleSaveAll(form, 150);
+  };
 
   return (
-    <form autoComplete="on" className="mb-3 grid gap-2 md:grid-cols-3" onSubmit={(e) => e.preventDefault()}>
-      <label className="text-sm">
-        <span className="block text-slate-600 dark:text-slate-300">Name</span>
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/60 dark:bg-slate-900/60">
+      <div className="text-sm font-medium mb-2 text-slate-600 dark:text-slate-300">Caller details</div>
+      <div className="grid gap-2">
         <input
-          name="name"
           autoComplete="name"
-          value={form.name ?? ""}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          onBlur={(e) => saveField("name", e.target.value)}
-          placeholder="Your name"
-          className="w-full rounded-lg border border-slate-300 px-2 py-1"
+          placeholder="Full name"
+          className="rounded-lg border px-3 py-2 bg-white/90 dark:bg-slate-900/70"
+          value={form.name || ''}
+          onChange={setField('name')}
+          onBlur={blurSaveOne}
         />
-      </label>
-      <label className="text-sm">
-        <span className="block text-slate-600 dark:text-slate-300">Email</span>
         <input
-          name="email"
           autoComplete="email"
-          type="email"
-          value={form.email ?? ""}
-          onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-          onBlur={(e) => saveField("email", e.target.value)}
-          placeholder="you@example.com"
-          className="w-full rounded-lg border border-slate-300 px-2 py-1"
+          placeholder="Email"
+          className="rounded-lg border px-3 py-2 bg-white/90 dark:bg-slate-900/70"
+          value={form.email || ''}
+          onChange={setField('email')}
+          onBlur={blurSaveOne}
         />
-      </label>
-      <label className="text-sm">
-        <span className="block text-slate-600 dark:text-slate-300">Phone</span>
         <input
-          name="tel"
           autoComplete="tel"
-          inputMode="tel"
-          value={form.phone ?? ""}
-          onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-          onBlur={(e) => saveField("phone", e.target.value)}
-          placeholder="(555) 555-5555 (optional)"
-          className="w-full rounded-lg border border-slate-300 px-2 py-1"
+          placeholder="Phone"
+          className="rounded-lg border px-3 py-2 bg-white/90 dark:bg-slate-900/70"
+          value={form.phone || ''}
+          onChange={setField('phone')}
+          onBlur={blurSaveOne}
         />
-      </label>
-    </form>
+      </div>
+    </div>
   );
 }

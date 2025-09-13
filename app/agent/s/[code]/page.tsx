@@ -6,6 +6,7 @@ import { watchSession } from '@/lib/firebase';
 import ConsentGate from '@/components/ConsentGate';
 import ChatWindow from '@/components/ChatWindow';
 import AgentDetailsPanel from '@/components/AgentDetailsPanel';
+import TranslateBanner from '@/components/TranslateBanner';
 
 export default function AgentSessionPage({ params }: { params: { code: string } }) {
   const code = params.code;
@@ -26,6 +27,7 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
         <header className="mb-2 flex items-center justify-between">
           <div className="text-slate-600 dark:text-slate-300">Agent — Session {code}</div>
         </header>
+        {session && <TranslateBanner session={session} />}
 
         <div className="grid md:grid-cols-[2fr_1fr] gap-4">
           <ChatWindow code={code} role="agent" showUpload={false} />

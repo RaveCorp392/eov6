@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint --no-cache --dir app --dir components --dir lib",
     "typecheck": "tsc --noEmit",
-    "preflight": "npm run typecheck && npm run lint"
+    "preflight": "npm run typecheck && npm run lint",
+    "smoke:translate": "curl -s -X POST http://localhost:3000/api/translate -H \"content-type: application/json\" -d '{\"code\":\"123456\",\"text\":\"hello\",\"target\":\"fr\",\"commit\":false}' || true",
+    "rules:deploy": "firebase use eov6-4e929 && firebase deploy --only firestore:rules,storage"
   },
   "dependencies": {
     "@mdx-js/react": "^3.1.0",
