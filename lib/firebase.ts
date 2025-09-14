@@ -77,6 +77,27 @@ export function targetLangFor(role: Role, t?: { agentLang?: string; callerLang?:
   return { src: src.toLowerCase(), tgt: tgt.toLowerCase() };
 }
 
+// Lightweight language list for selects
+export const LANGUAGES = [
+  { code: 'en', label: 'English' },
+  { code: 'fr', label: 'French' },
+  { code: 'de', label: 'German' },
+  { code: 'es', label: 'Spanish' },
+  { code: 'it', label: 'Italian' },
+  { code: 'pt', label: 'Portuguese' },
+  { code: 'zh', label: 'Chinese' },
+  { code: 'hi', label: 'Hindi' },
+  { code: 'ar', label: 'Arabic' },
+  { code: 'fa', label: 'Farsi (Persian)' },
+  { code: 'vi', label: 'Vietnamese' },
+  { code: 'ru', label: 'Russian' },
+  { code: 'ja', label: 'Japanese' },
+  { code: 'ko', label: 'Korean' },
+];
+
+export const normLang2 = (v?: string) =>
+  String(v || '').slice(0, 2).toLowerCase() || 'en';
+
 /* =========
    Chat helpers
    ========= */

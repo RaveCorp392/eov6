@@ -29,6 +29,12 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
     const live = tx?.enabled === true;
     if (live) {
       const { src, tgt } = targetLangFor(role, tx);
+      // If same-language, just send original and skip API
+      if (src === tgt) {
+        await sendMessage(code, role, text);
+        setInput("");
+        return;
+      }
       try {
         const res = await fetch("/api/translate", {
           method: "POST",
@@ -55,27 +61,34 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
   return msg.text ?? "";
 }
 
-function bubbleFor(msg: any) {
-  const mine = msg.role === role;
-  const primary = displayTextFor(msg, role);
-  return (
-    <div
-      key={msg.id}
-      className={"flex " + (mine ? "justify-end" : "justify-start") + " my-1"}
-    >
-      <div
-        className={
-          (mine
-            ? "bg-blue-600 text-white"
-            : "bg-slate-100 text-slate-900") +
-          " rounded-2xl px-3 py-1.5 max-w-[70%]"
-        }
-      >
-        <div className="whitespace-pre-wrap break-words">{primary}</div>
+  function renderContent(msg: any, viewerRole: Role) {
+    if (msg?.type === 'file' && msg?.url) {
+      const label = msg?.text || 'file';
+      return (
+        <a
+          href={msg.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline break-words"
+        >
+          {label}
+        </a>
+      );
+    }
+    const primary = displayTextFor(msg, viewerRole);
+    return <div className="whitespace-pre-wrap break-words">{primary}</div>;
+  }
+
+  function bubbleFor(msg: any) {
+    const mine = msg.role === role;
+    return (
+      <div key={msg.id} className={'flex ' + (mine ? 'justify-end' : 'justify-start') + ' my-1'}>
+        <div className={(mine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-900') + ' rounded-2xl px-3 py-1.5 max-w-[70%]'}>
+          {renderContent(msg, role)}
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
 return (
     <div className="flex flex-col gap-3">

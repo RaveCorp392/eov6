@@ -19,6 +19,20 @@ export default function CallerSessionPage({ params }: { params: { code: string }
   const consentAccepted = Boolean(session?.consent?.accepted);
   const blocked = Boolean(session?.policySnapshot?.required) && !consentAccepted;
 
+  async function endSession() {
+    if (!confirm('End session and delete chat data?')) return;
+    try {
+      await fetch('/api/session/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      window.location.href = '/';
+    } catch (e) {
+      alert('Could not end session. Please try again.');
+    }
+  }
+
   return (
     <ConsentGate
       code={code}
@@ -47,6 +61,15 @@ export default function CallerSessionPage({ params }: { params: { code: string }
         </button>
 
         <ChatWindow code={code} role="caller" disabled={blocked} showUpload />
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={endSession}
+            className="px-3 py-1.5 rounded bg-slate-200 hover:bg-slate-300 text-sm"
+          >
+            End session &amp; delete data
+          </button>
+        </div>
         <AckModal sessionId={code} ackRequest={session?.ackRequest} />
       </div>
     </ConsentGate>
