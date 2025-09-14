@@ -5,36 +5,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminDb, admin } from "@/lib/firebaseAdmin";
 import { stripe } from "@/lib/stripe";
 import { LANG_INDEX } from "@/lib/languages";
+
+const GOOGLE_KEY = process.env.GOOGLE_TRANSLATE_API_KEY!;
+const FREE_LIMIT = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
+const norm = (s?: string) => (s || "").trim().toLowerCase();
+
 async function sendTranslateMeterEvent(stripe: any, customerId: string) {
   try {
-    // Try modern nested path first (some SDKs expose billing.meterEvents)
-    const create =
-      stripe?.billing?.meterEvents?.create ??
-      stripe?.meterEvents?.create; // older/beta shapes
-
+    const create = stripe?.billing?.meterEvents?.create ?? stripe?.meterEvents?.create;
     if (typeof create === "function") {
-      await create({
-        event_name: "eov6.translate.accepted",
-        payload: { stripe_customer_id: customerId, value: "1" },
-      });
+      await create({ event_name: "eov6.translate.accepted", payload: { stripe_customer_id: customerId, value: "1" } });
       return "metered";
     }
-    // SDK doesn’t support meter events — let caller backfill
     return "unsupported";
   } catch {
     return "error";
   }
 }
 
-const GOOGLE_KEY = process.env.GOOGLE_TRANSLATE_API_KEY!;
-const FREE_LIMIT = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
-
-async function googleTranslate(text: string, target: string) {
+async function googleTranslate(text: string, target: string, source?: string) {
   const url = "https://translation.googleapis.com/language/translate/v2";
   const res = await fetch(`${url}?key=${GOOGLE_KEY}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ q: text, target, source: "auto", format: "text" }),
+    body: JSON.stringify({ q: text, target, source: source || "auto", format: "text" }),
   });
   if (!res.ok) throw new Error(`translate http ${res.status}`);
   const j = await res.json();
@@ -44,46 +38,57 @@ async function googleTranslate(text: string, target: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { code, text, commit, target, sender, agentLang, callerLang } = await req.json();
-    if (!code || !text?.trim()) return NextResponse.json({ error: "bad-request" }, { status: 400 });
+    const body = await req.json() as any;
+    const code = body.code?.toString();
+    const text = (body.text ?? "").toString();
+    const commit = !!body.commit;
+    const sender = (body.sender || body.role || "agent") as "agent" | "caller";
+    const src = norm(body.src ?? body.source ?? body.agentLang);
+    const tgt = norm(body.tgt ?? body.target ?? body.callerLang);
+    if (!code || !text || !tgt) return NextResponse.json({ error: "bad-request" }, { status: 400 });
+
     const sessionRef = adminDb.collection("sessions").doc(String(code));
-    const snap = await sessionRef.get(); if (!snap.exists) return NextResponse.json({ error: "no-session" }, { status: 404 });
+    const snap = await sessionRef.get();
+    if (!snap.exists) return NextResponse.json({ error: "no-session" }, { status: 404 });
 
-    if (!commit) { // preview limit
-      const used = Number(snap.get("translatePreviewCount") ?? 0);
-      if (used >= FREE_LIMIT) return NextResponse.json({ error: "preview-limit", limit: FREE_LIMIT }, { status: 429 });
-    }
-
-    const tgt = (target || (sender === "agent" ? (callerLang || "en") : (agentLang || "en"))).toLowerCase();
     if (!LANG_INDEX.has(tgt)) return NextResponse.json({ error: "bad-target" }, { status: 400 });
 
-    const { translatedText, src } = await googleTranslate(text, tgt);
-
+    // Preview branch with limit check
     if (!commit) {
-      await sessionRef.set({ translatePreviewCount: admin.firestore.FieldValue.increment(1) }, { merge: true });
-      return NextResponse.json({ translatedText });
+      const used = Number(snap.get("translatePreviewCount") ?? snap.get("translate.previewCount") ?? 0);
+      if (used >= FREE_LIMIT) return NextResponse.json({ error: "preview-limit", previewsUsed: used, limit: FREE_LIMIT }, { status: 429 });
+      const { translatedText, src: detected } = await googleTranslate(text, tgt, src);
+      await sessionRef.set({
+        translatePreviewCount: admin.firestore.FieldValue.increment(1),
+        translate: { previewCount: admin.firestore.FieldValue.increment(1) },
+      }, { merge: true });
+      return NextResponse.json({ ok: true, translatedText, src: (src || detected || null), tgt, previewsUsed: used + 1, limit: FREE_LIMIT });
     }
 
-    const now = admin.firestore.Timestamp.now(); const createdAtMs = Date.now();
+    // Commit branch: write translated message + meter
+    const { translatedText, src: detected } = await googleTranslate(text, tgt, src);
+    const now = admin.firestore.Timestamp.now();
+    const createdAtMs = Date.now();
     await sessionRef.collection("messages").add({
       role: sender === "caller" ? "caller" : "agent",
       type: "text",
       text: translatedText,
-      createdAt: now, createdAtMs,
-      orig: { text, lang: sender === "agent" ? (agentLang || "en") : (callerLang || "en") },
-      lang: { src: src || "auto", tgt },
+      createdAt: now,
+      createdAtMs,
+      orig: { text, lang: src || "" },
+      lang: { src: (src || detected || "auto"), tgt },
       meta: { translated: true },
     });
 
-    const orgId = snap.get("orgId");
     let metered: string | undefined;
+    const orgId = snap.get("orgId");
     const orgUnlimited = !!orgId && !!(await adminDb.collection("orgs").doc(String(orgId)).get()).get("features.translateUnlimited");
     const email = snap.get("details.email") || snap.get("details.caller.email");
     if (!orgUnlimited && process.env.STRIPE_SECRET_KEY && email) {
       try {
         const list = await stripe.customers.list({ email, limit: 1 });
         const customer = list.data?.[0];
-        if (customer) {
+        if (customer?.id) {
           metered = await sendTranslateMeterEvent(stripe as any, customer.id);
           if (!metered || metered === "unsupported" || metered === "error") {
             await adminDb.collection("meter_backfill").add({ at: now, reason: "meter-unsupported", email, code });
@@ -98,15 +103,9 @@ export async function POST(req: NextRequest) {
         metered = "backfill";
       }
     }
-    return NextResponse.json({ ok: true, translatedText, metered });
-  } catch (e:any) { return NextResponse.json({ error: String(e?.message||e) }, { status: 500 }); }
+
+    return NextResponse.json({ ok: true, translatedText, metered, src: (src || detected || null), tgt });
+  } catch (e:any) {
+    return NextResponse.json({ error: String(e?.message||e) }, { status: 500 });
+  }
 }
-
-
-
-
-
-
-
-
-

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 export default function TranslateBanner({ session }: { session: any }) {
   const t = session?.translate;
   if (!t?.enabled) return null;
@@ -11,4 +11,5 @@ export default function TranslateBanner({ session }: { session: any }) {
     </div>
   );
 }
+
 

@@ -1,7 +1,7 @@
 ﻿// components/ChatWindow.tsx
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { sendMessage, watchMessages, watchSession, type ChatMessage, type Role, uploadFileToSession } from "@/lib/firebase";
+import { sendMessage, watchMessages, watchSession, type ChatMessage, type Role, uploadFileToSession, targetLangFor } from "@/lib/firebase";
 
 type Props = {
   code: string;
@@ -56,28 +56,38 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
     await sendMessage(code, role, text);
     setInput("");
   }, [code, input, role, session]);
-  function bubbleFor(msg: any) {
-    const mine = msg.role === role;
-    const src = msg?.orig?.text as string | undefined;
-    const srcLang = msg?.orig?.lang as string | undefined;
-    const tgtLang = msg?.lang?.tgt as string | undefined;
+  function displayTextFor(msg: any, viewerRole: Role) {
+  // If not marked translated, just show the message text.
+  if (!msg?.meta?.translated) return msg.text ?? "";
+  // Sender sees their original (orig.text) if available.
+  if (viewerRole === msg.role) return msg?.orig?.text ?? msg.text ?? "";
+  // Recipient sees the translated text.
+  return msg.text ?? "";
+}
 
-    const primary = mine ? (src ?? msg.text ?? "") : (msg.text ?? src ?? "");
-    const secondary = mine
-      ? (msg.meta?.translated && msg.text ? "Translated (" + ((tgtLang || "").toUpperCase()) + "): " + msg.text : "")
-      : (src ? "Original (" + ((srcLang || "").toUpperCase()) + "): " + src : "");
-
-    return (
-      <div key={msg.id} className={"flex " + (mine ? "justify-end" : "justify-start") + " my-1"}>
-        <div className={(mine ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-900") + " rounded-2xl px-3 py-1.5 max-w-[70%]"}>
-          <div className="whitespace-pre-wrap break-words">{primary}</div>
-          {secondary && <div className={("text-xs mt-1 ") + (mine ? "text-blue-100/80" : "text-slate-500")}>{secondary}</div>}
-        </div>
-      </div>
-    );
-  }
-
+function bubbleFor(msg: any) {
+  const mine = msg.role === role;
+  const primary = displayTextFor(msg, role);
   return (
+    <div
+      key={msg.id}
+      className={"flex " + (mine ? "justify-end" : "justify-start") + " my-1"}
+    >
+      <div
+        className={
+          (mine
+            ? "bg-blue-600 text-white"
+            : "bg-slate-100 text-slate-900") +
+          " rounded-2xl px-3 py-1.5 max-w-[70%]"
+        }
+      >
+        <div className="whitespace-pre-wrap break-words">{primary}</div>
+      </div>
+    </div>
+  );
+}
+
+return (
     <div className="flex flex-col gap-3">
       <div className="h-[55vh] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/80 dark:bg-slate-900/60">
         {msgs.map(m => bubbleFor(m))}
@@ -137,4 +147,5 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
     </div>
   );
 }
+
 

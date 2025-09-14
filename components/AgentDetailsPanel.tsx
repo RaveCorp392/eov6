@@ -27,7 +27,7 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
   // Preview state
   const [pvText, setPvText] = useState("");
   const [pvOut, setPvOut] = useState<string | null>(null);
-  const freeUsed = Number(sessionObj?.translatePreviewCount ?? 0);
+  const freeUsed = Number(sessionObj?.translate?.previewCount ?? sessionObj?.translatePreviewCount ?? 0);
   const freeLimit = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
 
   async function previewOnce() {
@@ -38,11 +38,12 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
         code: sessionId,
         text: pvText,
         commit: false,
-        target: sessionObj?.translate?.callerLang || "en",
+        src: sessionObj?.translate?.agentLang || "en",
+        tgt: sessionObj?.translate?.callerLang || "en",
       }),
     });
     const j = await res.json();
-    if (!res.ok) return alert(j.error || "Preview failed");
+    if (res.status === 429) { alert(`Free preview limit reached (${j.previewsUsed}/${j.limit})`); return; } if (!res.ok) return alert(j.error || "Preview failed");
     setPvOut(j.translatedText || "");
   }
 
@@ -55,8 +56,8 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
         text: pvText,
         commit: true,
         sender: "agent",
-        agentLang: sessionObj?.translate?.agentLang,
-        callerLang: sessionObj?.translate?.callerLang,
+        src: sessionObj?.translate?.agentLang,
+        tgt: sessionObj?.translate?.callerLang,
       }),
     });
     const j = await res.json();
@@ -182,6 +183,8 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
     </div>
   );
 }
+
+
 
 
 
