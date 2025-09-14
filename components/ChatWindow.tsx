@@ -1,7 +1,14 @@
-﻿// components/ChatWindow.tsx
-"use client";
+﻿"use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { sendMessage, watchMessages, watchSession, type ChatMessage, type Role, uploadFileToSession, targetLangFor } from "@/lib/firebase";
+import {
+  sendMessage,
+  watchMessages,
+  watchSession,
+  type ChatMessage,
+  type Role,
+  uploadFileToSession,
+  targetLangFor,
+} from "@/lib/firebase";
 
 type Props = {
   code: string;
@@ -10,7 +17,12 @@ type Props = {
   showUpload?: boolean; // caller page true, agent page false
 };
 
-export default function ChatWindow({ code, role, disabled, showUpload = false }: Props) {
+export default function ChatWindow({
+  code,
+  role,
+  disabled,
+  showUpload = false,
+}: Props) {
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -19,7 +31,10 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
 
   useEffect(() => watchMessages(code, setMsgs), [code]);
   useEffect(() => watchSession(code, setSession), [code]);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [msgs.length]);
+  useEffect(
+    () => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }),
+    [msgs.length]
+  );
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -52,18 +67,19 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
     await sendMessage(code, role, text);
     setInput("");
   }, [code, input, role, session]);
+
   function displayTextFor(msg: any, viewerRole: Role) {
-  // If not marked translated, just show the message text.
-  if (!msg?.meta?.translated) return msg.text ?? "";
-  // Sender sees their original (orig.text) if available.
-  if (viewerRole === msg.role) return msg?.orig?.text ?? msg.text ?? "";
-  // Recipient sees the translated text.
-  return msg.text ?? "";
-}
+    // If not marked translated, just show the message text.
+    if (!msg?.meta?.translated) return msg.text ?? "";
+    // Sender sees their original (orig.text) if available.
+    if (viewerRole === msg.role) return msg?.orig?.text ?? msg.text ?? "";
+    // Recipient sees the translated text.
+    return msg.text ?? "";
+  }
 
   function renderContent(msg: any, viewerRole: Role) {
-    if (msg?.type === 'file' && msg?.url) {
-      const label = msg?.text || 'file';
+    if (msg?.type === "file" && msg?.url) {
+      const label = msg?.text || "file";
       return (
         <a
           href={msg.url}
@@ -82,18 +98,28 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
   function bubbleFor(msg: any) {
     const mine = msg.role === role;
     return (
-      <div key={msg.id} className={'flex ' + (mine ? 'justify-end' : 'justify-start') + ' my-1'}>
-        <div className={(mine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-900') + ' rounded-2xl px-3 py-1.5 max-w-[70%]'}>
+      <div
+        key={msg.id}
+        className={
+          "flex " + (mine ? "justify-end" : "justify-start") + " my-1"
+        }
+      >
+        <div
+          className={
+            (mine ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-900") +
+            " rounded-2xl px-3 py-1.5 max-w-[70%]"
+          }
+        >
           {renderContent(msg, role)}
         </div>
       </div>
     );
   }
 
-return (
+  return (
     <div className="flex flex-col gap-3">
       <div className="h-[55vh] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/80 dark:bg-slate-900/60">
-        {msgs.map(m => bubbleFor(m))}
+        {msgs.map((m) => bubbleFor(m))}
         <div ref={endRef} />
       </div>
 
@@ -108,10 +134,20 @@ return (
               await send();
             }
           }}
-          placeholder={disabled ? "Please accept the privacy notice to chatâ€¦" : "Type a message"}
+          placeholder={
+            disabled
+              ? "Please accept the privacy notice to chat..."
+              : "Type a message"
+          }
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 disabled:opacity-50"
         />
-        <button onClick={send} disabled={disabled} className="rounded-lg bg-blue-600 text-white px-4 py-2 disabled:opacity-50">Send</button>
+        <button
+          onClick={send}
+          disabled={disabled}
+          className="rounded-lg bg-blue-600 text-white px-4 py-2 disabled:opacity-50"
+        >
+          Send
+        </button>
 
         {showUpload && (
           <>
@@ -121,21 +157,31 @@ return (
               accept="image/*,application/pdf"
               className="hidden"
               onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const okType = file.type.startsWith('image/') || file.type === 'application/pdf' || /\.(png|jpe?g|gif|webp|bmp|svg|pdf)$/i.test(file.name);
-              if (!okType) {
-                alert('Please select an image or PDF file.');
-                e.currentTarget.value = '';
-                return;
-              }
-              try {
-                const url = await uploadFileToSession(code, file);
-                await sendMessage(code, { sender: role, type: "file", url, text: file.name });
-              } catch (e) {
-                alert("Upload failed. If you're running locally, please retry or disable any ad-blockers. (It should work fine on Vercel.)");
-              }
-            }}
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const okType =
+                  file.type.startsWith("image/") ||
+                  file.type === "application/pdf" ||
+                  /\.(png|jpe?g|gif|webp|bmp|svg|pdf)$/i.test(file.name);
+                if (!okType) {
+                  alert("Please select an image or PDF file.");
+                  e.currentTarget.value = "";
+                  return;
+                }
+                try {
+                  const url = await uploadFileToSession(code, file);
+                  await sendMessage(code, {
+                    sender: role,
+                    type: "file",
+                    url,
+                    text: file.name,
+                  });
+                } catch (e) {
+                  alert(
+                    "Upload failed. If you're running locally, please retry or disable any ad-blockers. (It should work fine on Vercel.)"
+                  );
+                }
+              }}
             />
             <button
               disabled={disabled}
@@ -150,5 +196,3 @@ return (
     </div>
   );
 }
-
-

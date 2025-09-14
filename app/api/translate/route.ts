@@ -7,6 +7,23 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 const LIMIT = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5) || 5;
 
+// Minimal HTML-entity decode (Google may return &#39;, &quot;, etc.)
+function decodeEntities(s: string) {
+  return String(s)
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+function cleanText(s: string) {
+  return decodeEntities(String(s))
+    .replace(/\s*#\d+\s*$/i, "") // strip trailing "#123"
+    .replace(/\u200B/g, "") // zero-width
+    .trim();
+}
+
 async function translateWithGoogle(text: string, tgt: string, _src?: string) {
   const key = process.env.GOOGLE_TRANSLATE_API_KEY;
   if (!key) throw new Error("missing-google-key");
@@ -21,7 +38,8 @@ async function translateWithGoogle(text: string, tgt: string, _src?: string) {
   );
   const json = await res.json();
   if (!res.ok) throw new Error(json?.error?.message || "translate-failed");
-  return String(json?.data?.translations?.[0]?.translatedText || "");
+  const raw = String(json?.data?.translations?.[0]?.translatedText || "");
+  return cleanText(raw);
 }
 
 export async function POST(req: Request) {
@@ -49,9 +67,11 @@ export async function POST(req: Request) {
     const src = String(body.src || tx.agentLang || "en").toLowerCase();
     const tgt = String(body.tgt || tx.callerLang || "en").toLowerCase();
 
+    // PREVIEW
     if (!commit) {
-      // PREVIEW: enforce limit, then translate and increment counters atomically
-      const used = Number(tx.previewCount ?? snap.get("translatePreviewCount") ?? 0) || 0;
+      // enforce free preview limit
+      const used =
+        Number(tx.previewCount ?? snap.get("translatePreviewCount") ?? 0) || 0;
       if (used >= LIMIT) {
         return NextResponse.json(
           { error: "preview-limit", previewsUsed: used, limit: LIMIT },
@@ -59,8 +79,11 @@ export async function POST(req: Request) {
         );
       }
 
-      const translatedText = await translateWithGoogle(text, tgt, src);
+      // same-language tolerance: echo text instead of hitting Google
+      const translatedText =
+        src === tgt ? cleanText(text) : await translateWithGoogle(text, tgt, src);
 
+      // increment counters atomically
       await sessionRef.set(
         {
           translate: {
@@ -82,8 +105,10 @@ export async function POST(req: Request) {
       });
     }
 
-    // COMMIT: translate, then write message with dual fields
-    const translatedText = await translateWithGoogle(text, tgt, src);
+    // COMMIT
+    // same-language tolerance: if src === tgt, just send original text (no translate call)
+    const translatedText =
+      src === tgt ? cleanText(text) : await translateWithGoogle(text, tgt, src);
 
     const msgRef = adminDb
       .collection("sessions")
@@ -96,22 +121,39 @@ export async function POST(req: Request) {
       role: sender, // 'agent' | 'caller'
       type: "text",
       text: translatedText,
-      orig: { text, lang: src },
+      orig: { text: cleanText(text), lang: src },
       lang: { src, tgt },
-      meta: { translated: true },
+      meta: { translated: src !== tgt }, // only mark translated when different
       createdAt: Timestamp.now(),
       createdAtMs: Date.now(),
     });
 
-    // Metering (best-effort; optional)
-    // If you have a helper already, call it here; otherwise omit to avoid noise.
+    // Metering (best-effort)
+    const unlimited =
+      !!snap.get("org.features.translateUnlimited") ||
+      !!snap.get("entitlements.translateUnlimited") ||
+      snap.get("plan") === "translate-unlimited";
 
-    return NextResponse.json({ ok: true, translatedText, src, tgt });
+    let metered: string | undefined;
+    if (unlimited) {
+      metered = "skipped (unlimited)";
+    } else if (src !== tgt) {
+      // only bill when we actually translated
+      try {
+        await adminDb.collection("meter_backfill").add({
+          at: Date.now(),
+          code,
+          kind: "translate",
+          note: "meter later",
+        });
+        metered = "backfill";
+      } catch {
+        metered = "backfill";
+      }
+    }
+
+    return NextResponse.json({ ok: true, translatedText, src, tgt, metered });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: String(e?.message || e) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
   }
 }
-

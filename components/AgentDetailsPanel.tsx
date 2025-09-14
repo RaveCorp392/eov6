@@ -1,6 +1,15 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { watchDetails, saveDetails, watchSession, sendMessage, setTranslateConfig, LANGUAGES, normLang2 } from "@/lib/firebase";
+import {
+  watchDetails,
+  saveDetails,
+  watchSession,
+  sendMessage,
+  setTranslateConfig,
+  LANGUAGES,
+  normLang2,
+  requestAck,
+} from "@/lib/firebase";
 
 export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) {
   const [caller, setCaller] = useState<any>({});
@@ -8,10 +17,15 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
   const [sessionObj, setSessionObj] = useState<any>(null);
 
   // hydrate caller + agent notes
-  useEffect(() => watchDetails(sessionId, (d) => {
-    setCaller(d || {});
-    setNotes(d?.notes || "");
-  }), [sessionId]);
+  useEffect(
+    () =>
+      watchDetails(sessionId, (d) => {
+        setCaller(d || {});
+        setNotes(d?.notes || "");
+      }),
+    [sessionId]
+  );
+
   // hydrate translate config + preview count
   useEffect(() => watchSession(sessionId, (s) => setSessionObj(s)), [sessionId]);
 
@@ -20,18 +34,29 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
   const [previewOut, setPreviewOut] = useState("");
   const [previewErr, setPreviewErr] = useState<string | null>(null);
 
-  const agentLang = normLang2(sessionObj?.translate?.agentLang || 'en');
-  const callerLang = normLang2(sessionObj?.translate?.callerLang || 'en');
+  const agentLang = normLang2(sessionObj?.translate?.agentLang || "en");
+  const callerLang = normLang2(sessionObj?.translate?.callerLang || "en");
 
   const previewsUsed = Number(
     sessionObj?.translate?.previewCount ?? sessionObj?.translatePreviewCount ?? 0
   );
   const limit = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
 
+  // Billing/UI derives
+  const orgUnlimited = !!sessionObj?.org?.features?.translateUnlimited;
+  const userUnlimited =
+    !!sessionObj?.entitlements?.translateUnlimited ||
+    sessionObj?.plan === "translate-unlimited";
+  const shouldBill = !(orgUnlimited || userUnlimited); // bill only when nobody has unlimited
+
   const debouncedSave = useMemo(() => {
-    let t: any; return (value: string) => { clearTimeout(t); t = setTimeout(() => {
-      saveDetails(sessionId, { notes: value });
-    }, 500); };
+    let t: any;
+    return (value: string) => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        saveDetails(sessionId, { notes: value });
+      }, 500);
+    };
   }, [sessionId]);
 
   async function saveTranslateEnabled(enabled: boolean) {
@@ -51,7 +76,7 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
   }
 
   async function useBrowserLang() {
-    const b = normLang2(typeof navigator !== 'undefined' ? navigator.language : 'en');
+    const b = normLang2(typeof navigator !== "undefined" ? navigator.language : "en");
     await setTranslateConfig(sessionId, { agentLang: b });
   }
 
@@ -69,24 +94,26 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
       return;
     }
 
-    const res = await fetch('/api/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: sessionId, text, src, tgt, commit: false }),
     });
 
     let json: any = {};
-    try { json = await res.json(); } catch {}
+    try {
+      json = await res.json();
+    } catch {}
 
     if (!res.ok) {
-      if (json?.error === 'preview-limit') {
+      if (json?.error === "preview-limit") {
         setPreviewErr(`Free preview limit reached (${json.previewsUsed}/${json.limit}).`);
       } else {
         setPreviewErr(`Preview failed: ${json?.error || res.status}`);
       }
       return;
     }
-    setPreviewOut(String(json.translatedText || ''));
+    setPreviewOut(String(json.translatedText || ""));
   }
 
   async function sendAndBillFromPreview() {
@@ -98,26 +125,35 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
 
     // Same-language: just send original (no billing)
     if (src === tgt) {
-      await sendMessage(sessionId, { sender: 'agent', text });
-      setPreviewIn('');
-      setPreviewOut('');
+      await sendMessage(sessionId, { sender: "agent", text });
+      setPreviewIn("");
+      setPreviewOut("");
       return;
     }
 
-    const res = await fetch('/api/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: sessionId, text, src, tgt, commit: true, sender: 'agent' }),
+    const res = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: sessionId,
+        text,
+        src,
+        tgt,
+        commit: true,
+        sender: "agent",
+      }),
     });
 
     let json: any = {};
-    try { json = await res.json(); } catch {}
+    try {
+      json = await res.json();
+    } catch {}
     if (!res.ok) {
       setPreviewErr(`Send failed: ${json?.error || res.status}`);
       return;
     }
-    setPreviewIn('');
-    setPreviewOut('');
+    setPreviewIn("");
+    setPreviewOut("");
   }
 
   return (
@@ -125,9 +161,18 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
       <section className="rounded-xl border p-4">
         <h3 className="font-medium mb-2">Caller</h3>
         <div className="text-sm space-y-1">
-          <div><span className="opacity-60 mr-1">Name:</span>{caller?.name || "—"}</div>
-          <div><span className="opacity-60 mr-1">Email:</span>{caller?.email || "—"}</div>
-          <div><span className="opacity-60 mr-1">Phone:</span>{caller?.phone || "—"}</div>
+          <div>
+            <span className="opacity-60 mr-1">Name:</span>
+            {caller?.name || "—"}
+          </div>
+          <div>
+            <span className="opacity-60 mr-1">Email:</span>
+            {caller?.email || "—"}
+          </div>
+          <div>
+            <span className="opacity-60 mr-1">Phone:</span>
+            {caller?.phone || "—"}
+          </div>
         </div>
       </section>
 
@@ -137,10 +182,28 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
           className="w-full rounded-md border p-2 min-h-[120px]"
           placeholder="Notes visible to agents only"
           value={notes}
-          onChange={(e) => { setNotes(e.target.value); debouncedSave(e.target.value); }}
+          onChange={(e) => {
+            setNotes(e.target.value);
+            debouncedSave(e.target.value);
+          }}
         />
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await requestAck(sessionId, true);
+              } catch {}
+            }}
+            className="px-3 py-2 rounded bg-amber-600 text-white hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-600"
+          >
+            Send acknowledgement
+          </button>
+        </div>
         {sessionObj?.translate?.requested && (
-          <div className="mt-2 text-xs rounded-md bg-blue-50 text-blue-900 px-2 py-1">Caller requested translation</div>
+          <div className="mt-2 text-xs rounded-md bg-blue-50 text-blue-900 px-2 py-1">
+            Caller requested translation
+          </div>
         )}
       </section>
 
@@ -165,7 +228,11 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
               value={agentLang}
               onChange={(e) => saveAgentLang(e.target.value)}
             >
-              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
             </select>
             <button
               type="button"
@@ -182,7 +249,11 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
               value={callerLang}
               onChange={(e) => saveCallerLang(e.target.value)}
             >
-              {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -203,7 +274,7 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
               className="px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 disabled:opacity-50"
               onClick={doPreview}
               disabled={!previewIn || previewsUsed >= limit}
-              title={previewsUsed >= limit ? 'Free preview limit reached' : ''}
+              title={previewsUsed >= limit ? "Free preview limit reached" : ""}
             >
               Preview
             </button>
@@ -212,8 +283,9 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
               className="px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
               onClick={sendAndBillFromPreview}
               disabled={!previewIn}
+              title={shouldBill ? "Metered usage (PAYG)" : "Included in plan"}
             >
-              Send to chat &amp; bill
+              {shouldBill ? "Send to chat & bill" : "Send to chat"}
             </button>
             <span className="ml-auto text-xs text-slate-500">
               Free previews used: {previewsUsed} / {limit}
@@ -234,4 +306,3 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
     </div>
   );
 }
-
