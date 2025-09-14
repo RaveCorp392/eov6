@@ -24,55 +24,14 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
       previews: s?.translatePreviewCount ?? 0,
     });
   }), [sessionId]);
-  // Preview state
-  const [pvText, setPvText] = useState("");
-  const [pvOut, setPvOut] = useState<string | null>(null);
-  const freeUsed = Number(sessionObj?.translate?.previewCount ?? sessionObj?.translatePreviewCount ?? 0);
-  const freeLimit = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
-  // Two-box preview state
+// Two-box preview state
   const [previewIn, setPreviewIn] = useState("");
   const [previewOut, setPreviewOut] = useState("");
   const [previewErr, setPreviewErr] = useState<string | null>(null);
   const previewsUsed = Number(sessionObj?.translate?.previewCount ?? sessionObj?.translatePreviewCount ?? 0);
   const limit = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
 
-  async function previewOnce() {
-    const res = await fetch("/api/translate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code: sessionId,
-        text: pvText,
-        commit: false,
-        src: sessionObj?.translate?.agentLang || "en",
-        tgt: sessionObj?.translate?.callerLang || "en",
-      }),
-    });
-    const j = await res.json();
-    if (res.status === 429) { alert(`Free preview limit reached (${j.previewsUsed}/${j.limit})`); return; } if (!res.ok) return alert(j.error || "Preview failed");
-    setPvOut(j.translatedText || "");
-  }
-
-  async function sendAndBill() {
-    const res = await fetch("/api/translate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code: sessionId,
-        text: pvText,
-        commit: true,
-        sender: "agent",
-        src: sessionObj?.translate?.agentLang,
-        tgt: sessionObj?.translate?.callerLang,
-      }),
-    });
-    const j = await res.json();
-    if (!res.ok) return alert(j.error || "Send failed");
-    setPvText(""); setPvOut(null);
-  }
-
-  
-  async function doPreview() {
+      async function doPreview() {
     setPreviewErr(null);
     setPreviewOut("");
     const src = (sessionObj?.translate?.agentLang || 'en').toLowerCase();
@@ -85,9 +44,9 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
     try { json = await res.json(); } catch {}
     if (!res.ok) {
       if (json?.error === 'preview-limit') {
-        setPreviewErr(Free preview limit reached (/).);
+        setPreviewErr(`Free preview limit reached (${json.previewsUsed}/${json.limit}).`);
       } else {
-        setPreviewErr(Preview failed: );
+        setPreviewErr(`Preview failed: ${json?.error || res.status}`);
       }
       return;
     }
@@ -106,7 +65,7 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
     });
     let json: any = {};
     try { json = await res.json(); } catch {}
-    if (!res.ok) { setPreviewErr(Send failed: ); return; }
+    if (!res.ok) { setPreviewErr(`Send failed: ${json?.error || res.status}`); return; }
     setPreviewIn('');
     setPreviewOut('');
   }
@@ -191,6 +150,7 @@ async function postSystem(text: string) {
     </div>
   );
 }
+
 
 
 
