@@ -1,32 +1,22 @@
 // lib/firebaseAdmin.ts
-import * as admin from 'firebase-admin';
+import { cert, getApp, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 
-declare global {
-  // Allow global reuse in dev to avoid re-init warnings
-  // eslint-disable-next-line no-var
-  var __eov6_admin: admin.app.App | undefined;
-}
-
-function init() {
-  if (global.__eov6_admin) return global.__eov6_admin;
-
-  if (!admin.apps.length) {
-    const inline = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-    if (inline) {
-      const creds = JSON.parse(inline);
-      admin.initializeApp({
-        credential: admin.credential.cert(creds as admin.ServiceAccount),
-      });
-    } else {
-      // Uses GOOGLE_APPLICATION_CREDENTIALS if provided
-      admin.initializeApp();
-    }
+function loadServiceAccount() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_KEY");
+  try {
+    // JSON string?
+    return JSON.parse(raw);
+  } catch {
+    // base64-encoded JSON?
+    const decoded = Buffer.from(raw, "base64").toString("utf8");
+    return JSON.parse(decoded);
   }
-
-  global.__eov6_admin = admin.app();
-  return global.__eov6_admin;
 }
 
-const app = init();
-export { admin }; // in case something else imports { admin }
-export const adminDb = admin.firestore(app);
+const app = getApps().length
+  ? getApp()
+  : initializeApp({ credential: cert(loadServiceAccount()) });
+
+export const adminDb = getFirestore(app);

@@ -7,7 +7,7 @@ type Details = { name?: string; email?: string; phone?: string };
 
 export default function CallerDetailsForm({ code }: { code: string }) {
   const [form, setForm] = useState<Details>({});
-  const debTimer = useRef<NodeJS.Timeout | null>(null);
+  const debTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(false);
 
   // Live hydrate from Firestore
@@ -26,35 +26,35 @@ export default function CallerDetailsForm({ code }: { code: string }) {
     return () => unsub();
   }, [code]);
 
-  // Debounced full-save (captures browser autofill bursts)
-  const scheduleSaveAll = (next: Details, delay = 600) => {
-    if (debTimer.current) clearTimeout(debTimer.current);
-    debTimer.current = setTimeout(async () => {
-      await saveDetails(code, {
-        name: next.name?.trim() || '',
-        email: next.email?.trim() || '',
-        phone: next.phone?.trim() || '',
-      });
-    }, delay);
-  };
-
-  // On first mount, try to capture any autofill that happened before React bound events
+  // Debounced full-save (captures browser autofill bursts) - ESLint-friendly
   useEffect(() => {
-    const t = setTimeout(() => {
-      scheduleSaveAll(form, 100); // quick sync
-    }, 800);
-    return () => clearTimeout(t);
-  }, []);
+    if (!code) return;
+    if (debTimer.current) clearTimeout(debTimer.current);
+    debTimer.current = setTimeout(() => {
+      void saveDetails(code, {
+        name: form.name?.trim() || '',
+        email: form.email?.trim() || '',
+        phone: form.phone?.trim() || '',
+      });
+    }, 600);
+    return () => { if (debTimer.current) clearTimeout(debTimer.current); };
+  }, [code, form.name, form.email, form.phone]);
 
   const setField = (k: keyof Details) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = { ...form, [k]: e.target.value };
     setForm(next);
-    scheduleSaveAll(next); // save all together
   };
 
   const blurSaveOne = async () => {
-    // No-op: bulk save is already debounced; blur just ensures we don't drop the last field
-    scheduleSaveAll(form, 150);
+    // Ensure we don't drop the last field
+    if (debTimer.current) clearTimeout(debTimer.current);
+    debTimer.current = setTimeout(() => {
+      void saveDetails(code, {
+        name: form.name?.trim() || '',
+        email: form.email?.trim() || '',
+        phone: form.phone?.trim() || '',
+      });
+    }, 150);
   };
 
   return (
