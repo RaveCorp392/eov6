@@ -29,6 +29,12 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
   const [pvOut, setPvOut] = useState<string | null>(null);
   const freeUsed = Number(sessionObj?.translate?.previewCount ?? sessionObj?.translatePreviewCount ?? 0);
   const freeLimit = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
+  // Two-box preview state
+  const [previewIn, setPreviewIn] = useState("");
+  const [previewOut, setPreviewOut] = useState("");
+  const [previewErr, setPreviewErr] = useState<string | null>(null);
+  const previewsUsed = Number(sessionObj?.translate?.previewCount ?? sessionObj?.translatePreviewCount ?? 0);
+  const limit = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5);
 
   async function previewOnce() {
     const res = await fetch("/api/translate", {
@@ -65,7 +71,46 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
     setPvText(""); setPvOut(null);
   }
 
-  async function postSystem(text: string) {
+  
+  async function doPreview() {
+    setPreviewErr(null);
+    setPreviewOut("");
+    const src = (sessionObj?.translate?.agentLang || 'en').toLowerCase();
+    const tgt = (sessionObj?.translate?.callerLang || 'en').toLowerCase();
+    const res = await fetch('/api/translate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: sessionId, text: previewIn.trim(), src, tgt, commit: false }),
+    });
+    let json: any = {};
+    try { json = await res.json(); } catch {}
+    if (!res.ok) {
+      if (json?.error === 'preview-limit') {
+        setPreviewErr(Free preview limit reached (/).);
+      } else {
+        setPreviewErr(Preview failed: );
+      }
+      return;
+    }
+    setPreviewOut(String(json.translatedText || ''));
+  }
+
+  async function sendAndBillFromPreview() {
+    setPreviewErr(null);
+    const text = previewIn.trim();
+    if (!text) return;
+    const src = (sessionObj?.translate?.agentLang || 'en').toLowerCase();
+    const tgt = (sessionObj?.translate?.callerLang || 'en').toLowerCase();
+    const res = await fetch('/api/translate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: sessionId, text, src, tgt, commit: true, sender: 'agent' }),
+    });
+    let json: any = {};
+    try { json = await res.json(); } catch {}
+    if (!res.ok) { setPreviewErr(Send failed: ); return; }
+    setPreviewIn('');
+    setPreviewOut('');
+  }
+async function postSystem(text: string) {
     try { await sendMessage(sessionId, { sender: "agent", type: "system", text }); } catch {}
   }
 
@@ -94,95 +139,59 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
           value={notes}
           onChange={(e) => { setNotes(e.target.value); debouncedSave(e.target.value); }}
         />
-        <div className="mt-3">
-          <button
-            className="rounded-lg bg-amber-600 text-white px-4 py-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-700"
-            onClick={() => requestAck(sessionId, true)}
-          >
-            Send acknowledgement
-          </button>
-        </div>
-      </section>
-
-      <section className="rounded-xl border p-4">
-        <h3 className="font-medium mb-2">Live translate</h3>
-        <label className="flex items-center gap-2 mb-2">
-          <input
-            type="checkbox"
-            checked={!!tx.enabled}
-            onChange={async (e) => {
-              const enabled = e.target.checked;
-              await setTranslateConfig(sessionId, { enabled });
-              const a = String(tx.agentLang || "en").toUpperCase();
-              const c = String(tx.callerLang || "en").toUpperCase();
-              await postSystem(`${enabled ? "Enabled" : "Disabled"} live translation (${a}â†”${c}).`);
-            }}
+                <div className="mt-3">
+          <label className="text-sm font-medium">Preview (input)</label>
+          <textarea
+            className="w-full mt-1 rounded-md border p-2"
+            rows={2}
+            placeholder="Type text to translate…"
+            value={previewIn}
+            onChange={(e) => setPreviewIn(e.target.value)}
           />
-          <span>Enable live translate (bi-directional)</span>
-        </label>
-        <div className="flex gap-2">
-          <select
-            className="border rounded-md px-2 py-1"
-            value={tx.agentLang || "en"}
-            onChange={async (e) => {
-              const agentLang = e.target.value;
-              await setTranslateConfig(sessionId, { agentLang });
-              const a = String(agentLang).toUpperCase();
-              const c = String(tx.callerLang || "en").toUpperCase();
-              await postSystem(`Translation languages updated (${a}â†”${c}).`);
-            }}
-          >
-            {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
-          <span className="self-center opacity-60">â†”</span>
-          <select
-            className="border rounded-md px-2 py-1"
-            value={tx.callerLang || "en"}
-            onChange={async (e) => {
-              const callerLang = e.target.value;
-              await setTranslateConfig(sessionId, { callerLang });
-              const a = String(tx.agentLang || "en").toUpperCase();
-              const c = String(callerLang).toUpperCase();
-              await postSystem(`Translation languages updated (${a}â†”${c}).`);
-            }}
-          >
-            {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
-        </div>
-        <div className="mt-1">
-          <button
-            type="button"
-            className="text-xs underline text-slate-600 hover:text-slate-900"
-            onClick={async () => {
-              const code = (navigator?.language || "en").slice(0,2).toLowerCase();
-              const valid = LANGUAGES.some(l => l.code === code);
-              if (!valid) return;
-              await setTranslateConfig(sessionId, { agentLang: code });
-            }}
-          >
-            Use my browser language
-          </button>
-        </div>
-        <div className="mt-3">
-          <label className="text-sm font-medium">Preview</label>
-          <textarea className="mt-1 w-full rounded-md border px-2 py-1" rows={3}
-            placeholder="Type text to preview…" value={pvText} onChange={e => setPvText(e.target.value)} />
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs text-slate-500">Free previews used: {freeUsed} / {freeLimit}</span>
-            <button className="rounded bg-slate-800 text-white text-sm px-2 py-1 disabled:opacity-50"
-              disabled={!pvText.trim() || freeUsed >= freeLimit} onClick={previewOnce}>Preview</button>
-            <button className="rounded bg-emerald-600 text-white text-sm px-2 py-1 disabled:opacity-50"
-              disabled={!pvOut} onClick={sendAndBill}>Send to chat & bill</button>
+
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              className="px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 disabled:opacity-50"
+              onClick={doPreview}
+              disabled={!previewIn || previewsUsed >= limit}
+              title={previewsUsed >= limit ? "Free preview limit reached" : ""}
+            >
+              Preview
+            </button>
+
+            <button
+              type="button"
+              className="px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+              onClick={sendAndBillFromPreview}
+              disabled={!previewIn}
+            >
+              Send to chat &amp; bill
+            </button>
+
+            <span className="ml-auto text-xs text-slate-500">
+              Free previews used: {previewsUsed} / {limit}
+            </span>
           </div>
-          {pvOut && <div className="mt-2 text-sm rounded border bg-slate-50 p-2 whitespace-pre-wrap">{pvOut}</div>}
-        </div>
-                {sessionObj?.translate?.requested && (
+
+          {previewErr && <div className="mt-2 text-xs text-red-600">{previewErr}</div>}
+
+          <label className="mt-3 block text-sm font-medium">Preview (output)</label>
+          <textarea
+            className="w-full mt-1 rounded-md border p-2 bg-slate-50"
+            rows={2}
+            readOnly
+            value={previewOut}
+            placeholder="Translation will appear here…"
+          />
+        </div>{sessionObj?.translate?.requested && (
           <div className="mt-2 text-xs rounded-md bg-blue-50 text-blue-900 px-2 py-1">Caller requested translation</div>
         )}
       </section>
     </div>
   );
 }
+
 
 
 
