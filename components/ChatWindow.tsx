@@ -27,33 +27,7 @@ export default function ChatWindow({ code, role, disabled, showUpload = false }:
     // live translate if enabled
     const tx = session?.translate;
     const live = tx?.enabled === true;
-    const agentLang = tx?.agentLang || 'en';
-    const callerLang = tx?.callerLang || 'en';
-    if (live) {
-      const target = role === 'agent' ? callerLang : agentLang;
-      try {
-        const res = await fetch('/api/translate', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            code,
-            text,
-            target,
-            commit: true,
-            sender: role,
-            agentLang: session?.translate?.agentLang,
-            callerLang: session?.translate?.callerLang,
-          }),
-        });
-        const j = await res.json();
-        if (!res.ok) throw new Error(j?.error || 'translate failed');
-        setInput("");
-        return;
-      } catch (e) {
-        alert('Translate/send failed. Sent original instead.');
-      }
-    }
-    await sendMessage(code, role, text);
+    if (live) {\n      const { src, tgt } = targetLangFor(role, tx);\n      try {\n        const res = await fetch("/api/translate", {\n          method: "POST",\n          headers: { "content-type": "application/json" },\n          body: JSON.stringify({ code, text, src, tgt, commit: true, sender: role }),\n        });\n        const j = await res.json();\n        if (!res.ok) throw new Error(j?.error || "translate failed");\n        setInput("");\n        return;\n      } catch (e) {\n        alert("Translate/send failed. Sent original instead.");\n      }\n    }\n    await sendMessage(code, role, text);
     setInput("");
   }, [code, input, role, session]);
   function displayTextFor(msg: any, viewerRole: Role) {

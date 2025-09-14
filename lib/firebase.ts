@@ -179,22 +179,20 @@ export async function uploadFileToSession(code: string, file: File): Promise<str
 // --- Translate session config & preview count ---
 export async function setTranslateConfig(
   code: string,
-  cfg: Partial<{ enabled: boolean; agentLang: string; callerLang: string; requested?: boolean; previewCount?: number }>
+  cfg: { enabled?: boolean; agentLang?: string; callerLang?: string; requested?: boolean; previewCount?: number }
 ) {
-  const norm = (s?: string) => (s || "").trim().toLowerCase();
-  const payload: any = {
-    translate: {
-      enabled: !!cfg.enabled,
-      agentLang: norm(cfg.agentLang),
-      callerLang: norm(cfg.callerLang),
-      requested: cfg.requested ?? false,
-      previewCount: cfg.previewCount ?? undefined,
-    },
-    updatedAt: serverTimestamp(),
-  };
-  await _setDoc(doc(db, "sessions", code), payload, { merge: true });
+  const t: any = {};
+  if (cfg.enabled !== undefined) t.enabled = !!cfg.enabled;
+  if (cfg.agentLang !== undefined) t.agentLang = String(cfg.agentLang || '').toLowerCase();
+  if (cfg.callerLang !== undefined) t.callerLang = String(cfg.callerLang || '').toLowerCase();
+  if (cfg.requested !== undefined) t.requested = !!cfg.requested;
+  if (typeof cfg.previewCount === 'number') t.previewCount = cfg.previewCount;
+  await _setDoc(
+    doc(db, 'sessions', code),
+    { translate: t, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
 }
-
 export async function bumpTranslatePreviewCount(code: string) {
   await _updateDoc(doc(db, "sessions", code), { translatePreviewCount: _increment(1) });
 }

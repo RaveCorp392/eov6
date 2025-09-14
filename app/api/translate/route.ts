@@ -1,4 +1,6 @@
-﻿import "server-only";
+﻿    const snap = await sessionRef.get(); if (!snap.exists) return NextResponse.json({ error: "no-session" }, { status: 404 });
+    if (!src) src = String(snap.get("translate.agentLang") || 'en').toLowerCase();
+    if (!tgt) tgt = String(snap.get("translate.callerLang") || 'en').toLowerCase();import "server-only";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
