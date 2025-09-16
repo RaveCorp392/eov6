@@ -58,18 +58,27 @@ service cloud.firestore {
     // -------- sessions (middle setting for dev/pilot) -------
     // Everyone can read. Creates allowed for messages with a constrained schema.
     match /sessions/{code} {
-      // Read the session doc
-      allow read: if true;
-      // Allow updating the session doc so agents can set ackRequest etc.
-      allow create, update: if true;
+      // Read the session doc (liberal for demo)
+      allow read: if true; // TODO: restrict to participants
+
+      // Writes allowed only if not closed and caller is a participant or admin (MVP)
+      function isParticipant() {
+        return request.auth != null && (
+          request.auth.token.admin == true ||
+          request.resource.data.participants[request.auth.uid] == true ||
+          resource.data.participants[request.auth.uid] == true
+        );
+      }
+      allow create, update: if isParticipant() && (('closed' in resource.data) ? resource.data.closed != true : true);
       allow delete: if false;
 
       // Messages subcollection
       match /messages/{msgId} {
-        allow read: if true;
+        allow read: if true; // TODO: restrict to participants
         allow create: if
-                    request.resource.data.role in ['caller','agent','system'] &&
-          request.resource.data.type in ['text','system','file'] &&
+          (('closed' in get(/databases/$(database)/documents/sessions/$(code)).data) ? get(/databases/$(database)/documents/sessions/$(code)).data.closed != true : true) &&
+          request.resource.data.role in ['caller','agent','system'] &&
+          request.resource.data.type in ['text','system','file','details','ack'] &&
           request.resource.data.text is string &&
           request.resource.data.text.size() <= 4000 &&
           (request.resource.data.type != 'file'
@@ -105,5 +114,4 @@ service cloud.firestore {
     }
   }
 }
-
 

@@ -1,0 +1,100 @@
+import type { RoiInput } from "@/lib/roi";
+
+export async function sendEmail({ provider, token, from, to, subject, html, text, bcc }:{
+  provider:"postmark"; token:string; from:string; to:string; subject:string; html:string; text:string; bcc?: string;
+}){
+  if (provider === "postmark"){
+    const body:any = { From: from, To: to, Subject: subject, HtmlBody: html, TextBody: text };
+    if (bcc) body.Bcc = bcc;
+    const res = await fetch("https://api.postmarkapp.com/email", {
+      method: "POST",
+      headers: { "X-Postmark-Server-Token": token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Postmark error: ${res.status}`);
+  }
+}
+
+export function buildRoiEmail({ email, company, inputs, outputs, page }:{
+  email:string; company?:string; inputs: RoiInput; outputs: any; page?: string;
+}){
+  const fmt = (n:number)=> new Intl.NumberFormat(undefined, { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(n);
+  const html = `
+  <div style="font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#0f172a">
+    <h2 style="margin:0 0 8px 0">Your EOV6 ROI estimate</h2>
+    <p style="margin:0 0 12px 0;color:#334155">Thanks${company?` (${company})`:""}! Here’s a quick summary based on your inputs.</p>
+    <table style="border-collapse:collapse;margin:12px 0;width:100%">
+      <tbody>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Annual savings</td><td style="padding:6px 8px;border:1px solid #e2e8f0;font-weight:600">${fmt(outputs.annualSavings)}</td></tr>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Minutes saved / day</td><td style="padding:6px 8px;border:1px solid #e2e8f0">${outputs.minutesSavedPerDay.toLocaleString()}</td></tr>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Hours saved / day</td><td style="padding:6px 8px;border:1px solid #e2e8f0">${outputs.hoursSavedPerDay.toLocaleString()}</td></tr>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Daily value</td><td style="padding:6px 8px;border:1px solid #e2e8f0">${fmt(outputs.dailyValue)}</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:12px 0;color:#334155">Assumptions: ${inputs.minutesSavedPerCall} min saved/call • ${inputs.agents} agents • ${inputs.callsPerAgentPerDay} calls/agent/day • ${inputs.workDaysPerYear} working days • ${fmt(inputs.costPerHour)}/hr fully loaded.</p>
+    <p style="margin:12px 0;color:#334155">Want a live walkthrough or a tailored calculator? <a href="https://eov6.com/contact" style="color:#2563eb">Talk to sales</a>.</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0"/>
+    <p style="font-size:12px;color:#475569">You received this because you requested an ROI copy on ${page||"/pricing"}. Unsubscribe any time.</p>
+  </div>`;
+  const text = `Your EOV6 ROI estimate
+
+Annual savings: ${fmt(outputs.annualSavings)}
+Minutes saved/day: ${outputs.minutesSavedPerDay}
+Hours saved/day: ${outputs.hoursSavedPerDay}
+Daily value: ${fmt(outputs.dailyValue)}
+
+Assumptions: ${inputs.minutesSavedPerCall} min/call • ${inputs.agents} agents • ${inputs.callsPerAgentPerDay} calls/agent/day • ${inputs.workDaysPerYear} working days • ${fmt(inputs.costPerHour)}/hr
+
+Talk to sales: https://eov6.com/contact`;
+  return { html, text };
+}
+
+export function seatRange(agents:number){
+  const n = Math.max(0, Math.floor(agents||0));
+  if (n < 10) return "<10";
+  if (n < 50) return "10–49";
+  if (n < 100) return "50–99";
+  if (n < 250) return "100–249";
+  if (n < 500) return "250–499";
+  if (n < 1000) return "500–999";
+  if (n < 2500) return "1k–2.4k";
+  if (n < 5000) return "2.5k–4.9k";
+  if (n < 10000) return "5k–9.9k";
+  return "10k+";
+}
+export function isEnterprise(agents:number){ return Math.max(0, Math.floor(agents||0)) >= 1000; }
+export function buildSalesEmail({ lead }:{ lead: any }){
+  const fmt = (n:number)=> new Intl.NumberFormat(undefined, { style:"currency", currency:"USD", maximumFractionDigits:0 }).format(n);
+  const bucket = seatRange(lead?.inputs?.agents || 0);
+  const html = `
+  <div style="font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#0f172a">
+    <h2 style="margin:0 0 8px 0">New ROI Lead — ${bucket} seats</h2>
+    <p style="margin:0 0 12px 0;color:#334155"><b>${lead.company || "(no company)"} — ${lead.email}</b></p>
+    <table style="border-collapse:collapse;margin:12px 0;width:100%">
+      <tbody>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Annual savings</td><td style="padding:6px 8px;border:1px solid #e2e8f0;font-weight:600">${fmt(lead?.outputs?.annualSavings || 0)}</td></tr>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Agents</td><td style="padding:6px 8px;border:1px solid #e2e8f0">${lead?.inputs?.agents ?? "—"}</td></tr>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Calls/agent/day</td><td style="padding:6px 8px;border:1px solid #e2e8f0">${lead?.inputs?.callsPerAgentPerDay ?? "—"}</td></tr>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Minutes saved/call</td><td style="padding:6px 8px;border:1px solid #e2e8f0">${lead?.inputs?.minutesSavedPerCall ?? "—"}</td></tr>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Cost/hr</td><td style="padding:6px 8px;border:1px solid #e2e8f0">${fmt(lead?.inputs?.costPerHour || 0)}</td></tr>
+        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0">Working days/yr</td><td style="padding:6px 8px;border:1px solid #e2e8f0">${lead?.inputs?.workDaysPerYear ?? "—"}</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:12px 0;color:#334155">Source: ${lead.page} • ${lead.createdAt}</p>
+    <p style="margin:12px 0;color:#334155">UA: ${lead.userAgent}</p>
+    <p style="margin:12px 0;color:#334155">IP: ${lead.ip}</p>
+  </div>`;
+  const text = `New ROI Lead — ${bucket} seats
+${lead.company || "(no company)"} — ${lead.email}
+Annual savings: ${fmt(lead?.outputs?.annualSavings || 0)}
+Agents: ${lead?.inputs?.agents}
+Calls/agent/day: ${lead?.inputs?.callsPerAgentPerDay}
+Minutes saved/call: ${lead?.inputs?.minutesSavedPerCall}
+Cost/hr: ${fmt(lead?.inputs?.costPerHour || 0)}
+Working days/yr: ${lead?.inputs?.workDaysPerYear}
+Source: ${lead.page} • ${lead.createdAt}
+UA: ${lead.userAgent}
+IP: ${lead.ip}`;
+  return { html, text };
+}
+

@@ -9,12 +9,32 @@ import AckModal from '@/components/AckModal';
 import CallerDetailsForm from '@/components/CallerDetailsForm';
 import TranslateBanner from '@/components/TranslateBanner';
 import { setTranslateConfig, sendMessage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import PrivacyCard from '@/components/PrivacyCard';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function CallerSessionPage({ params }: { params: { code: string } }) {
   const code = params.code;
   const [session, setSession] = useState<any>(null);
+  const [privacyText, setPrivacyText] = useState<string>("");
 
   useEffect(() => watchSession(code, setSession), [code]);
+
+  // Load org privacy statement once per session code
+  useEffect(() => {
+    (async () => {
+      const key = `privacy:dismiss:${code}`;
+      const dismissed = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+      if (dismissed === '1') return;
+      const orgId = session?.orgId;
+      if (!orgId) return;
+      try {
+        const snap = await getDoc(doc(db, 'orgs', String(orgId)));
+        const txt = (snap.data() as any)?.texts?.privacyStatement || '';
+        setPrivacyText(String(txt || ''));
+      } catch {}
+    })();
+  }, [code, session?.orgId]);
 
   const consentAccepted = Boolean(session?.consent?.accepted);
   const blocked = Boolean(session?.policySnapshot?.required) && !consentAccepted;
@@ -47,6 +67,14 @@ export default function CallerSessionPage({ params }: { params: { code: string }
         </header>
 
         {session && <TranslateBanner session={session} />}
+        {privacyText?.trim() && (
+          <PrivacyCard
+            text={privacyText}
+            onDismiss={() => {
+              try { localStorage.setItem(`privacy:dismiss:${code}`, '1'); } catch {}
+            }}
+          />
+        )}
         <CallerDetailsForm code={code} />
         <button
           className="text-xs underline opacity-70 hover:opacity-100"

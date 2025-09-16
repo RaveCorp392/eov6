@@ -129,10 +129,20 @@ export async function POST(req: Request) {
     });
 
     // Metering (best-effort)
-    const unlimited =
+    // Check org.features.translateUnlimited by loading the org (if available)
+    let unlimited =
       !!snap.get("org.features.translateUnlimited") ||
       !!snap.get("entitlements.translateUnlimited") ||
       snap.get("plan") === "translate-unlimited";
+
+    const orgId = snap.get("orgId");
+    if (!unlimited && orgId) {
+      try {
+        const orgSnap = await adminDb.collection("orgs").doc(String(orgId)).get();
+        const orgUnlimited = !!orgSnap.data()?.features?.translateUnlimited;
+        if (orgUnlimited) unlimited = true;
+      } catch {}
+    }
 
     let metered: string | undefined;
     if (unlimited) {

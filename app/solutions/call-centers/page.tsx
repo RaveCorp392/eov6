@@ -1,48 +1,106 @@
-// app/solutions/call-centers/page.tsx
 import Link from "next/link";
-import SEO from "@/components/SEO";
+import dynamic from "next/dynamic";
 
-export default function CallCenters() {
-  const title = "For Call Centers & BPOs";
-  const description = "Boost FCR and CSAT with a no-install clarity layer for any phone call. EOV6 adds a temporary text channel to fix misheard details in seconds.";
-  const schema = {"@context":"https://schema.org","@type":"WebPage",name:title,description};
+const RoiCalc = dynamic(() => import("@/components/roi/RoiLeadCalc"), { ssr: false });
 
+function Card({ title, children }:{ title: string; children: any }){
   return (
-    <>
-      <SEO title={title} description={description} url="https://eov6.com/solutions/call-centers" schema={schema} />
-      <main className="mx-auto max-w-5xl px-6 py-12">
-        <h1 className="text-3xl md:text-4xl font-bold">{title}</h1>
-        <p className="mt-3 text-lg text-slate-600">When accents, line quality, or complex spellings get in the way, agents need instant clarity—without leaving the call.</p>
-
-        <section className="mt-10 grid gap-6 md:grid-cols-2">
-          <div className="rounded-2xl border p-6">
-            <h2 className="text-xl font-semibold">Raise First-Call Resolution</h2>
-            <p className="mt-2 text-slate-600">Type critical info—names, emails, addresses—so nothing is misheard. Resolve issues on the first call and reduce repeat contacts.</p>
-          </div>
-          <div className="rounded-2xl border p-6">
-            <h2 className="text-xl font-semibold">Happier customers, calmer agents</h2>
-            <p className="mt-2 text-slate-600">Clarity boosts satisfaction and lowers agent stress. Turn tough calls into smooth outcomes.</p>
-          </div>
-        </section>
-
-        <section className="mt-10">
-          <h2 className="text-xl font-semibold">Why EOV6 wins</h2>
-          <ul className="mt-3 list-disc pl-5 text-slate-700 space-y-2">
-            <li>No install. Works in any browser—deploy same-day.</li>
-            <li>Ephemeral by default—data disappears when a session ends.</li>
-            <li>Simple 6-digit code flow—easy for agents and callers.</li>
-            <li>Scales from 10 agents to 10,000 seats.</li>
-          </ul>
-        </section>
-
-        <section className="mt-10">
-          <h2 className="text-xl font-semibold">Get started</h2>
-          <div className="mt-4 flex gap-3">
-            <Link href="/agent" className="rounded-xl bg-blue-600 px-5 py-3 text-white font-medium hover:bg-blue-700">Start a free pilot</Link>
-            <Link href="/case-studies/hypothetical-bpo" className="rounded-xl border px-5 py-3 font-medium hover:bg-slate-50">See a (clearly labeled) hypothetical case</Link>
-          </div>
-        </section>
-      </main>
-    </>
+    <div className="rounded-2xl border p-4 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800">
+      <h4 className="font-medium">{title}</h4>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{children}</p>
+    </div>
   );
+}
+
+
+export default function CallCentersSolutionPage() {
+return (
+<main className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+{/* Hero */}
+<section className="max-w-6xl mx-auto px-4 pt-16 pb-10">
+<div className="grid md:grid-cols-2 gap-8 items-center">
+<div>
+<span className="inline-block text-xs tracking-wide uppercase text-blue-600">Solutions</span>
+<h1 className="text-3xl md:text-5xl font-semibold mt-2 leading-tight">
+Clarity at every call — for high‑volume call centers
+</h1>
+<p className="mt-4 text-slate-600 dark:text-slate-300 text-lg">
+EOV6 creates a shared, ephemeral chat during a live call so agents capture
+names, emails, numbers and references correctly — first time. Fewer repeats, lower AHT,
+higher FCR, happier teams.
+</p>
+<div className="mt-6 flex flex-wrap gap-3">
+<Link href="/agent" className="px-5 py-3 rounded-2xl bg-blue-600 text-white shadow">
+Start a demo session
+</Link>
+<Link href="/pricing" className="px-5 py-3 rounded-2xl border border-slate-300 dark:border-slate-700">
+See pricing
+</Link>
+</div>
+<p className="mt-3 text-xs text-slate-500">
+Ephemeral by design — data clears on end/timeout. WCAG‑aware. Admin controls for org policy.
+</p>
+</div>
+<div className="relative">
+<div className="aspect-[16/10] w-full rounded-2xl bg-gradient-to-br from-blue-600/10 to-cyan-500/10 ring-1 ring-slate-200 dark:ring-slate-800 flex items-center justify-center">
+<div className="text-center p-6">
+<div className="text-sm text-slate-500">Live call ➜ Shared code ➜ Typed confirmation</div>
+<div className="mt-2 font-mono text-2xl">Code: 482931</div>
+<div className="mt-3 text-sm text-slate-500">Agent & caller see the same text — no repeats.</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+
+{/* Value props */}
+<section className="max-w-6xl mx-auto px-4 py-12">
+<div className="grid md:grid-cols-3 gap-6">
+<Card title="Cut AHT without scripts">
+Agents skip the painful spelling loop. Most identity fields are captured in <b>under 90 seconds</b>.
+</Card>
+<Card title="Boost FCR & QA scores">
+Accurate details on the first call reduce rework, recontact and transfers. Clear transcripts support QA.
+</Card>
+<Card title="Reduce burnout & turnover">
+Fewer frustrating calls = happier agents. Lower cognitive load means better service at scale.
+</Card>
+</div>
+</section>
+
+
+{/* ROI calculator */}
+<section className="bg-slate-50 dark:bg-slate-900/50 border-y border-slate-100 dark:border-slate-800">
+<div className="max-w-6xl mx-auto px-4 py-12">
+<div className="md:flex items-end justify-between gap-8">
+<div className="max-w-xl">
+<h2 className="text-2xl font-semibold">Estimate your ROI</h2>
+<p className="mt-2 text-slate-600 dark:text-slate-300">
+Small improvements at volume add up fast. Adjust the sliders to see yearly savings.
+</p>
+</div>
+<div className="mt-4 md:mt-0">
+<Link href="#contact" className="text-sm underline underline-offset-4">Want a tailored model?</Link>
+</div>
+</div>
+<div className="mt-6">
+<RoiCalc />
+</div>
+</div>
+</section>
+
+
+{/* Enterprise features */}
+<section className="max-w-6xl mx-auto px-4 py-12">
+<h3 className="text-xl font-semibold">Built for large teams</h3>
+<ul className="mt-4 grid md:grid-cols-2 gap-4 text-sm list-disc list-inside">
+<li>Admin org controls: uploads toggle, translate‑unlimited, privacy & acknowledgement text</li>
+<li>Ephemeral by default: session TTL + purge of files; optional export then clear</li>
+<li>SAML/OIDC SSO (roadmap), audit trails (roadmap), regional hosting (roadmap)</li>
+<li>Stripe Billing Portal for invoices & payment methods</li>
+</ul>
+</section>
+</main>
+)
 }

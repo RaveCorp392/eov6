@@ -19,4 +19,6 @@ const app = getApps().length
   ? getApp()
   : initializeApp({ credential: cert(loadServiceAccount()) });
 
-export const adminDb = getFirestore(app);
+// Export a conventional `db` for server/Admin usage, and keep `adminDb` for existing imports.
+export const db = getFirestore(app);
+export const adminDb = db;
