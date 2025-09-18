@@ -1,4 +1,4 @@
-﻿// lib/ivrConfig.ts
+// lib/ivrConfig.ts
 export type OrgPolicy = {
   uploadsEnabled: boolean;      // org-level toggle
   maxUploadBytes: number;       // UI-enforced size cap (matches Storage rules)

@@ -1,75 +1,177 @@
-﻿"use client";
+'use client';
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import * as React from 'react';
+import { useRouter } from 'next/navigation';
 
-const DEFAULT_LEN =
-  Number(process.env.NEXT_PUBLIC_CODE_LENGTH ?? 6) || 6;
-
-// Allows prefixes like â€œSQâ€ plus digits, strips spaces and dashes
-function normalizeCode(raw: string) {
-  return raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
-export default function Home() {
-  const [code, setCode] = useState("");
+export default function JoinPage() {
   const router = useRouter();
+  const [raw, setRaw] = React.useState<string>('');
+  const code = React.useMemo(
+    () => raw.replace(/\D/g, '').slice(0, 6),
+    [raw]
+  );
 
-  const cleaned = normalizeCode(code);
-  const canJoin = cleaned.length >= DEFAULT_LEN; // allow prefixed codes
+  // Auto-navigate when 6 digits entered (optional, still leaves Join button)
+  React.useEffect(() => {
+    // no auto-join; keep it explicit per your preference
+  }, [code]);
 
-  function join() {
-    if (!canJoin) return;
-    router.push(`/s/${cleaned}`);
-  }
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRaw(e.target.value);
+  };
+
+  const onPaste: React.ClipboardEventHandler<HTMLInputElement> = (e) => {
+    const pasted = e.clipboardData.getData('text');
+    const digits = (pasted || '').replace(/\D/g, '').slice(0, 6);
+    if (digits) {
+      e.preventDefault();
+      setRaw(digits);
+    }
+  };
+
+  const onKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    if (e.key === 'Enter' && code.length === 6) {
+      doJoin();
+    }
+  };
+
+  const doJoin = () => {
+    if (code.length === 6) {
+      router.push(`/s/${code}`);
+    }
+  };
+
+  // Styles are inline to guarantee centering & sizing independent of globals.
+  const styles = {
+    shell: {
+      minHeight: '100dvh',
+      display: 'grid',
+      placeItems: 'center',
+    } as React.CSSProperties,
+    card: {
+      width: 'min(680px, 92vw)',
+      display: 'grid',
+      gap: 16,
+      textAlign: 'center' as const,
+    },
+    title: { fontSize: 28, fontWeight: 700, margin: 0 },
+    label: { fontSize: 16, opacity: 0.9 },
+    inputRow: {
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      gap: 12,
+      alignItems: 'center',
+      justifyItems: 'center',
+    },
+    input: {
+      width: '100%',
+      fontFamily:
+        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+      fontSize: 32,
+      lineHeight: '48px',
+      height: 56,
+      letterSpacing: '6px',
+      textAlign: 'center' as const,
+      padding: '4px 12px',
+      borderRadius: 12,
+      border: '1px solid var(--line, #1e293b)',
+      background: '#0b1327',
+      color: 'var(--fg, #e6f2ff)',
+      outline: 'none',
+    } as React.CSSProperties,
+    joinBtn: {
+      height: 56,
+      padding: '0 20px',
+      fontSize: 18,
+      fontWeight: 600,
+      borderRadius: 12,
+      border: '1px solid var(--line, #1e293b)',
+      background: code.length === 6 ? '#2563eb' : '#0b1327',
+      color: code.length === 6 ? '#fff' : 'var(--fg, #e6f2ff)',
+      cursor: code.length === 6 ? 'pointer' : 'not-allowed',
+      opacity: code.length === 6 ? 1 : 0.6,
+    } as React.CSSProperties,
+    actions: {
+      display: 'flex',
+      gap: 12,
+      justifyContent: 'center',
+      flexWrap: 'wrap' as const,
+      marginTop: 4,
+    },
+    actionBtn: {
+      padding: '10px 14px',
+      borderRadius: 10,
+      border: '1px solid var(--line, #1e293b)',
+      background: '#0b1327',
+      color: 'var(--fg, #e6f2ff)',
+      cursor: 'pointer',
+    },
+    tip: { fontSize: 13, opacity: 0.8, marginTop: 2 },
+    watermark: { fontSize: 12, opacity: 0.5, marginTop: 8 },
+  };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white to-slate-50">
-      <section className="mx-auto max-w-xl px-4 pt-28 pb-12 text-center">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-          Join your secure session
-        </h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Enter the code your agent gave you. Data is cleared automatically by
-          policy.
-        </p>
+    <main style={styles.shell}>
+      <section style={styles.card}>
+        <h1 style={styles.title}>Join your secure session</h1>
 
-        <div className="mt-6 flex items-center gap-2">
+        <label style={styles.label} htmlFor="code">
+          Enter the 6-digit code your agent gave you.
+        </label>
+
+        <div style={styles.inputRow}>
           <input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") join();
-            }}
-            placeholder={`Enter code (e.g. 482957 or SQ482957)`}
-            className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none ring-0 placeholder:text-slate-400"
+            id="code"
+            type="text"
+            inputMode="numeric"
+            aria-label="6 digit code"
+            placeholder="— — — — — —"
+            value={code || raw} // shows digits; placeholder shows dashes when empty
+            onChange={onChange}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            style={styles.input}
+            maxLength={12} // raw may include spaces/dashes when typing; we sanitize anyway
           />
+
           <button
-            onClick={join}
-            disabled={!canJoin}
-            className="rounded-xl bg-indigo-600 px-5 py-3 font-medium text-white shadow-sm transition enabled:hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            type="button"
+            onClick={doJoin}
+            disabled={code.length !== 6}
+            style={styles.joinBtn}
           >
             Join
           </button>
         </div>
 
-        <div className="mt-10 text-sm text-slate-600">
-          Would you like to know more?{" "}
-          <Link href="/marketing" className="text-indigo-700 underline">
+        <div style={styles.actions}>
+          <button
+            type="button"
+            style={styles.actionBtn}
+            onClick={() => location.assign('/about')}
+            aria-label="Learn about EOV6"
+          >
             Learn about EOV6
-          </Link>
+          </button>
+
+          <button
+            type="button"
+            style={styles.actionBtn}
+            onClick={() => location.assign('/ivr')}
+            aria-label="Use IVR instead"
+          >
+            Use IVR instead
+          </button>
         </div>
 
-        <div className="mt-6 text-xs text-slate-500">
-          Agents: go to{" "}
-          <Link href="/agent" className="text-indigo-700 underline">
-            /agent
-          </Link>{" "}
-          to create a session code.
-        </div>
+        <p style={styles.tip} className="mono">
+          Tip: you can paste the whole code — we’ll format it automatically.
+        </p>
+
+        <p style={styles.watermark} className="mono">
+          MW: root-join v4 • ui-polish
+        </p>
       </section>
     </main>
   );
 }
-

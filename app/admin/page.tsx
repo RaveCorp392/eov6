@@ -1,60 +1,69 @@
-// app/admin/page.tsx
-"use client";
+// /app/admin/page.tsx
+import { redirect } from 'next/navigation';
+import { adminDb } from '@/lib/firebaseAdmin';
+import { requireOwner } from '@/lib/authz';
 
-import { useEffect, useState } from "react";
-import { auth, googleProvider } from "@/lib/firebase";
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-  User,
-} from "firebase/auth";
+async function getMetrics() {
+  const snap = await adminDb.collection('entitlements').get();
+  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
 
-export default function AdminPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [ready, setReady] = useState(false);
+  const active = docs.filter(d => d.active);
+  const planCounts = active.reduce<Record<string, number>>((acc, d) => {
+    acc[d.plan] = (acc[d.plan] ?? 0) + 1;
+    return acc;
+  }, {});
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setReady(true);
-    });
-    return () => unsub();
-  }, []);
-
-  const doLogin = async () => {
-    await signInWithPopup(auth, googleProvider);
+  // crude MRR-ish based on price map you already keep in /lib/billing
+  const priceMap: Record<string, number> = {
+    solo_month: 500,
+    team_month: 2500,
+    solo_year: Math.round(4800 / 12),
+    team_year: Math.round(24000 / 12),
   };
+  const mrr = active.reduce((sum, d) => sum + (priceMap[d.plan] ?? 0), 0);
 
-  const doLogout = async () => {
-    await signOut(auth);
-  };
+  const contactsSnap = await adminDb.collection('contacts').orderBy('createdAt', 'desc').limit(10).get();
+  const contacts = contactsSnap.docs.map(d => d.data());
+
+  return { planCounts, mrr, contacts };
+}
+
+export default async function AdminHome() {
+  const { ok } = await requireOwner();
+  if (!ok) redirect('/');
+
+  const { planCounts, mrr, contacts } = await getMetrics();
 
   return (
-    <main style={{ padding: 16, maxWidth: 760 }}>
-      <h1 style={{ fontWeight: 700, marginBottom: 12 }}>Agent console</h1>
+    <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
+      <h1 className="text-2xl font-semibold">Admin</h1>
 
-      {!ready && <p>Loading…</p>}
-
-      {ready && !user && (
-        <div>
-          <p>You’re not signed in.</p>
-          <button onClick={doLogin} style={{ padding: "8px 12px" }}>
-            Sign in with Google
-          </button>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {Object.entries(planCounts).map(([plan, n]) => (
+          <div key={plan} className="rounded-xl border p-4">
+            <div className="text-sm text-gray-500">{plan}</div>
+            <div className="text-2xl font-semibold">{n}</div>
+          </div>
+        ))}
+        <div className="rounded-xl border p-4">
+          <div className="text-sm text-gray-500">MRR (est.)</div>
+          <div className="text-2xl font-semibold">A${(mrr/100).toFixed(2)}</div>
         </div>
-      )}
+      </div>
 
-      {ready && user && (
-        <div>
-          <p style={{ marginBottom: 8 }}>
-            Signed in as <strong>{user.email}</strong>
-          </p>
-          <button onClick={doLogout} style={{ padding: "8px 12px" }}>
-            Sign out
-          </button>
+      <div className="rounded-xl border">
+        <div className="p-4 font-medium">Recent contacts</div>
+        <div className="divide-y">
+          {contacts.map((c: any) => (
+            <div key={c.id} className="p-4 text-sm">
+              <div className="font-medium">{c.email}</div>
+              {c.name && <div className="text-gray-500">{c.name}</div>}
+              {c.message && <div className="text-gray-700 mt-2">{c.message}</div>}
+              <div className="text-xs text-gray-400 mt-2">{new Date(c.createdAt).toLocaleString()}</div>
+            </div>
+          ))}
         </div>
-      )}
-    </main>
+      </div>
+    </div>
   );
 }

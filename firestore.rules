@@ -2,96 +2,116 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSixDigit(code) {
-      return code.matches('^[0-9]{6}$');
+    // -------- helpers ----------
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && request.auth.token.admin == true; }
+
+    // -------- contact form -------
+    match /contacts/{id} {
+      allow create: if
+        request.resource.data.keys().hasOnly(['email','name','message','createdAt','source','status']) &&
+        request.resource.data.email is string &&
+        request.resource.data.name is string &&
+        request.resource.data.message is string &&
+        request.resource.data.createdAt is int &&
+        request.resource.data.email.size() > 0 &&
+        request.resource.data.email.size() <= 200 &&
+        request.resource.data.name.size() <= 200 &&
+        request.resource.data.message.size() <= 4000;
+      allow read, update, delete: if isAdmin();
     }
 
-    function sessionDoc(code) {
-      return get(/databases/$(database)/documents/sessions/$(code));
+    // -------- entitlements (read-only to self) -------
+    match /entitlements/{email} {
+      allow read: if isSignedIn()
+                  && request.auth.token.email != null
+                  && lower(request.auth.token.email) == email;
+      allow create, update, delete: if false;
     }
 
-    function sessionExists(code) {
-      return exists(/databases/$(database)/documents/sessions/$(code));
-    }
+    // -------- orgs + members (UID roles) -------
+    match /orgs/{orgId} {
+      function isMember() {
+        return isSignedIn() && exists(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid));
+      }
+      function myRole() {
+        return isMember() ? get(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid)).data.role : null;
+      }
+      function isManager() { return myRole() in ['owner','admin']; }
 
-    function isActiveSession(code) {
-      return sessionExists(code)
-        && sessionDoc(code).data.active == true
-        && request.time < sessionDoc(code).data.expiresAt;
-    }
+      // Reads restricted to members (open up if you need public fields)
+      allow read: if isMember();
+      // Writes only for managers
+      allow create, update, delete: if isManager();
 
-    // Agents are authenticated users. You may later add custom claims.
-    function isAgent() {
-      return request.auth != null;
-    }
+      match /members/{uid} {
+        allow read: if isMember();
+        allow create, update, delete: if isManager();
+      }
 
-    // Basic validators for messages
-    function validMessageBody() {
-      return request.resource.data.type in ['text','file','details']
-        && request.resource.data.role in ['agent','caller','system']
-        && request.resource.data.createdAt == request.time
-        // text
-        && (request.resource.data.type != 'text'
-            || (request.resource.data.text is string && request.resource.data.text.size() <= 4000))
-        // file
-        && (request.resource.data.type != 'file'
-            || (
-                request.resource.data.file is map
-                && request.resource.data.file.name is string
-                && request.resource.data.file.size is int
-                && request.resource.data.file.contentType is string
-                && request.resource.data.file.storagePath is string
-                && request.resource.data.file.downloadURL is string
-              ))
-        // details
-        && (request.resource.data.type != 'details'
-            || (
-                request.resource.data.details is map
-                && request.resource.data.details.name is string
-                && request.resource.data.details.email is string
-                && request.resource.data.details.phone is string
-              ));
-    }
-
-    // Sessions collection
-    match /sessions/{code} {
-      allow read: if isActiveSession(code); // both sides can read minimal session doc
-
-      // Session creation/updates by agent app only
-      allow create: if isAgent()
-        && isSixDigit(code)
-        && request.resource.data.active == true
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.expiresAt is timestamp;
-
-      // Allow agents to safely update a few fields (e.g., active/lastActivityAt)
-      allow update: if isAgent()
-        && request.resource.data.keys().hasOnly(['active','lastActivityAt','createdAt','expiresAt','agentId'])
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.expiresAt == resource.data.expiresAt;
-
-      // Messages subcollection
-      match /messages/{msgId} {
-        allow read: if isActiveSession(code);
-
-        // Callers (unauthenticated) can post into an active session ONLY:
-        allow create: if isActiveSession(code)
-          && validMessageBody()
-          && request.resource.data.role in ['caller','system']
-          // guard details visibility (optional)
-          && (request.resource.data.type != 'details' || !('visibleTo' in request.resource.data) || request.resource.data.visibleTo == 'agent');
-
-        // Agents (authenticated) can also post:
-        allow create: if isActiveSession(code)
-          && isAgent()
-          && validMessageBody()
-          && request.resource.data.role in ['agent','system'];
+      // Optional legacy subcollection
+      match /ackTemplates/{ackId} {
+        allow read: if isMember();
+        allow create, update, delete: if isManager();
       }
     }
 
-    // Deny everything else
-    match /{document=**} {
-      allow read, write: if false;
+    // -------- sessions (middle setting for dev/pilot) -------
+    // Everyone can read. Creates allowed for messages with a constrained schema.
+    match /sessions/{code} {
+      // Read the session doc (liberal for demo)
+      allow read: if true; // TODO: restrict to participants
+
+      // Writes allowed only if not closed and caller is a participant or admin (MVP)
+      function isParticipant() {
+        return request.auth != null && (
+          request.auth.token.admin == true ||
+          request.resource.data.participants[request.auth.uid] == true ||
+          resource.data.participants[request.auth.uid] == true
+        );
+      }
+      allow create, update: if isParticipant() && (('closed' in resource.data) ? resource.data.closed != true : true);
+      allow delete: if false;
+
+      // Messages subcollection
+      match /messages/{msgId} {
+        allow read: if true; // TODO: restrict to participants
+        allow create: if
+          (('closed' in get(/databases/$(database)/documents/sessions/$(code)).data) ? get(/databases/$(database)/documents/sessions/$(code)).data.closed != true : true) &&
+          request.resource.data.role in ['caller','agent','system'] &&
+          request.resource.data.type in ['text','system','file','details','ack'] &&
+          request.resource.data.text is string &&
+          request.resource.data.text.size() <= 4000 &&
+          (request.resource.data.type != 'file'
+             || (request.resource.data.url is string && request.resource.data.url.size() > 0)) &&
+          (!('orig' in request.resource.data) || (
+            request.resource.data.orig is map &&
+            (!('text' in request.resource.data.orig) || request.resource.data.orig.text is string) &&
+            (!('lang' in request.resource.data.orig) || request.resource.data.orig.lang is string)
+          )) &&
+          (!('lang' in request.resource.data) || (
+            request.resource.data.lang is map &&
+            (!('src' in request.resource.data.lang) || request.resource.data.lang.src is string) &&
+            (!('tgt' in request.resource.data.lang) || request.resource.data.lang.tgt is string)
+          )) &&
+          (!('meta' in request.resource.data) || (
+            request.resource.data.meta is map &&
+            (!('translated' in request.resource.data.meta) || request.resource.data.meta.translated is bool)
+          ));
+        allow update, delete: if false;
+      }
+
+      // Caller details (name/email/phone/notes)
+      match /details/{docId} {
+        allow read: if true;
+        allow create, update: if
+          request.resource.data.keys().hasOnly(['name','email','phone','notes','updatedAt']) &&
+          (!('name' in request.resource.data) || request.resource.data.name is string) &&
+          (!('email' in request.resource.data) || request.resource.data.email is string) &&
+          (!('phone' in request.resource.data) || request.resource.data.phone is string) &&
+          (!('notes' in request.resource.data) || request.resource.data.notes is string);
+        allow delete: if false;
+      }
     }
   }
 }

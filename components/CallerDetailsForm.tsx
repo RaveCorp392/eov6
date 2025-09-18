@@ -1,79 +1,93 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
+import { watchDetails, saveDetails } from "@/lib/firebase";
 
-import { useState } from "react";
-import { db } from "@/lib/firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+type Details = { name?: string; email?: string; phone?: string };
 
-type Props = {
-  code: string; // session code
-};
+export default function CallerDetailsForm({ code }: { code: string }) {
+  const [form, setForm] = useState<Details>({});
+  const debTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-export default function CallerDetailsForm({ code }: Props) {
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail]     = useState("");
-  const [phone, setPhone]     = useState("");
-  const [busy, setBusy]       = useState(false);
+  // Live hydrate from Firestore
+  useEffect(() => {
+    const unsub = watchDetails(code, (d) => {
+      setForm((prev) => {
+        // Only update fields that are actually different to avoid clobbering in-flight edits
+        const next: Details = { ...prev };
+        if (d?.name !== undefined && d?.name !== prev.name) next.name = d.name;
+        if (d?.email !== undefined && d?.email !== prev.email) next.email = d.email;
+        if (d?.phone !== undefined && d?.phone !== prev.phone) next.phone = d.phone;
+        return next;
+      });
+    });
+    return () => unsub();
+  }, [code]);
 
-  async function onSend() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      // Write to a stable location the agent panel will read:
-      // sessions/{code}/meta/caller
-      await setDoc(
-        doc(db, "sessions", code, "meta", "caller"),
-        {
-          fullName,
-          email,
-          phone,
-          identified: !!(fullName || email || phone),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+  // Debounced full-save (captures browser autofill bursts) — ESLint-friendly deps
+  useEffect(() => {
+    if (!code) return;
+    if (debTimer.current) clearTimeout(debTimer.current);
+    debTimer.current = setTimeout(() => {
+      void saveDetails(code, {
+        name: form.name?.trim() || "",
+        email: form.email?.trim() || "",
+        phone: form.phone?.trim() || "",
+      });
+    }, 600);
+    return () => {
+      if (debTimer.current) clearTimeout(debTimer.current);
+    };
+  }, [code, form.name, form.email, form.phone]);
 
-      alert("Details sent!");
-      // Optional: clear inputs
-      // setFullName(""); setEmail(""); setPhone("");
-    } catch (e) {
-      console.error(e);
-      alert("Failed to send details. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const setField =
+    (k: keyof Details) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const next = { ...form, [k]: e.target.value };
+      setForm(next);
+    };
+
+  const blurSaveOne = async () => {
+    // Ensure we don't drop the last field
+    if (debTimer.current) clearTimeout(debTimer.current);
+    debTimer.current = setTimeout(() => {
+      void saveDetails(code, {
+        name: form.name?.trim() || "",
+        email: form.email?.trim() || "",
+        phone: form.phone?.trim() || "",
+      });
+    }, 150);
+  };
 
   return (
-    <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-white/90">Send your details</h3>
-      <div className="flex gap-2">
-        <input
-          className="min-w-[14rem] rounded px-2 py-1 text-sm bg-white/5 text-white border border-white/10"
-          placeholder="Full name"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-        <input
-          className="min-w-[18rem] rounded px-2 py-1 text-sm bg-white/5 text-white border border-white/10"
-          placeholder="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          className="min-w-[12rem] rounded px-2 py-1 text-sm bg-white/5 text-white border border-white/10"
-          placeholder="Phone"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
-        <button
-          onClick={onSend}
-          disabled={busy}
-          className="rounded bg-white/10 hover:bg-white/20 px-3 py-1 text-sm text-white border border-white/20"
-        >
-          {busy ? "Sending…" : "Send details"}
-        </button>
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/60 dark:bg-slate-900/60">
+      <div className="text-sm font-medium mb-2 text-slate-600 dark:text-slate-300">
+        Caller details
       </div>
-    </section>
+      <div className="grid gap-2">
+        <input
+          autoComplete="name"
+          placeholder="Full name"
+          className="rounded-lg border px-3 py-2 bg-white/90 dark:bg-slate-900/70"
+          value={form.name || ""}
+          onChange={setField("name")}
+          onBlur={blurSaveOne}
+        />
+        <input
+          autoComplete="email"
+          placeholder="Email"
+          className="rounded-lg border px-3 py-2 bg-white/90 dark:bg-slate-900/70"
+          value={form.email || ""}
+          onChange={setField("email")}
+          onBlur={blurSaveOne}
+        />
+        <input
+          autoComplete="tel"
+          placeholder="Phone"
+          className="rounded-lg border px-3 py-2 bg-white/90 dark:bg-slate-900/70"
+          value={form.phone || ""}
+          onChange={setField("phone")}
+          onBlur={blurSaveOne}
+        />
+      </div>
+    </div>
   );
 }

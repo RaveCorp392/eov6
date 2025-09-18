@@ -1,0 +1,97 @@
+"use client";
+
+import { useEffect, useState, useMemo } from "react";
+import { auth, db } from "@/lib/firebase";
+import {
+  collection, doc, getDoc, getDocs, query, updateDoc, where, serverTimestamp,
+} from "firebase/firestore";
+import { orgIdFromEmail } from "@/lib/org";
+
+type AckT = { id: string; title: string; body: string; active?: boolean };
+
+export default function AckMenu({ code }: { code: string }) {
+  const [email, setEmail] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState("default");
+  const [orgDefault, setOrgDefault] = useState<AckT | null>(null);
+  const [templates, setTemplates] = useState<AckT[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const off = auth.onAuthStateChanged((u) => {
+      const e = u?.email || null;
+      setEmail(e);
+      setOrgId(orgIdFromEmail(e));
+    });
+    return () => off();
+  }, []);
+
+  // load org default ack + active templates
+  useEffect(() => {
+    (async () => {
+      // 1) org default
+      const orgRef = doc(db, "orgs", orgId);
+      const orgSnap = await getDoc(orgRef);
+      const txt = orgSnap.data()?.texts?.ackTemplate as string | undefined;
+      setOrgDefault(txt?.trim()
+        ? { id: "__org_default__", title: "Default acknowledgement", body: txt.trim(), active: true }
+        : null);
+
+      // 2) active templates
+      const col = collection(db, "orgs", orgId, "ackTemplates");
+      const qq = query(col, where("active", "==", true));
+      const snap = await getDocs(qq);
+      const list: AckT[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
+      setTemplates(list.sort((a, b) => a.title.localeCompare(b.title)));
+    })();
+  }, [orgId]);
+
+  const menu = useMemo(() => {
+    const items = [...templates];
+    if (orgDefault) items.unshift(orgDefault);
+    return items;
+  }, [templates, orgDefault]);
+
+  async function sendAck(t: AckT) {
+    setBusy(true);
+    try {
+      const sessRef = doc(db, "sessions", code);
+      await updateDoc(sessRef, {
+        pendingAck: { id: t.id, title: t.title, body: t.body },
+        ackRequestedAt: serverTimestamp(),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative inline-flex">
+      <details className="group">
+        <summary className="cursor-pointer inline-flex items-center rounded-md bg-blue-600 text-white px-3 py-2 text-sm hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-600">
+          Send acknowledgement ▾
+        </summary>
+        <div className="absolute z-10 mt-2 w-80 rounded-md border bg-white shadow-md">
+          {menu.length === 0 ? (
+            <div className="p-3 text-sm text-slate-500">No templates found.</div>
+          ) : (
+            <ul className="p-1">
+              {menu.map((t) => (
+                <li key={t.id}>
+                  <button
+                    onClick={() => sendAck(t)}
+                    disabled={busy}
+                    className="w-full text-left px-3 py-2 text-sm rounded hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {t.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
+
