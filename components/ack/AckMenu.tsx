@@ -7,9 +7,9 @@ import { orgIdFromEmail } from "@/lib/org";
 
 type AckT = { id: "privacy" | "slot1" | "slot2"; title: string; body: string; required?: boolean };
 
-export default function AckMenu({ code }: { code: string }) {
+export default function AckMenu({ code, orgId: propOrgId }: { code: string; orgId?: string }) {
   const [email, setEmail] = useState<string | null>(null);
-  const [orgId, setOrgId] = useState("default");
+  const [stateOrgId, setStateOrgId] = useState("default");
   const [privacy, setPrivacy] = useState<AckT | null>(null);
   const [slots, setSlots] = useState<AckT[]>([]);
   const [ackProgress, setAckProgress] = useState<Record<string, boolean | undefined>>({});
@@ -19,26 +19,27 @@ export default function AckMenu({ code }: { code: string }) {
     const off = auth.onAuthStateChanged((u) => {
       const e = u?.email || null;
       setEmail(e);
-      setOrgId(orgIdFromEmail(e));
+      setStateOrgId(orgIdFromEmail(e));
     });
     return () => off();
   }, []);
 
   useEffect(() => {
-    (async () => {
-      const orgRef = doc(db, "orgs", orgId);
-      const orgSnap = await getDoc(orgRef);
-      const data = orgSnap.data() as any;
-      const privacyTxt = (data?.texts?.ackTemplate || "").toString().trim();
-      setPrivacy(privacyTxt ? { id: "privacy", title: "Privacy acknowledgement", body: privacyTxt } : null);
+    const id = propOrgId || stateOrgId || undefined;
+    if (!id) return;
+    const off = onSnapshot(doc(db, "orgs", id), (snap) => {
+      const data = snap.data() as any;
+      const privacyText = String((data?.texts?.privacyStatement || data?.texts?.ackTemplate || "").trim());
+      setPrivacy(privacyText ? { id: "privacy", title: "Privacy acknowledgement", body: privacyText } : null);
       const rawSlots: any[] = Array.isArray(data?.acks?.slots) ? data.acks.slots : [];
       const mapped: AckT[] = rawSlots
         .filter((s) => s && (s.title || s.body))
-        .map((s) => ({ id: s.id, title: String(s.title || "Acknowledgement"), body: String(s.body || ""), required: !!s.required }))
-        .sort((a, b) => (a.id === "slot1" ? 1 : 2) - (b.id === "slot1" ? 1 : 2));
+        .sort((a, b) => (Number(a?.order || 0) - Number(b?.order || 0)))
+        .map((s) => ({ id: s.id, title: String(s.title || "Acknowledgement"), body: String(s.body || ""), required: !!s.required }));
       setSlots(mapped);
-    })();
-  }, [orgId]);
+    });
+    return () => off();
+  }, [propOrgId]);
 
   useEffect(() => {
     const off = onSnapshot(doc(db, "sessions", code), (snap) => {

@@ -30,12 +30,12 @@ names, emails, numbers and references correctly — first time. Fewer repeats, l
 higher FCR, happier teams.
 </p>
 <div className="mt-6 flex flex-wrap gap-3">
-<Link href="/agent" className="px-5 py-3 rounded-2xl bg-blue-600 text-white shadow">
-Start a demo session
-</Link>
-<Link href="/pricing" className="px-5 py-3 rounded-2xl border border-slate-300 dark:border-slate-700">
-See pricing
-</Link>
+  <Link href="/pricing#roi" className="px-5 py-3 rounded-2xl bg-blue-600 text-white shadow">
+    See ROI & Pricing
+  </Link>
+  <Link href="/pricing" className="px-5 py-3 rounded-2xl border border-slate-300 dark:border-slate-700">
+    See plans
+  </Link>
 </div>
 <p className="mt-3 text-xs text-slate-500">
 Ephemeral by design — data clears on end/timeout. WCAG‑aware. Admin controls for org policy.

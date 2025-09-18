@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { addDoc, collection, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, onSnapshot, serverTimestamp, updateDoc, deleteField } from "firebase/firestore";
 
 export default function AckModal({ code }: { code: string }) {
   const [open, setOpen] = useState(false);
@@ -31,14 +31,23 @@ export default function AckModal({ code }: { code: string }) {
     await addDoc(msgs, {
       role: "system",
       type: "ack",
+      text: `Caller accepted: ${title}`,
       ack: { id: ackId || "privacy", title: title || "", status: "accepted" },
       createdAt: serverTimestamp(),
     } as any);
-    await updateDoc(doc(db, "sessions", code), { pendingAck: null, [`ackProgress.${ackId}`]: true } as any);
+    await updateDoc(doc(db, "sessions", code), { pendingAck: deleteField(), [`ackProgress.${ackId}`]: true } as any);
     setOpen(false);
   }
-  function cancel() {
-    updateDoc(doc(db, "sessions", code), { pendingAck: null, ...(ackId ? { [`ackProgress.${ackId}`]: false } : {}) } as any);
+  async function cancel() {
+    const msgs = collection(db, "sessions", code, "messages");
+    await addDoc(msgs, {
+      role: "system",
+      type: "ack",
+      text: `Caller declined: ${title}`,
+      ack: { id: ackId || "privacy", title: title || "", status: "declined" },
+      createdAt: serverTimestamp(),
+    } as any);
+    await updateDoc(doc(db, "sessions", code), { pendingAck: deleteField(), ...(ackId ? { [`ackProgress.${ackId}`]: false } : {}) } as any);
     setOpen(false);
   }
   if (!open) return null;

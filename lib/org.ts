@@ -10,3 +10,9 @@ export function orgIdFromEmail(email?: string | null): string {
   return domain || "default";
 }
 
+import { doc, onSnapshot, type Unsubscribe } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+
+export function watchOrg(orgId: string, cb: (org: any | null) => void): Unsubscribe {
+  return onSnapshot(doc(db, "orgs", orgId), (snap) => cb(snap.exists() ? { id: orgId, ...(snap.data() as any) } : null));
+}

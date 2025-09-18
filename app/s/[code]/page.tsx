@@ -11,7 +11,7 @@ import TranslateBanner from '@/components/TranslateBanner';
 import { setTranslateConfig, sendMessage } from '@/lib/firebase';
 import { db } from '@/lib/firebase';
 import PrivacyCard from '@/components/PrivacyCard';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function CallerSessionPage({ params }: { params: { code: string } }) {
   const code = params.code;
@@ -20,20 +20,19 @@ export default function CallerSessionPage({ params }: { params: { code: string }
 
   useEffect(() => watchSession(code, setSession), [code]);
 
-  // Load org privacy statement once per session code
+  // Watch org privacy statement; fallback to ackTemplate if empty.
   useEffect(() => {
-    (async () => {
-      const key = `privacy:dismiss:${code}`;
-      const dismissed = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
-      if (dismissed === '1') return;
-      const orgId = session?.orgId;
-      if (!orgId) return;
-      try {
-        const snap = await getDoc(doc(db, 'orgs', String(orgId)));
-        const txt = (snap.data() as any)?.texts?.privacyStatement || '';
-        setPrivacyText(String(txt || ''));
-      } catch {}
-    })();
+    const key = `privacy:dismiss:${code}`;
+    const dismissed = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+    if (dismissed === '1') return;
+    const orgId = session?.orgId;
+    if (!orgId) return;
+    const off = onSnapshot(doc(db, 'orgs', String(orgId)), (snap) => {
+      const d = (snap.data() as any) || {};
+      const text = String((d?.texts?.privacyStatement || d?.texts?.ackTemplate || '').trim());
+      setPrivacyText(text);
+    });
+    return () => off();
   }, [code, session?.orgId]);
 
   const consentAccepted = Boolean(session?.consent?.accepted);

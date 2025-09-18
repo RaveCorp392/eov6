@@ -5,7 +5,7 @@ import { doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Org } from "@/types/org";
 
-export default function OrgBilling({ orgId, org, onSaved }:{ orgId: string; org: Org; onSaved: (o: Org)=>void; }){
+export default function OrgBilling({ orgId, org, onSaved, canManage = true }:{ orgId: string; org: Org; onSaved: (o: Org)=>void; canManage?: boolean; }){
   const [plan, setPlan] = useState(org.billing?.plan ?? "starter");
   const [customerId, setCustomerId] = useState(org.billing?.stripeCustomerId ?? "");
   const [busy, setBusy] = useState(false);
@@ -33,7 +33,7 @@ export default function OrgBilling({ orgId, org, onSaved }:{ orgId: string; org:
       <div className="grid md:grid-cols-2 gap-4">
         <label className="grid gap-1">
           <span className="text-sm font-medium">Plan</span>
-          <select value={plan} onChange={e=>setPlan(e.target.value)} className="border rounded px-3 py-2 bg-white dark:bg-slate-900">
+          <select value={plan} onChange={e=>setPlan(e.target.value)} className="border rounded px-3 py-2 bg-white dark:bg-slate-900" disabled={!canManage}>
             <option value="starter">Starter</option>
             <option value="pro">Pro</option>
             <option value="enterprise">Enterprise</option>
@@ -41,15 +41,14 @@ export default function OrgBilling({ orgId, org, onSaved }:{ orgId: string; org:
         </label>
         <label className="grid gap-1">
           <span className="text-sm font-medium">Stripe customer ID</span>
-          <input value={customerId} onChange={e=>setCustomerId(e.target.value)} className="border rounded px-3 py-2 bg-white dark:bg-slate-900" placeholder="cus_XXXXXXXXXXXX"/>
+          <input value={customerId} onChange={e=>setCustomerId(e.target.value)} className="border rounded px-3 py-2 bg-white dark:bg-slate-900" placeholder="cus_XXXXXXXXXXXX" disabled={!canManage}/>
         </label>
       </div>
       <div className="flex gap-2">
-        <button onClick={save} disabled={busy} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{busy?"Saving…":"Save billing"}</button>
-        <button onClick={openPortal} disabled={busy || !customerId} className="px-4 py-2 rounded bg-slate-800 text-white disabled:opacity-50">Open Billing Portal</button>
+        <button onClick={save} disabled={busy || !canManage} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{busy?"Saving…":"Save billing"}</button>
+        <button onClick={openPortal} disabled={busy || !customerId || !canManage} className="px-4 py-2 rounded bg-slate-800 text-white disabled:opacity-50">Open Billing Portal</button>
       </div>
       <p className="text-xs text-slate-500">The Billing Portal lets admins update payment methods, view invoices, and manage subscriptions. Requires <code>STRIPE_SECRET_KEY</code> and an existing <code>stripeCustomerId</code> on the org.</p>
     </div>
   );
 }
-

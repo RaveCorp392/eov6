@@ -8,8 +8,8 @@ import {
   setTranslateConfig,
   LANGUAGES,
   normLang2,
-  requestAck,
 } from "@/lib/firebase";
+import AckMenu from "@/components/ack/AckMenu";
 
 export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) {
   const [caller, setCaller] = useState<any>({});
@@ -188,17 +188,7 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
           }}
         />
         <div className="mt-3">
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                await requestAck(sessionId, true);
-              } catch {}
-            }}
-            className="px-3 py-2 rounded bg-amber-600 text-white hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-600"
-          >
-            Send acknowledgement
-          </button>
+          <AckMenu code={sessionId} orgId={sessionObj?.orgId} />
         </div>
         {sessionObj?.translate?.requested && (
           <div className="mt-2 text-xs rounded-md bg-blue-50 text-blue-900 px-2 py-1">

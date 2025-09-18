@@ -11,6 +11,7 @@ import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Org } from "@/types/org";
+import { resolveOrgIdFromEmail } from "@/lib/org-resolver";
 
 export default function AdminOrgPage() {
   const [tab, setTab] = useState<OrgTabKey>("general");
@@ -18,23 +19,26 @@ export default function AdminOrgPage() {
   const [orgId, setOrgId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getAuth();
     const off = onAuthStateChanged(auth, async (user) => {
       try {
         setLoading(true);
-        let resolvedOrgId = "default";
-        if (user?.email) {
-          const domain = user.email.split("@")[1]?.toLowerCase();
-          if (domain) {
-            const q = query(collection(db, "orgs"), where("domains", "array-contains", domain));
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              resolvedOrgId = snap.docs[0].id;
-            }
-          }
+        // Ensure membership server-side (bootstrap in dev if needed)
+        if (user) {
+          try {
+            const tok = await user.getIdToken();
+            const res = await fetch('/api/admin/ensure-membership', { method: 'POST', headers: { Authorization: `Bearer ${tok}` } });
+            const data = await res.json().catch(() => ({}));
+            if (data?.role) setRole(String(data.role));
+            if (data?.orgId) setOrgId(String(data.orgId));
+          } catch {}
         }
+        // Resolve orgId using client resolver, with optional dev hardwire
+        let resolvedOrgId = process.env.NODE_ENV === 'development' ? 'fivebyte' : (user?.email ? resolveOrgIdFromEmail(user.email) : 'default');
+        if (orgId) resolvedOrgId = orgId;
         const ref = doc(db, "orgs", resolvedOrgId);
         const snap = await getDoc(ref);
         if (snap.exists()) {
@@ -68,26 +72,35 @@ export default function AdminOrgPage() {
         <h1 className="text-xl font-semibold">Organisation Settings</h1>
         <p className="text-sm text-slate-500">Manage org profile, staff, features, billing and usage.</p>
       </div>
-      <div className="text-xs text-slate-500">Org ID: <span className="font-mono">{orgId || ""}</span></div>
+      <div className="text-xs text-slate-500 flex items-center gap-2">
+        <span>Org ID: <span className="font-mono">{orgId || ""}</span></span>
+        <span className={`px-2 py-0.5 rounded-full border ${
+          role === 'owner' ? 'border-green-600 text-green-700' :
+          role === 'admin' ? 'border-blue-600 text-blue-700' :
+          'border-slate-300 text-slate-500'
+        }`}>
+          {role || '…'}
+        </span>
+      </div>
     </div>
-  ), [orgId]);
+  ), [orgId, role]);
 
   if (loading) return <div className="p-6">Loading org…</div>;
   if (error) return <div className="p-6 text-red-600">{error}</div>;
   if (!org) return <div className="p-6">No organisation found.</div>;
+  const canManage = role === 'owner' || role === 'admin';
 
   return (
     <div className="max-w-5xl mx-auto">
       {header}
       <OrgTabs current={tab} onChange={setTab} />
       <div className="p-4">
-        {tab === "general" && <OrgGeneral orgId={orgId} org={org} onSaved={setOrg} />}
-        {tab === "staff" && <OrgStaff orgId={orgId} org={org} onSaved={setOrg} />}
-        {tab === "features" && <OrgFeatures orgId={orgId} org={org} onSaved={setOrg} />}
-        {tab === "billing" && <OrgBilling orgId={orgId} org={org} onSaved={setOrg} />}
+        {tab === "general" && <OrgGeneral orgId={orgId} org={org} onSaved={setOrg} canManage={canManage} />}
+        {tab === "staff" && <OrgStaff orgId={orgId} org={org} onSaved={setOrg} canManage={canManage} />}
+        {tab === "features" && <OrgFeatures orgId={orgId} org={org} onSaved={setOrg} canManage={canManage} />}
+        {tab === "billing" && <OrgBilling orgId={orgId} org={org} onSaved={setOrg} canManage={canManage} />}
         {tab === "usage" && <OrgUsage orgId={orgId} />}
       </div>
     </div>
   );
 }
-

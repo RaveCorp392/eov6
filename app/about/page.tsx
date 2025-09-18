@@ -62,6 +62,37 @@ export default function AboutPage() {
         <p className="small" style={{ marginTop: 12 }}>
           Build: UI polish stream • {new Date().toISOString().slice(0, 10)}
         </p>
+        <hr className="my-6" />
+        <section aria-labelledby="explore">
+          <h2 id="explore" className="text-lg font-semibold mb-2">Explore EOV6</h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            <a href="/pricing#roi" className="block rounded-xl border p-4 hover:bg-slate-50">
+              <div className="font-medium">ROI calculator</div>
+              <div className="text-sm text-slate-600">Estimate your annual savings.</div>
+            </a>
+            <a href="/pricing" className="block rounded-xl border p-4 hover:bg-slate-50">
+              <div className="font-medium">Pricing</div>
+              <div className="text-sm text-slate-600">Starter, Pro, Enterprise + Translate add‑on.</div>
+            </a>
+            <a href="/solutions/call-centers" className="block rounded-xl border p-4 hover:bg-slate-50">
+              <div className="font-medium">Solutions: Call Centers</div>
+              <div className="text-sm text-slate-600">Value props and demo CTAs for teams.</div>
+            </a>
+            <a href="/how-it-works" className="block rounded-xl border p-4 hover:bg-slate-50">
+              <div className="font-medium">How it works</div>
+              <div className="text-sm text-slate-600">Step‑by‑step join and session flow.</div>
+            </a>
+            <a href="/agent" className="block rounded-xl border p-4 hover:bg-slate-50">
+              <div className="font-medium">Agent console</div>
+              <div className="text-sm text-slate-600">Start a demo session now.</div>
+            </a>
+            <a href="/contact" className="block rounded-xl border p-4 hover:bg-slate-50">
+              <div className="font-medium">Contact / sales</div>
+              <div className="text-sm text-slate-600">Questions or enterprise needs? Get in touch.</div>
+            </a>
+          </div>
+        </section>
+
       </section>
     </main>
   );

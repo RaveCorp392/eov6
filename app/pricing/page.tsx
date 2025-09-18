@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import RoiLeadCalc from "@/components/roi/RoiLeadCalc";
+import dynamic from "next/dynamic";
 import Link from "next/link";
+// Client-only ROI widget to avoid server/client number formatting mismatches
+const RoiLeadCalc = dynamic(() => import("@/components/roi/RoiLeadCalc"), { ssr: false });
 
 type Interval = "monthly" | "yearly";
 
@@ -211,6 +213,15 @@ export default function PricingPage() {
           >
             Contact sales
           </Link>
+        </div>
+      </section>
+
+      {/* ROI anchor */}
+      <section id="roi" className="mt-16 scroll-mt-24">
+        <h2 className="text-2xl font-semibold">See the savings for your center</h2>
+        <p className="text-slate-600 mt-1">Play with the numbers. We can email you a copy.</p>
+        <div className="mt-4">
+          <RoiLeadCalc />
         </div>
       </section>
 
