@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "firebase-admin/firestore";
+import { adminDb, getAdminApp } from "@/lib/firebaseAdmin";
 import { requireAdmin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    getAdminApp();
     await requireAdmin(req);
-    const db = getFirestore();
-    const snap = await db.collection("orgs").orderBy("createdAt", "desc").limit(100).get();
+    const snap = await adminDb.collection("orgs").orderBy("createdAt", "desc").limit(100).get();
     const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     return NextResponse.json({ ok: true, rows }, { status: 200 });
   } catch (e: any) {

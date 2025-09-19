@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { requireAdmin } from "@/lib/admin-auth";
+import { adminDb, getAdminApp } from "@/lib/firebaseAdmin";
+import { getAuth } from "firebase-admin/auth";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    getAdminApp(); // ensure initialized
     await requireAdmin(req);
     const body = await req.json();
     const { orgId, name, ownerEmail, domains = [], features = {}, texts = {}, acks = {}, commissions = {} } = body || {};
     if (!orgId || !/^[a-z0-9-]{3,50}$/.test(orgId)) return NextResponse.json({ error: "Invalid orgId" }, { status: 400 });
     if (!name) return NextResponse.json({ error: "Missing name" }, { status: 400 });
 
-    const db = getFirestore();
-    const orgRef = db.doc(`orgs/${orgId}`);
+    const orgRef = adminDb.doc(`orgs/${orgId}`);
     const exists = await orgRef.get();
     if (exists.exists) return NextResponse.json({ error: "orgId exists" }, { status: 409 });
 
@@ -31,7 +34,7 @@ export async function POST(req: NextRequest) {
     if (ownerEmail) {
       const email = String(ownerEmail).toLowerCase();
       try {
-        const u = await getAuth().getUserByEmail(email);
+        const u = await getAuth(getAdminApp()).getUserByEmail(email);
         ownerUid = u.uid;
         await orgRef.collection("members").doc(ownerUid).set({
           role: "owner",
@@ -53,4 +56,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message || "error" }, { status: 403 });
   }
 }
-

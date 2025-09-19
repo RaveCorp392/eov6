@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb, getAdminApp } from "@/lib/firebaseAdmin";
 import { getAuth } from "firebase-admin/auth";
 import { resolveOrgIdFromEmail as simpleResolve } from "@/lib/org-resolver";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
@@ -9,7 +10,8 @@ export async function POST(req: Request) {
     const token = authz?.startsWith("Bearer ") ? authz.slice(7) : null;
     if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const auth = getAuth();
+    getAdminApp();
+    const auth = getAuth(getAdminApp());
     const decoded = await auth.verifyIdToken(token);
     const uid = decoded?.uid;
     const email = (decoded?.email || "").toLowerCase();
