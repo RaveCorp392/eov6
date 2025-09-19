@@ -62,15 +62,18 @@ export default function AdminOrgsPage() {
     (async () => {
       if (!token) return; // unauthenticated; wait for sign in
       try {
-        const res = await fetch("/api/admin/orgs/list", { headers: { Authorization: `Bearer ${token}` } });
-        if (!res.ok) {
-          setError(`list failed: ${res.status}`);
+        const r = await fetch("/api/admin/orgs/list", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j?.ok === false) {
+          setError(`list failed: ${r.status}${j?.error ? ` — ${j.error}` : ""}`);
           return;
         }
-        const data = await res.json();
-        setRows(Array.isArray(data.rows) ? data.rows : []);
+        setRows(Array.isArray(j.rows) ? j.rows : []);
       } catch (e: any) {
-        setError(e?.message || "list failed");
+        setError(`list exception: ${e?.message || e}`);
       }
     })();
   }, [token]);
@@ -161,7 +164,10 @@ export default function AdminOrgsPage() {
 
   return (
     <main className="max-w-5xl mx-auto p-6">
-      <h1 className="text-2xl font-semibold mb-4">Organizations</h1>
+      <h1 className="text-2xl font-semibold mb-2">Organizations</h1>
+      {process.env.NODE_ENV !== "production" && (
+        <a href="/api/admin/ping" target="_blank" className="text-xs underline text-slate-400">/api/admin/ping</a>
+      )}
       {!ready && <p className="text-sm text-slate-500">Loading…</p>}
       {ready && !token && (
         <div className="mb-4 rounded border border-amber-400 bg-amber-50 p-3 text-amber-900">
