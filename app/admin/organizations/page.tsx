@@ -1,5 +1,6 @@
 "use client";
 
+import "@/lib/firebase"; // ensure single firebase client init
 import { useEffect, useState } from "react";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 
@@ -10,23 +11,47 @@ export default function AdminOrgsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const off = onAuthStateChanged(getAuth(), async (u) => {
-      if (!u) return;
-      const t = await u.getIdToken();
-      setToken(t);
       try {
-        const res = await fetch("/api/admin/orgs/list", { headers: { Authorization: `Bearer ${t}` } });
-        const data = await res.json();
-        if (res.ok) setRows(data.rows || []);
-      } catch {}
+        if (!u) {
+          setToken(null);
+          return;
+        }
+        const t = await u.getIdToken();
+        setToken(t);
+      } catch (e: any) {
+        setError(e?.message || "auth error");
+      } finally {
+        setReady(true);
+      }
     });
     return () => off();
   }, []);
 
+  // Fetch list once authenticated
+  useEffect(() => {
+    (async () => {
+      if (!token) return; // unauthenticated; wait for sign in
+      try {
+        const res = await fetch("/api/admin/orgs/list", { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+          setError(`list failed: ${res.status}`);
+          return;
+        }
+        const data = await res.json();
+        setRows(Array.isArray(data.rows) ? data.rows : []);
+      } catch (e: any) {
+        setError(e?.message || "list failed");
+      }
+    })();
+  }, [token]);
+
   async function submit() {
-    if (!token) return alert("Not signed in");
+    if (!token) { setError("Not signed in"); return; }
     setBusy(true);
     try {
       const res = await fetch("/api/admin/orgs/create", {
@@ -48,8 +73,9 @@ export default function AdminOrgsPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) return alert(`Error: ${data?.error || res.status}`);
-      alert(`Created ${data.orgId}${data.placeholder ? " (owner placeholder)" : ""}`);
+      if (!res.ok) { setError(`create failed: ${data?.error || res.status}`); return; }
+      // Optionally show a lightweight success note
+      setError(null);
       // refresh list
       try {
         const r = await fetch("/api/admin/orgs/list", { headers: { Authorization: `Bearer ${token}` } });
@@ -64,6 +90,17 @@ export default function AdminOrgsPage() {
   return (
     <main className="max-w-5xl mx-auto p-6">
       <h1 className="text-2xl font-semibold mb-4">Organizations</h1>
+      {!ready && <p className="text-sm text-slate-500">Loading…</p>}
+      {ready && !token && (
+        <div className="mb-4 rounded border border-amber-400 bg-amber-50 p-3 text-amber-900">
+          Sign in required to use Admin.
+        </div>
+      )}
+      {error && (
+        <div className="mb-4 rounded border border-red-400 bg-red-50 p-3 text-red-900">
+          {error}
+        </div>
+      )}
 
       <section className="rounded-lg border p-4 mb-6 space-y-3">
         <h2 className="font-medium">Create Organization</h2>
@@ -160,4 +197,3 @@ export default function AdminOrgsPage() {
     </main>
   );
 }
-

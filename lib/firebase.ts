@@ -40,10 +40,11 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:926090330101:web:26a2f5f5d67defcd5b2abc",
 };
 
-const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+export default app;
 
 export const googleProvider = new GoogleAuthProvider();
 export { onAuthStateChanged, signInWithPopup, signOut };
