@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore"; // <-- from firestore
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore"; // <-- from firestore
 import { db } from "@/lib/firebase";                               // <-- keep db from our lib
+import { getAuth } from "firebase/auth";
+import { resolveOrgIdFromEmail } from "@/lib/org-resolver";
+import { devlog } from "@/lib/devlog";
 import { expiryInHours, randomCode } from "@/lib/code";
 
 type Props = {
@@ -25,15 +28,23 @@ export default function NewSessionButton({
     setBusy(true);
     try {
       const code = randomCode();
+      const email = (getAuth().currentUser?.email || "").toLowerCase();
+      const orgId = resolveOrgIdFromEmail(email) || "default";
       await setDoc(
         doc(db, "sessions", code),
         {
+          orgId,
+          ackProgress: {},
           createdAt: serverTimestamp(),
           expiresAt: expiryInHours(1),
           closed: false,
         },
         { merge: true }
       );
+      try {
+        const snap = await getDoc(doc(db, "sessions", code));
+        devlog("session-create", { code, orgIdWritten: snap.get("orgId"), exists: snap.exists() });
+      } catch {}
       router.push(`/agent/s/${code}`);
     } finally {
       setBusy(false);

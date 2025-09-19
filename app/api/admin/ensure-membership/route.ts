@@ -23,6 +23,7 @@ export async function POST(req: Request) {
 
     let role: string | null = snap.exists ? ((snap.data() as any)?.role || null) : null;
 
+    let wrote = false;
     if (!role) {
       // First member becomes owner, or owner override by ADMIN_BOOTSTRAP_EMAIL
       const membersSnap = await adminDb.collection(`orgs/${orgId}/members`).limit(1).get();
@@ -31,8 +32,14 @@ export async function POST(req: Request) {
       const shouldBeOwner = first || (!!ownerEmail && email === ownerEmail);
       role = shouldBeOwner ? "owner" : "viewer";
       await ref.set({ role, email, createdAt: new Date() }, { merge: true });
+      wrote = true;
     }
 
+    const DEBUG = process.env.DEBUG_API === "1" || process.env.NODE_ENV !== "production";
+    if (DEBUG) {
+      // eslint-disable-next-line no-console
+      console.log("[ensure-membership]", { uid, email, orgId, wrote, role });
+    }
     return NextResponse.json({ orgId, role });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });

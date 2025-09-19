@@ -29,41 +29,5 @@ async function getMetrics() {
 }
 
 export default async function AdminHome() {
-  const { ok } = await requireOwner();
-  if (!ok) redirect('/');
-
-  const { planCounts, mrr, contacts } = await getMetrics();
-
-  return (
-    <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
-      <h1 className="text-2xl font-semibold">Admin</h1>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {Object.entries(planCounts).map(([plan, n]) => (
-          <div key={plan} className="rounded-xl border p-4">
-            <div className="text-sm text-gray-500">{plan}</div>
-            <div className="text-2xl font-semibold">{n}</div>
-          </div>
-        ))}
-        <div className="rounded-xl border p-4">
-          <div className="text-sm text-gray-500">MRR (est.)</div>
-          <div className="text-2xl font-semibold">A${(mrr/100).toFixed(2)}</div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border">
-        <div className="p-4 font-medium">Recent contacts</div>
-        <div className="divide-y">
-          {contacts.map((c: any) => (
-            <div key={c.id} className="p-4 text-sm">
-              <div className="font-medium">{c.email}</div>
-              {c.name && <div className="text-gray-500">{c.name}</div>}
-              {c.message && <div className="text-gray-700 mt-2">{c.message}</div>}
-              <div className="text-xs text-gray-400 mt-2">{new Date(c.createdAt).toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  redirect('/admin/organizations');
 }

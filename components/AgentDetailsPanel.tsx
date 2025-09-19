@@ -11,7 +11,7 @@ import {
 } from "@/lib/firebase";
 import AckMenu from "@/components/ack/AckMenu";
 
-export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) {
+export default function AgentDetailsPanel({ sessionId, membershipReady = false }: { sessionId: string; membershipReady?: boolean }) {
   const [caller, setCaller] = useState<any>({});
   const [notes, setNotes] = useState("");
   const [sessionObj, setSessionObj] = useState<any>(null);
@@ -188,7 +188,7 @@ export default function AgentDetailsPanel({ sessionId }: { sessionId: string }) 
           }}
         />
         <div className="mt-3">
-          <AckMenu code={sessionId} orgId={sessionObj?.orgId} />
+          <AckMenu code={sessionId} orgId={sessionObj?.orgId} membershipReady={membershipReady} />
         </div>
         {sessionObj?.translate?.requested && (
           <div className="mt-2 text-xs rounded-md bg-blue-50 text-blue-900 px-2 py-1">
