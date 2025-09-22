@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { auth, db } from "@/lib/firebase";
@@ -133,7 +133,7 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
     }
   }
 
-  function handleResult(status: AckStatus, item: AckTemplate) {
+  function handleResult(status: AckStatus, item: AckItem) {
     setAckProgress((prev) => ({ ...prev, [item.id]: status === "accepted" }));
     const message = status === "accepted"
       ? `${item.title} acknowledged`
