@@ -2,7 +2,7 @@
 
 import "@/lib/firebase"; // ensure single firebase client init
 import { useEffect, useState } from "react";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 type Row = {
   id: string;
@@ -56,6 +56,20 @@ export default function AdminOrgsPage() {
     });
     return () => off();
   }, []);
+
+
+  async function adminSignIn() {
+    try {
+      const auth = getAuth();
+      const provider = new GoogleAuthProvider();
+      const cred = await signInWithPopup(auth, provider);
+      const t = await cred.user.getIdToken();
+      setToken(t);
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message || "sign-in failed");
+    }
+  }
 
   // Fetch list once authenticated
   useEffect(() => {
@@ -160,6 +174,23 @@ export default function AdminOrgsPage() {
     } catch (e: any) {
       setError(e?.message || "resolve failed");
     }
+  }
+
+
+  if (!ready) return (<main className="p-6 text-slate-500">Loading…</main>);
+  if (!token) {
+    return (
+      <main className="max-w-5xl mx-auto p-6">
+        {error && (
+          <div className="mb-4 rounded border border-red-400 bg-red-50 p-3 text-red-900">{error}</div>
+        )}
+        <section className="rounded-lg border p-4">
+          <h1 className="text-xl font-semibold mb-2">Organizations</h1>
+          <p className="text-slate-600 mb-3">Sign in on this origin to access Admin.</p>
+          <button onClick={adminSignIn} className="px-4 py-2 rounded bg-blue-600 text-white">Sign in with Google</button>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -348,3 +379,5 @@ export default function AdminOrgsPage() {
     </main>
   );
 }
+
+

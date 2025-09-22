@@ -1,5 +1,35 @@
-// lib/mailer.ts
+﻿import "server-only";
 import nodemailer from "nodemailer";
+
+const host = process.env.ZOHO_SMTP_HOST || process.env.SMTP_HOST || "smtp.zoho.com";
+const port = Number(process.env.ZOHO_SMTP_PORT || process.env.SMTP_PORT || 587);
+const user = process.env.ZOHO_SMTP_USER || process.env.SMTP_USER || "";
+const pass = process.env.ZOHO_SMTP_PASS || process.env.SMTP_PASS || "";
+const fromDefault = process.env.EMAIL_FROM || user;
+
+const transporter = user && pass ? nodemailer.createTransport({
+  host,
+  port,
+  secure: port === 465,
+  auth: { user, pass },
+}) : null;
+
+export async function sendMailZoho({
+  to,
+  subject,
+  html,
+  text,
+  from = fromDefault,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  from?: string;
+}) {
+  if (!transporter) throw new Error("Zoho SMTP not configured");
+  await transporter.sendMail({ from, to, subject, html, text: text || "" });
+}
 
 const ML_TOKEN = process.env.MAILERLITE_TOKEN || "";
 const ML_GROUP_ID = process.env.MAILERLITE_GROUP_ID || "";
@@ -26,25 +56,15 @@ export async function addToMailerLite(contact: { email: string; name?: string; c
   });
 
   if (!res.ok && res.status !== 409) {
-    // 409 = already in list
     const text = await res.text();
     throw new Error(`MailerLite error ${res.status}: ${text}`);
   }
 }
 
 export async function sendAdminMail(opts: { subject: string; text: string }) {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return; // optional
-
-  const transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT || 465),
-    secure: true,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-  });
-
+  if (!transporter) return;
   await transporter.sendMail({
-    from: `"EOV6" <${SMTP_USER}>`,
+    from: fromDefault || user || ADMIN_EMAIL,
     to: ADMIN_EMAIL,
     subject: opts.subject,
     text: opts.text,

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from 'react';
-import { watchDetails, saveDetails, clearAck, sendMessage } from '@/lib/firebase';
+import { watchDetails, saveDetails, clearAck, db } from '@/lib/firebase';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 type AckRequest = { requireName?: boolean } | null;
 
@@ -40,16 +41,27 @@ export default function AckModal({
       await saveDetails(sessionId, { name: nameToUse });
     }
 
-    await sendMessage(sessionId, {
-      sender: 'system',
+    const msgs = collection(db, 'sessions', sessionId, 'messages');
+    await addDoc(msgs, {
+      role: 'system',
+      type: 'ack',
       text: nameToUse ? `Acknowledgement accepted by ${nameToUse}.` : `Acknowledgement accepted.`,
-    });
+      ack: { id: 'ack', title: 'Acknowledgement', status: 'accepted' },
+      createdAt: serverTimestamp(),
+    } as any);
     await clearAck(sessionId);
     setOpen(false);
   }
 
   async function decline() {
-    await sendMessage(sessionId, { sender: 'system', text: 'Acknowledgement declined.' });
+    const msgs = collection(db, 'sessions', sessionId, 'messages');
+    await addDoc(msgs, {
+      role: 'system',
+      type: 'ack',
+      text: 'Acknowledgement declined.',
+      ack: { id: 'ack', title: 'Acknowledgement', status: 'declined' },
+      createdAt: serverTimestamp(),
+    } as any);
     await clearAck(sessionId);
     setOpen(false);
   }

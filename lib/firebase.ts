@@ -24,6 +24,8 @@ import {
   signInWithPopup,
   onAuthStateChanged,
   signOut,
+  setPersistence,
+  browserLocalPersistence,
   type User,
 } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL, getStorage } from "firebase/storage";
@@ -49,6 +51,9 @@ export default app;
 export const googleProvider = new GoogleAuthProvider();
 export { onAuthStateChanged, signInWithPopup, signOut };
 export type { User };
+
+// Ensure durable sign-in on this origin; ignore failures (e.g., unsupported env)
+try { void setPersistence(auth, browserLocalPersistence); } catch {}
 
 /* =========
    Types
