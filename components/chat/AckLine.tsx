@@ -1,11 +1,11 @@
 ﻿// components/chat/AckLine.tsx
-type Msg = {
+type ChatMsg = {
   id: string;
   text?: string;
   ack?: { id?: string; title?: string; status?: "accepted" | "declined" };
 };
 
-export default function AckLine({ m }: { m: Msg }) {
+export default function AckLine({ m }: { m: ChatMsg }) {
   const slotTitle =
     m.ack?.id === "privacy" ? "Privacy acknowledgement" : m.ack?.title || "Acknowledgement";
   const status = m.ack?.status || (m.text?.includes("declined") ? "declined" : "accepted");

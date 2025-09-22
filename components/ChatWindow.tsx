@@ -2,7 +2,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { watchMessages } from "@/lib/watchMessages";
 import { sendMessage, watchSession,
-  type ChatMessage,
   type Role,
   uploadFileToSession,
   targetLangFor,
@@ -17,8 +16,17 @@ type Props = {
   showUpload?: boolean; // caller page true, agent page false
 };
 
-type Msg = ChatMessage & {
+type ChatMsg = {
+  id: string;
+  role: "caller" | "agent" | "system";
+  type: "text" | "file" | "system" | "ack";
+  text?: string;
+  createdAt?: any;
   ack?: { id?: string; title?: string; status?: "accepted" | "declined" };
+  url?: string;
+  orig?: any;
+  lang?: any;
+  meta?: any;
 };
 
 export default function ChatWindow({
@@ -27,7 +35,7 @@ export default function ChatWindow({
   disabled,
   showUpload = false,
 }: Props) {
-  const [msgs, setMsgs] = useState<ChatMessage[]>([]);
+  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const endRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -35,7 +43,18 @@ export default function ChatWindow({
 
   useEffect(() => {
     const off = watchMessages(code, (rows) => {
-      const mapped = rows.map((row: any) => ({ id: String(row.id), ...row })) as ChatMessage[];
+      const mapped: ChatMsg[] = rows.map((d: any, i: number) => ({
+        id: String(d.id ?? d.docId ?? d._id ?? i),
+        role: d.role ?? "system",
+        type: d.type ?? "text",
+        text: d.text,
+        createdAt: d.createdAt,
+        ack: d.ack,
+        url: d.url,
+        orig: d.orig,
+        lang: d.lang,
+        meta: d.meta,
+      }));
       setMsgs(mapped);
     });
     return () => off();
@@ -78,16 +97,13 @@ export default function ChatWindow({
     setInput("");
   }, [code, input, role, session]);
 
-  function displayTextFor(msg: any, viewerRole: Role) {
-    // If not marked translated, just show the message text.
+  function displayTextFor(msg: ChatMsg) {
     if (!msg?.meta?.translated) return msg.text ?? "";
-    // Sender sees their original (orig.text) if available.
-    if (viewerRole === msg.role) return msg?.orig?.text ?? msg.text ?? "";
-    // Recipient sees the translated text.
+    if (role === msg.role) return msg?.orig?.text ?? msg.text ?? "";
     return msg.text ?? "";
   }
 
-  function renderContent(msg: any, viewerRole: Role) {
+  function renderContent(msg: ChatMsg) {
     if (msg?.type === "file" && msg?.url) {
       const label = msg?.text || "file";
       return (
@@ -101,11 +117,11 @@ export default function ChatWindow({
         </a>
       );
     }
-    const primary = displayTextFor(msg, viewerRole);
+    const primary = displayTextFor(msg);
     return <div className="whitespace-pre-wrap break-words">{primary}</div>;
   }
 
-  function bubbleFor(msg: Msg) {
+  function bubbleFor(msg: ChatMsg) {
     const mine = msg.role === role;
     return (
       <div
@@ -120,22 +136,23 @@ export default function ChatWindow({
             " rounded-2xl px-3 py-1.5 max-w-[70%]"
           }
         >
-          {renderContent(msg, role)}
+          {renderContent(msg)}
         </div>
       </div>
     );
   }
 
-  function renderMessage(m: Msg) {
-    if (m.type === "ack") return <AckLine key={m.id} m={m} />;
-    if (m.role === "system" || m.type === "system") return <SystemLine key={m.id} m={m} />;
+  function renderMessage(m: ChatMsg, i: number) {
+    const key = m.id ?? String(i);
+    if (m.type === "ack") return <AckLine key={key} m={m} />;
+    if (m.type === "system" || m.role === "system") return <SystemLine key={key} m={m} />;
     return bubbleFor(m);
   }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="h-[55vh] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/80 dark:bg-slate-900/60">
-        {msgs.map((m) => renderMessage(m as Msg))}
+        {msgs.map((m, i) => renderMessage(m, i))}
         <div ref={endRef} />
       </div>
 
