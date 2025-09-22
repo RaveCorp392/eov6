@@ -33,7 +33,13 @@ export default function ChatWindow({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [session, setSession] = useState<any>(null);
 
-  useEffect(() => watchMessages(code, setMsgs), [code]);
+  useEffect(() => {
+    const off = watchMessages(code, (rows) => {
+      const mapped = rows.map((row: any) => ({ id: String(row.id), ...row })) as ChatMessage[];
+      setMsgs(mapped);
+    });
+    return () => off();
+  }, [code]);
   useEffect(() => watchSession(code, setSession), [code]);
   useEffect(
     () => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }),
