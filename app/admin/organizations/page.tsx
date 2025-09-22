@@ -82,7 +82,7 @@ export default function AdminOrgsPage() {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j?.ok === false) {
-          setError(`list failed: ${r.status}${j?.error ? ` — ${j.error}` : ""}`);
+          setError(`list failed: ${r.status}${j?.error ? ` â ${j.error}` : ""}`);
           return;
         }
         setRows(Array.isArray(j.rows) ? j.rows : []);
@@ -177,7 +177,7 @@ export default function AdminOrgsPage() {
   }
 
 
-  if (!ready) return (<main className="p-6 text-slate-500">Loading�</main>);
+  if (!ready) return (<main className="p-6 text-slate-500">Loading...</main>);
   if (!token) {
     return (
       <main className="max-w-5xl mx-auto p-6">
@@ -199,7 +199,7 @@ export default function AdminOrgsPage() {
       {process.env.NODE_ENV !== "production" && (
         <a href="/api/admin/ping" target="_blank" className="text-xs underline text-slate-400">/api/admin/ping</a>
       )}
-      {!ready && <p className="text-sm text-slate-500">Loading…</p>}
+      {!ready && <p className="text-sm text-slate-500">Loadingâ¦</p>}
       {ready && !token && (
         <div className="mb-4 rounded border border-amber-400 bg-amber-50 p-3 text-amber-900">
           Sign in required to use Admin.
@@ -276,7 +276,7 @@ export default function AdminOrgsPage() {
         </div>
 
         <div className="mt-3">
-          <button onClick={submit} disabled={busy} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{busy ? "Creating…" : "Create Organization"}</button>
+          <button onClick={submit} disabled={busy} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{busy ? "Creatingâ¦" : "Create Organization"}</button>
         </div>
       </section>
 
