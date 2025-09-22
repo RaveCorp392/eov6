@@ -1,20 +1,24 @@
 ﻿"use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  sendMessage,
-  watchMessages,
-  watchSession,
+import { watchMessages } from "@/lib/watchMessages";
+import { sendMessage, watchSession,
   type ChatMessage,
   type Role,
   uploadFileToSession,
   targetLangFor,
 } from "@/lib/firebase";
+import AckLine from "@/components/chat/AckLine";
+import SystemLine from "@/components/chat/SystemLine";
 
 type Props = {
   code: string;
   role: Role;
   disabled?: boolean;
   showUpload?: boolean; // caller page true, agent page false
+};
+
+type Msg = ChatMessage & {
+  ack?: { id?: string; title?: string; status?: "accepted" | "declined" };
 };
 
 export default function ChatWindow({
@@ -95,7 +99,7 @@ export default function ChatWindow({
     return <div className="whitespace-pre-wrap break-words">{primary}</div>;
   }
 
-  function bubbleFor(msg: any) {
+  function bubbleFor(msg: Msg) {
     const mine = msg.role === role;
     return (
       <div
@@ -116,10 +120,16 @@ export default function ChatWindow({
     );
   }
 
+  function renderMessage(m: Msg) {
+    if (m.type === "ack") return <AckLine key={m.id} m={m} />;
+    if (m.role === "system" || m.type === "system") return <SystemLine key={m.id} m={m} />;
+    return bubbleFor(m);
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="h-[55vh] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/80 dark:bg-slate-900/60">
-        {msgs.map((m) => bubbleFor(m))}
+        {msgs.map((m) => renderMessage(m as Msg))}
         <div ref={endRef} />
       </div>
 

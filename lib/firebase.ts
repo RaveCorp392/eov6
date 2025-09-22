@@ -63,11 +63,12 @@ export type Role = "caller" | "agent" | "system";
 export type ChatMessage = {
   id?: string;
   role: Role;
-  type: "text" | "system" | "file";
+  type: "text" | "system" | "file" | "ack";
   text?: string;
   url?: string;
-  createdAt: any;
+  createdAt?: any;
   createdAtMs?: number;
+  ack?: { id?: string; title?: string; status?: "accepted" | "declined" };
   [k: string]: any;
 };
 
@@ -107,18 +108,6 @@ export const normLang2 = (v?: string) =>
 /* =========
    Chat helpers
    ========= */
-export function getMessages(sessionId: string, onData: (messages: ChatMessage[]) => void): Unsubscribe {
-  const qy = query(collection(db, "sessions", sessionId, "messages"), orderBy("createdAt", "asc"));
-  return onSnapshot(qy, (snap) => {
-    const rows: ChatMessage[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-    onData(rows);
-  });
-}
-
-export function watchMessages(sessionId: string, onData: (messages: ChatMessage[]) => void): Unsubscribe {
-  const qy = query(collection(db, "sessions", sessionId, "messages"), orderBy("createdAtMs", "asc"));
-  return onSnapshot(qy, (snap) => onData(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))));
-}
 
 export function watchSession(code: string, onData: (session: SessionDoc | null) => void): Unsubscribe {
   const r = doc(db, "sessions", code);
@@ -223,3 +212,6 @@ export async function setTranslateConfig(
 export async function bumpTranslatePreviewCount(code: string) {
   await _updateDoc(doc(db, "sessions", code), { translatePreviewCount: _increment(1) });
 }
+
+
+
