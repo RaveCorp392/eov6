@@ -6,10 +6,29 @@ import { doc, onSnapshot, updateDoc, serverTimestamp, collection, getDocs } from
 import { orgIdFromEmail } from "@/lib/org";
 import { devlog } from "@/lib/devlog";
 import { useAgentMembership } from "@/lib/agent-membership";
-import AckModal, { AckItem, AckStatus } from "./AckModal";
 
-type AckTemplate = AckItem & { body: string; required?: boolean; disabled?: boolean };
+type AckId = "privacy" | "slot1" | "slot2";
+type AckTemplate = {
+  id: AckId;
+  title: string;
+  body: string;
+  required?: boolean;
+  disabled?: boolean;
+};
 type ToastState = { message: string; tone: "success" | "error" } | null;
+
+async function sendAckRequest(code: string, item: { id: AckId; title: string; body?: string }) {
+  const ref = doc(db, "sessions", code);
+  await updateDoc(ref, {
+    pendingAck: {
+      id: item.id,
+      title: item.title,
+      body: item.body || "",
+      requestedAt: serverTimestamp(),
+      requestedBy: "agent",
+    },
+  });
+}
 
 export default function AckMenu({ code, orgId: propOrgId, membershipReady = true }: { code: string; orgId?: string; membershipReady?: boolean }) {
   const { orgId: ctxOrgId } = useAgentMembership();
@@ -18,8 +37,9 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
   const [privacy, setPrivacy] = useState<AckTemplate | null>(null);
   const [slots, setSlots] = useState<AckTemplate[]>([]);
   const [ackProgress, setAckProgress] = useState<Record<string, boolean | undefined>>({});
-  const [pendingAck, setPendingAck] = useState<AckTemplate | null>(null);
+  const [pendingAck, setPendingAck] = useState<{ id: string; title: string; body?: string } | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
+  const [busy, setBusy] = useState(false);
   const detailsRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
@@ -69,12 +89,15 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
       const mapped: AckTemplate[] = (rawSlots || [])
         .filter((s) => s && (s.title || s.body))
         .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0))
-        .map((s) => ({
-          id: String(s.id || "slot"),
-          title: String(s.title || "Acknowledgement"),
-          body: String(s.body || ""),
-          required: !!s.required,
-        }));
+        .map((s) => {
+          const ackId = (String(s.id || "slot1") as AckId);
+          return {
+            id: ackId,
+            title: String(s.title || "Acknowledgement"),
+            body: String(s.body || ""),
+            required: !!s.required,
+          };
+        });
 
       setSlots(mapped);
     });
@@ -84,8 +107,10 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
 
   useEffect(() => {
     const off = onSnapshot(doc(db, "sessions", code), (snap) => {
-      const progress = ((snap.data() as any)?.ackProgress || {}) as Record<string, boolean | undefined>;
-      setAckProgress(progress);
+      const data = snap.data() || {};
+      setAckProgress((data.ackProgress || {}) as Record<string, boolean | undefined>);
+      const pa = data.pendingAck;
+      setPendingAck(pa && pa.id ? { id: String(pa.id), title: String(pa.title || "Acknowledgement"), body: pa.body } : null);
     });
     return () => off();
   }, [code]);
@@ -109,40 +134,33 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
   }, [propOrgId, ctxOrgId, stateOrgId, privacy, slots.length, code, email]);
 
   const items = useMemo(() => {
+    const hasPending = Boolean(pendingAck);
     const list: AckTemplate[] = [];
-    if (privacy) list.push({ ...privacy, disabled: ackProgress?.[privacy.id] === true });
+    if (privacy) list.push({ ...privacy, disabled: ackProgress?.[privacy.id] === true || hasPending });
     slots.forEach((slot) => {
-      list.push({ ...slot, disabled: ackProgress?.[slot.id] === true });
+      list.push({ ...slot, disabled: ackProgress?.[slot.id] === true || hasPending });
     });
     return list;
-  }, [privacy, slots, ackProgress]);
+  }, [privacy, slots, ackProgress, pendingAck]);
 
   const nextAck = useMemo(() => {
     if (privacy && ackProgress?.privacy !== true) return privacy;
     return slots.find((s) => s.required && ackProgress?.[s.id] !== true) || null;
   }, [privacy, slots, ackProgress]);
 
-  async function sendAck(item: AckTemplate) {
-    if (item.disabled || pendingAck) return;
-    setPendingAck(item);
-    if (detailsRef.current) detailsRef.current.open = false;
+  async function handleRequest(item: AckTemplate) {
+    if (item.disabled || busy || pendingAck) return;
+    setBusy(true);
     try {
-      await updateDoc(doc(db, "sessions", code), { ackRequestedAt: serverTimestamp() });
-    } catch (err) {
-      console.error("[ack] ackRequestedAt", err);
+      await sendAckRequest(code, { id: item.id, title: item.title, body: item.body });
+      setToast({ tone: "success", message: `${item.title} requested` });
+    } catch (err: any) {
+      console.error("[ack/request]", err?.message || err);
+      setToast({ tone: "error", message: "Acknowledgement request failed" });
+    } finally {
+      setBusy(false);
+      if (detailsRef.current) detailsRef.current.open = false;
     }
-  }
-
-  function handleResult(status: AckStatus, item: AckItem) {
-    setAckProgress((prev) => ({ ...prev, [item.id]: status === "accepted" }));
-    const message = status === "accepted"
-      ? `${item.title} acknowledged`
-      : `${item.title} marked as declined`;
-    setToast({ tone: "success", message });
-  }
-
-  function handleError(message: string) {
-    setToast({ tone: "error", message });
   }
 
   if (!membershipReady) {
@@ -155,6 +173,12 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
     );
   }
 
+  const summaryLabel = pendingAck
+    ? `Awaiting acknowledgement (${pendingAck.title})`
+    : nextAck
+      ? `Send acknowledgement (Next: ${nextAck.title})`
+      : "Send acknowledgement";
+
   return (
     <div className="relative inline-flex">
       <details ref={detailsRef} className="group">
@@ -162,7 +186,7 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
           data-testid="ack-menu"
           className="inline-flex cursor-pointer items-center rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
         >
-          {nextAck ? `Send acknowledgement (Next: ${nextAck.title})` : "Send acknowledgement"}
+          {summaryLabel}
         </summary>
         <div className="absolute z-10 mt-2 w-80 rounded-md border bg-white shadow-md">
           {items.length === 0 ? (
@@ -173,8 +197,8 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
                 <li key={item.id}>
                   <button
                     data-testid={item.id === "privacy" ? "ack-privacy" : item.id === "slot1" ? "ack-slot1" : item.id === "slot2" ? "ack-slot2" : undefined}
-                    onClick={() => sendAck(item)}
-                    disabled={Boolean(item.disabled) || Boolean(pendingAck)}
+                    onClick={() => handleRequest(item)}
+                    disabled={Boolean(item.disabled) || busy}
                     className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {item.title}
@@ -185,16 +209,6 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
           )}
         </div>
       </details>
-
-      {pendingAck && (
-        <AckModal
-          code={code}
-          pendingAck={pendingAck}
-          onClose={() => setPendingAck(null)}
-          onResult={handleResult}
-          onError={handleError}
-        />
-      )}
 
       {toast && (
         <div className="pointer-events-none fixed bottom-6 right-6 z-50">

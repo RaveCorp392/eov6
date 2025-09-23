@@ -1,14 +1,14 @@
-// app/s/[code]/page.tsx
+﻿// app/s/[code]/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 import { watchSession } from '@/lib/firebase';
 import ConsentGate from '@/components/ConsentGate';
 import ChatWindow from '@/components/ChatWindow';
-import AckModal from '@/components/AckModal';
+import AckWatcherCaller from '@/components/ack/AckWatcherCaller';
 import CallerDetailsForm from '@/components/CallerDetailsForm';
 import TranslateBanner from '@/components/TranslateBanner';
-import { setTranslateConfig, sendMessage } from '@/lib/firebase';
+import { sendMessage } from '@/lib/firebase';
 import { db } from '@/lib/firebase';
 import PrivacyCard from '@/components/PrivacyCard';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -59,6 +59,7 @@ export default function CallerSessionPage({ params }: { params: { code: string }
       consentAccepted={consentAccepted}
       role="caller"
     >
+      <AckWatcherCaller code={code} />
       <div className="mx-auto max-w-2xl p-4 space-y-3">
         <header className="mb-2 flex items-center justify-between">
           <div className="text-slate-600 dark:text-slate-300">EOV6 — Session {code}</div>
@@ -97,8 +98,8 @@ export default function CallerSessionPage({ params }: { params: { code: string }
             End session &amp; delete data
           </button>
         </div>
-        <AckModal sessionId={code} ackRequest={session?.ackRequest} />
       </div>
     </ConsentGate>
   );
 }
+
