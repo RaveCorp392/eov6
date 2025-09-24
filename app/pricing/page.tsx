@@ -1,305 +1,206 @@
+/* eslint-disable react/no-unescaped-entities */
 "use client";
 
-import React, { useMemo, useState } from "react";
-import dynamic from "next/dynamic";
-import Link from "next/link";
+import { useMemo, useState } from "react";
 
-// Client-only ROI widget to avoid server/client number formatting mismatches
-const RoiLeadCalc = dynamic(() => import("@/components/roi/RoiLeadCalc"), { ssr: false });
-
-type Plan = "solo" | "team";
-type Interval = "monthly" | "yearly";
+type BillingCycle = "monthly" | "yearly";
+type Plan = "solo" | "team5" | "enterprise" | "weekpass";
 
 type CheckoutPayload = {
   plan: Plan;
-  interval: Interval;
-  seats: number;
-  translate: boolean;
+  cycle?: BillingCycle;
+  translate?: boolean;
+  seats?: number;
 };
 
-const TEAM_SEATS = 5;
+function formatAUD(cents: number) {
+  const hasCents = cents % 100 !== 0;
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency: "AUD",
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: hasCents ? 2 : 0,
+  }).format(cents / 100);
+}
 
-// Base monthly totals (not per-seat) for each plan without Translate.
-const BASE = {
-  solo: 5,   // $5 / mo (1 seat)
-  team: 25,  // $25 / mo (5 seats)
+const PRICES = {
+  solo: { monthly: 500, yearly: Math.round(500 * 12 * 0.8) },          // $5 -> ~$48
+  translateSolo: { monthly: 100, yearly: Math.round(100 * 12 * 0.8) }, // $1 -> ~$9.6
+  team5: { monthly: 2500, yearly: Math.round(2500 * 12 * 0.8) },       // $25 -> ~$240
+  team5Translate: { monthly: 500, yearly: Math.round(500 * 12 * 0.8) },// $5 -> ~$48
+  translateEnterprise: { monthly: 50 },                                 // $0.50 (monthly only)
+  weekpass: 500,                                                        // $5 one-time
 };
-
-// Translate add-on cost per seat (monthly).
-const TRANSLATE_PER_SEAT = 1;
-
-// Yearly discount factor (20% off).
-const YEARLY_FACTOR = 0.8;
-
-function fmtUSD(n: number) {
-  return `$${n.toFixed(n % 1 ? 2 : 0)}`;
-}
-
-function calcMonthlyTotal(plan: Plan, includeTranslate: boolean): number {
-  const base = plan === "solo" ? BASE.solo : BASE.team;
-  const seats = plan === "solo" ? 1 : TEAM_SEATS;
-  const translateAdd = includeTranslate ? TRANSLATE_PER_SEAT * seats : 0;
-  return base + translateAdd;
-}
-
-function applyInterval(totalMonthly: number, interval: Interval): number {
-  if (interval === "monthly") return totalMonthly;
-  return totalMonthly * YEARLY_FACTOR;
-}
-
-async function postCheckout(payload: CheckoutPayload) {
-  const res = await fetch("/api/checkout", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.url) {
-    throw new Error(data?.error || `checkout ${res.status}`);
-  }
-  window.location.href = data.url;
-}
 
 export default function PricingPage() {
-  const [interval, setInterval] = useState<Interval>("monthly");
-  // Per-plan toggles so customers can see pricing with or without Translate.
-  const [soloTranslate, setSoloTranslate] = useState(false);
-  const [teamTranslate, setTeamTranslate] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [cycle, setCycle] = useState<BillingCycle>("monthly");
 
-  function safe(fn: () => Promise<void>) {
-    return async (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (busy) return;
-      try {
-        setBusy(true);
-        setErr(null);
-        await fn();
-      } catch (ex: any) {
-        setErr(ex?.message || "Checkout failed");
-      } finally {
-        setBusy(false);
-      }
-    };
+  // Solo
+  const [soloTranslate, setSoloTranslate] = useState(false);
+  const soloTotal = useMemo(() => {
+    const base = PRICES.solo[cycle === "yearly" ? "yearly" : "monthly"];
+    const add = soloTranslate ? PRICES.translateSolo[cycle === "yearly" ? "yearly" : "monthly"] : 0;
+    return base + add;
+  }, [cycle, soloTranslate]);
+
+  // Team5
+  const [teamTranslate, setTeamTranslate] = useState(false);
+  const teamTotal = useMemo(() => {
+    const base = PRICES.team5[cycle === "yearly" ? "yearly" : "monthly"];
+    const add = teamTranslate ? PRICES.team5Translate[cycle === "yearly" ? "yearly" : "monthly"] : 0;
+    return base + add;
+  }, [cycle, teamTranslate]);
+
+  // Enterprise 6-100 (monthly only)
+  const [enterpriseTranslate, setEnterpriseTranslate] = useState(true);
+  const [seats, setSeats] = useState(30);
+  const over = seats > 100;
+  const under = seats < 6;
+
+  const enterpriseTotal = useMemo(() => {
+    const s = Math.max(0, Math.min(seats || 0, 100));
+    const perSeat = 500 + (enterpriseTranslate ? PRICES.translateEnterprise.monthly : 0);
+    return s * perSeat;
+  }, [seats, enterpriseTranslate]);
+
+  async function postCheckout(payload: CheckoutPayload) {
+    const r = await fetch("/api/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      alert(await r.text().catch(() => "Checkout error"));
+      return;
+    }
+    const { url } = await r.json();
+    if (url) window.location.href = url;
   }
 
-  const soloPrice = useMemo(() => {
-    const m = calcMonthlyTotal("solo", soloTranslate);
-    return applyInterval(m, interval);
-  }, [interval, soloTranslate]);
-
-  const teamPrice = useMemo(() => {
-    const m = calcMonthlyTotal("team", teamTranslate);
-    return applyInterval(m, interval);
-  }, [interval, teamTranslate]);
-
   return (
-    <main className="mx-auto max-w-6xl px-4 py-12">
-      {/* Header */}
-      <section className="text-center mb-10">
-        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">Simple, honest pricing</h1>
-        <p className="mt-2 text-slate-600">Start small, add seats or Translate when you need it.</p>
-        {err && (
-          <div className="mx-auto mt-4 max-w-xl rounded-md border border-red-500 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {err}
+    <div className="mx-auto max-w-5xl px-6 py-12">
+      <h1 className="text-3xl font-bold mb-2">Simple, honest pricing</h1>
+      <p className="text-zinc-600 mb-6">Start small, add seats or Translate when you need it.</p>
+
+      <div className="flex items-center gap-3 mb-8">
+        <button className={`px-3 py-1 rounded border ${cycle === "monthly" ? "bg-zinc-900 text-white" : ""}`} onClick={() => setCycle("monthly")}>
+          Monthly
+        </button>
+        <button className={`px-3 py-1 rounded border ${cycle === "yearly" ? "bg-zinc-900 text-white" : ""}`} onClick={() => setCycle("yearly")}>
+          Yearly (20% off)
+        </button>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* SOLO */}
+        <div className="rounded-2xl border p-6 shadow-sm">
+          <h2 className="text-xl font-semibold mb-2">Solo</h2>
+          <p className="text-sm text-zinc-600 mb-4">1 seat</p>
+          <div className="text-3xl font-bold mb-2">
+            {formatAUD(PRICES.solo[cycle === "yearly" ? "yearly" : "monthly"])}
+            <span className="text-base font-normal"> / {cycle === "yearly" ? "yr" : "mo"}</span>
           </div>
-        )}
-        {/* Interval toggle */}
-        <div className="mt-6 inline-flex items-center gap-2 rounded-full border px-1 py-1 bg-white shadow-sm">
-          <button
-            className={
-              "px-4 py-1.5 rounded-full text-sm " +
-              (interval === "monthly"
-                ? "bg-slate-900 text-white"
-                : "text-slate-700 hover:bg-slate-100")
-            }
-            onClick={() => setInterval("monthly")}
-          >
-            Monthly
-          </button>
-          <button
-            className={
-              "px-4 py-1.5 rounded-full text-sm " +
-              (interval === "yearly"
-                ? "bg-slate-900 text-white"
-                : "text-slate-700 hover:bg-slate-100")
-            }
-            onClick={() => setInterval("yearly")}
-          >
-            Yearly <span className="ml-1 text-emerald-600">(20% off)</span>
+          <label className="flex items-center gap-2 my-4">
+            <input type="checkbox" checked={soloTranslate} onChange={(e) => setSoloTranslate(e.target.checked)} />
+            <span>Include Translate (+{formatAUD(PRICES.translateSolo[cycle === "yearly" ? "yearly" : "monthly"])})</span>
+          </label>
+          <div className="text-lg mb-4">
+            Total: <strong>{formatAUD(soloTotal)}</strong> / {cycle === "yearly" ? "yr" : "mo"}
+          </div>
+          <button className="w-full rounded-xl bg-blue-600 text-white py-2" onClick={() => postCheckout({ plan: "solo", cycle, translate: soloTranslate })}>
+            Start {cycle === "yearly" ? "Yearly" : "Monthly"}
           </button>
         </div>
-      </section>
 
-      {/* Cards */}
-      <section className="grid gap-6 md:grid-cols-3">
-        {/* Solo */}
-        <div className="rounded-2xl border p-6 bg-white shadow-sm">
-          <h3 className="text-lg font-semibold">Solo</h3>
-          <p className="text-sm text-slate-600">1 seat</p>
-          <div className="mt-5 flex items-baseline gap-2">
-            <span className="text-4xl font-semibold">{fmtUSD(soloPrice)}</span>
-            <span className="text-slate-500">/ mo{interval === "yearly" ? " (billed annually)" : ""}</span>
+        {/* TEAM (5 seats) */}
+        <div className="rounded-2xl border p-6 shadow-sm">
+          <h2 className="text-xl font-semibold mb-2">Team</h2>
+          <p className="text-sm text-zinc-600 mb-1">5 seats bundle</p>
+          <div className="text-3xl font-bold mb-2">
+            {formatAUD(PRICES.team5[cycle === "yearly" ? "yearly" : "monthly"])}
+            <span className="text-base font-normal"> / {cycle === "yearly" ? "yr" : "mo"}</span>
           </div>
-          {/* Translate toggle */}
-          <div className="mt-4 flex items-center gap-2">
+          <label className="flex items-center gap-2 my-4">
+            <input type="checkbox" checked={teamTranslate} onChange={(e) => setTeamTranslate(e.target.checked)} />
+            <span>Include Translate (+{formatAUD(PRICES.team5Translate[cycle === "yearly" ? "yearly" : "monthly"])})</span>
+          </label>
+          <div className="text-lg mb-4">
+            Total: <strong>{formatAUD(teamTotal)}</strong> / {cycle === "yearly" ? "yr" : "mo"}
+          </div>
+          <button className="w-full rounded-xl bg-blue-600 text-white py-2" onClick={() => postCheckout({ plan: "team5", cycle, translate: teamTranslate })}>
+            Start {cycle === "yearly" ? "Yearly" : "Monthly"}
+          </button>
+        </div>
+
+        {/* ENTERPRISE 6-100 (monthly only) */}
+        <div className="rounded-2xl border p-6 shadow-sm">
+          <h2 className="text-xl font-semibold mb-1">Enterprise</h2>
+          <p className="text-xs text-zinc-500 -mt-1 mb-3">Enterprise is monthly only.</p>
+
+          <div className="flex items-center gap-3 my-3">
+            <label className="text-sm w-24">Seats</label>
             <input
-              id="solo-translate"
-              type="checkbox"
-              checked={soloTranslate}
-              onChange={(e) => setSoloTranslate(e.target.checked)}
+              type="number"
+              min={1}
+              max={999}
+              value={seats}
+              onChange={(e) => setSeats(parseInt(e.target.value || "0", 10))}
+              className="w-28 rounded border px-2 py-1"
             />
-            <label htmlFor="solo-translate" className="text-sm">
-              Include Translate (+$1 / seat)
-            </label>
           </div>
-          {!soloTranslate && (
-            <p className="mt-1 text-xs text-slate-500">
-              Or pay-as-you-go at <strong>$1</strong> per accepted translation.
-            </p>
+
+          <label className="flex items-center gap-2 my-2">
+            <input type="checkbox" checked={enterpriseTranslate} onChange={(e) => setEnterpriseTranslate(e.target.checked)} />
+            <span>Include Translate (+{formatAUD(PRICES.translateEnterprise.monthly)} / seat)</span>
+          </label>
+
+          <p className="text-sm text-zinc-600 my-2">
+            Per seat: {formatAUD(500)}{enterpriseTranslate ? ` + ${formatAUD(PRICES.translateEnterprise.monthly)}` : ""}
+          </p>
+
+          <div className="text-lg mb-4">
+            Total ({Math.min(Math.max(seats, 0), 100)} seats): <strong>{formatAUD(enterpriseTotal)}</strong> / mo
+          </div>
+
+          {over ? (
+            <a href="/contact" className="block text-center w-full rounded-xl bg-zinc-900 text-white py-2">
+              Contact sales for 100+ seats
+            </a>
+          ) : under ? (
+            <button className="w-full rounded-xl bg-zinc-400 text-white py-2 cursor-not-allowed" disabled>
+              Min 6 seats for Enterprise
+            </button>
+          ) : (
+            <button
+              className="w-full rounded-xl bg-blue-600 text-white py-2"
+              onClick={() =>
+                postCheckout({
+                  plan: "enterprise",
+                  cycle: "monthly",
+                  translate: enterpriseTranslate,
+                  seats: Math.min(Math.max(seats, 6), 100),
+                })
+              }
+            >
+              Start monthly
+            </button>
           )}
-          <ul className="mt-6 space-y-2 text-sm">
-            <li>• Unlimited chat & file uploads</li>
-            <li>• Caller acknowledgements</li>
-            <li>• Essential admin</li>
-          </ul>
-          <button
-            disabled={busy}
-            onClick={safe(() =>
-              postCheckout({
-                plan: "solo",
-                interval,
-                seats: 1,
-                translate: !!soloTranslate,
-              })
-            )}
-            className="mt-6 inline-flex w-full justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-white hover:bg-slate-800 disabled:opacity-50"
-          >
-            {interval === "yearly" ? "Start yearly" : "Start monthly"}
+        </div>
+      </div>
+
+      {/* One-Week Pass */}
+      <div className="mt-10 grid md:grid-cols-3 gap-6">
+        <div className="rounded-2xl border p-6 shadow-sm">
+          <h2 className="text-xl font-semibold mb-2">One-Week Pass</h2>
+          <p className="text-sm text-zinc-600 mb-4">7-day access. No subscription.</p>
+          <div className="text-3xl font-bold mb-4">{formatAUD(PRICES.weekpass)}</div>
+          <button className="w-full rounded-xl bg-emerald-600 text-white py-2" onClick={() => postCheckout({ plan: "weekpass" })}>
+            Buy 1-week pass
           </button>
         </div>
-
-        {/* Team (5 seats) */}
-        <div className="rounded-2xl border p-6 bg-white shadow-sm ring-2 ring-blue-600">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Team</h3>
-            <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Popular</span>
-          </div>
-          <p className="text-sm text-slate-600">5 seats</p>
-          <div className="mt-5 flex items-baseline gap-2">
-            <span className="text-4xl font-semibold">{fmtUSD(teamPrice)}</span>
-            <span className="text-slate-500">/ mo{interval === "yearly" ? " (billed annually)" : ""}</span>
-          </div>
-          {/* Translate toggle */}
-          <div className="mt-4 flex items-center gap-2">
-            <input
-              id="team-translate"
-              type="checkbox"
-              checked={teamTranslate}
-              onChange={(e) => setTeamTranslate(e.target.checked)}
-            />
-            <label htmlFor="team-translate" className="text-sm">
-              Include Translate (+$1 / seat)
-            </label>
-          </div>
-          {!teamTranslate && (
-            <p className="mt-1 text-xs text-slate-500">
-              Or pay-as-you-go at <strong>$1</strong> per accepted translation.
-            </p>
-          )}
-          <ul className="mt-6 space-y-2 text-sm">
-            <li>• Everything in Solo, plus</li>
-            <li>• 5 user seats</li>
-            <li>• Priority support</li>
-          </ul>
-          <button
-            disabled={busy}
-            onClick={safe(() =>
-              postCheckout({
-                plan: "team",
-                interval,
-                seats: TEAM_SEATS,
-                translate: !!teamTranslate,
-              })
-            )}
-            className="mt-6 inline-flex w-full justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {interval === "yearly" ? "Start yearly" : "Start monthly"}
-          </button>
-        </div>
-
-        {/* Enterprise */}
-        <div className="rounded-2xl border p-6 bg-white shadow-sm">
-          <h3 className="text-lg font-semibold">Enterprise</h3>
-          <p className="text-sm text-slate-600">Custom seats & usage</p>
-          <div className="mt-5 space-y-1 text-sm">
-            <p>• Base: <strong>$3/seat</strong> (no Translate)</p>
-            <p>• With Translate included: <strong>$5/seat</strong></p>
-            <p>• Or Translate PAYG: <strong>$0.50</strong> per accepted translation</p>
-          </div>
-          <ul className="mt-6 space-y-2 text-sm">
-            <li>• SSO & advanced controls</li>
-            <li>• Custom limits and SLAs</li>
-            <li>• Dedicated support channel</li>
-          </ul>
-          <Link
-            href="/contact"
-            className="mt-6 inline-flex w-full justify-center rounded-lg border border-slate-300 px-4 py-2.5 hover:bg-slate-50"
-          >
-            Contact sales
-          </Link>
-        </div>
-      </section>
-
-      {/* ROI anchor */}
-      <section id="roi" className="mt-16 scroll-mt-24">
-        <h2 className="text-2xl font-semibold">See the savings for your center</h2>
-        <p className="text-slate-600 mt-1">Play with the numbers. We can email you a copy.</p>
-        <div className="mt-4">
-          <RoiLeadCalc />
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section className="mt-14">
-        <h2 className="text-xl font-semibold">Frequently asked questions</h2>
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border p-4 bg-white">
-            <h3 className="font-medium">What&#39;s included in the base price?</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              Chat, file uploads (images/PDF), caller acknowledgements, basic admin pages, and standard support.
-            </p>
-          </div>
-          <div className="rounded-xl border p-4 bg-white">
-            <h3 className="font-medium">How does Translate billing work?</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              Include Translate for a flat <strong>$1 per seat</strong> monthly, or use PAYG at{" "}
-              <strong>$1</strong> per accepted translation on Solo/Team. Enterprise can opt into{" "}
-              <strong>$0.50</strong> per accepted translation.
-            </p>
-          </div>
-          <div className="rounded-xl border p-4 bg-white">
-            <h3 className="font-medium">Can I switch between monthly and yearly?</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              Yes — you can change your billing interval at any time. Yearly gets a{" "}
-              <strong>20% discount</strong> applied to the monthly equivalent, billed annually.
-            </p>
-          </div>
-          <div className="rounded-xl border p-4 bg-white">
-            <h3 className="font-medium">Do you offer trials or refunds?</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              We keep pricing low and flexible. If something isn&#39;t right in your first 14 days, reach out and we&#39;ll make it right.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Footnote */}
-      <p className="mt-8 text-xs text-slate-500">
-        Prices shown are in USD. Taxes may apply. “Accepted translation” means a translation that is committed to a chat (not just previewed).
-      </p>
-    </main>
+      </div>
+    </div>
   );
 }
+
+
