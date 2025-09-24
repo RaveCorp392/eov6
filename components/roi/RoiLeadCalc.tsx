@@ -34,7 +34,7 @@ export default function RoiLeadCalc({ defaultValues, onSubmitted }: RoiLeadCalcP
       const payload = {
         email: email.trim(),
         company: company.trim(),
-        consent,
+        consentEmail: !!consent,
         hp,
         inputs: { agents, callsPerAgentPerDay, minutesSavedPerCall, costPerHour, workDaysPerYear },
         outputs: result,
@@ -94,7 +94,7 @@ export default function RoiLeadCalc({ defaultValues, onSubmitted }: RoiLeadCalcP
               <input type="text" value={hp} onChange={e=>setHp(e.target.value)} className="hidden" tabIndex={-1} aria-hidden="true" />
             </div>
             <label className="flex items-center gap-2 mt-2 text-xs">
-              <input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} />
+              <input id="roi-consent" type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} />
               <span>I agree to be contacted about EOV6. You can unsubscribe anytime.</span>
             </label>
             <div className="mt-3 flex gap-2">

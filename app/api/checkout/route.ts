@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       line_items.push({ price: addOnId, quantity: qty });
     }
 
-    const success_url = `${origin}/?checkout=success`;
+    const success_url = `${origin}/thanks`;
     const cancel_url = `${origin}/pricing?checkout=cancel`;
 
     const session = await stripe.checkout.sessions.create({
@@ -126,4 +126,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
-
