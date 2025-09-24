@@ -3,10 +3,25 @@ import Stripe from "stripe";
 
 export const dynamic = "force-dynamic";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", { apiVersion: "2024-06-20" });
 
 function prices() {
-  return {
+  const long = {
+    solo: {
+      monthly: process.env.STRIPE_PRICE_SOLO_MONTHLY || "",
+      yearly: process.env.STRIPE_PRICE_SOLO_YEARLY || "",
+    },
+    team: {
+      monthly: process.env.STRIPE_PRICE_TEAM_STARTER || "",
+      yearly: process.env.STRIPE_PRICE_TEAM_YEARLY || "",
+    },
+    translate: {
+      monthly: process.env.STRIPE_PRICE_ADDON_TRANSLATE || "",
+      yearly: process.env.STRIPE_PRICE_ADDON_TRANSLATE_YEARLY || "",
+    },
+  };
+
+  const short = {
     solo: {
       monthly: process.env.STRIPE_PRICE_SOLO_M || "",
       yearly: process.env.STRIPE_PRICE_SOLO_Y || "",
@@ -19,7 +34,22 @@ function prices() {
       monthly: process.env.STRIPE_PRICE_TRANSLATE_M || "",
       yearly: process.env.STRIPE_PRICE_TRANSLATE_Y || "",
     },
-  } as const;
+  };
+
+  return {
+    solo: {
+      monthly: long.solo.monthly || short.solo.monthly,
+      yearly: long.solo.yearly || short.solo.yearly,
+    },
+    team: {
+      monthly: long.team.monthly || short.team.monthly,
+      yearly: long.team.yearly || short.team.yearly,
+    },
+    translate: {
+      monthly: long.translate.monthly || short.translate.monthly,
+      yearly: long.translate.yearly || short.translate.yearly,
+    },
+  };
 }
 
 export async function GET() {
@@ -37,7 +67,7 @@ export async function POST(req: NextRequest) {
     const reqOrigin = req.nextUrl?.origin || "";
     const origin = envSite || reqOrigin || "https://www.eov6.com";
 
-    const { plan, interval, seats = 1, translate = 0 } = (await req.json().catch(() => ({}))) ?? {};
+    const { plan, interval, seats = 1, translate = 0 } = await req.json() || {};
 
     if (!["solo", "team"].includes(plan)) {
       if (plan === "enterprise") {
@@ -53,7 +83,7 @@ export async function POST(req: NextRequest) {
     const p = prices();
     const baseId = p[plan as "solo" | "team"][interval as "monthly" | "yearly"];
     if (!baseId) {
-      console.error("[checkout] price not configured", { plan, interval });
+      console.error("[checkout] price not configured", { plan, interval, p });
       return NextResponse.json({ ok: false, error: "price not configured" }, { status: 500 });
     }
 
@@ -66,7 +96,7 @@ export async function POST(req: NextRequest) {
     if (translate) {
       const addOnId = p.translate[interval as "monthly" | "yearly"];
       if (!addOnId) {
-        console.error("[checkout] translate price not configured", { interval });
+        console.error("[checkout] translate price not configured", { interval, p });
         return NextResponse.json({ ok: false, error: "translate price not configured" }, { status: 500 });
       }
       line_items.push({ price: addOnId, quantity: qty });
