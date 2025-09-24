@@ -3,126 +3,119 @@ import Stripe from "stripe";
 
 export const dynamic = "force-dynamic";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+type BillingCycle = "monthly" | "yearly" | "weekly";
+type Plan = "solo" | "team5" | "enterprise" | "weekpass";
 
-function prices() {
-  const long = {
-    solo: {
-      monthly: process.env.STRIPE_PRICE_SOLO_MONTHLY || "",
-      yearly: process.env.STRIPE_PRICE_SOLO_YEARLY || "",
-    },
-    team: {
-      monthly: process.env.STRIPE_PRICE_TEAM_STARTER || "",
-      yearly: process.env.STRIPE_PRICE_TEAM_YEARLY || "",
-    },
-    translate: {
-      monthly: process.env.STRIPE_PRICE_ADDON_TRANSLATE || "",
-      yearly: process.env.STRIPE_PRICE_ADDON_TRANSLATE_YEARLY || "",
-    },
-  };
+type CheckoutPayload = {
+  plan: Plan;
+  cycle?: BillingCycle;
+  translate?: boolean;
+  seats?: number; // enterprise only
+};
 
-  const short = {
-    solo: {
-      monthly: process.env.STRIPE_PRICE_SOLO_M || "",
-      yearly: process.env.STRIPE_PRICE_SOLO_Y || "",
-    },
-    team: {
-      monthly: process.env.STRIPE_PRICE_TEAM_M || "",
-      yearly: process.env.STRIPE_PRICE_TEAM_Y || "",
-    },
-    translate: {
-      monthly: process.env.STRIPE_PRICE_TRANSLATE_M || "",
-      yearly: process.env.STRIPE_PRICE_TRANSLATE_Y || "",
-    },
-  };
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
 
-  return {
-    solo: {
-      monthly: long.solo.monthly || short.solo.monthly,
-      yearly: long.solo.yearly || short.solo.yearly,
-    },
-    team: {
-      monthly: long.team.monthly || short.team.monthly,
-      yearly: long.team.yearly || short.team.yearly,
-    },
-    translate: {
-      monthly: long.translate.monthly || short.translate.monthly,
-      yearly: long.translate.yearly || short.translate.yearly,
-    },
-  };
-}
-
-export async function GET() {
-  return NextResponse.json({ ok: false, error: "Method Not Allowed" }, { status: 405 });
+function reqd(id?: string, name?: string) {
+  if (!id) throw new Error(`Missing price id${name ? ` (${name})` : ""}`);
+  return id;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      console.error("[checkout] missing STRIPE_SECRET_KEY");
-      return NextResponse.json({ ok: false, error: "stripe key not configured" }, { status: 500 });
-    }
+    const body = (await req.json()) as CheckoutPayload;
 
-    const envSite = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-    const reqOrigin = req.nextUrl?.origin || "";
-    const origin = envSite || reqOrigin || "https://www.eov6.com";
+    const plan = body.plan;
+    const requestedCycle: BillingCycle =
+      body.cycle === "yearly" ? "yearly" : body.cycle === "weekly" ? "weekly" : "monthly";
+    const translate = !!body.translate;
 
-    const { plan, interval, seats = 1, translate = 0 } = await req.json() || {};
+    // Enterprise is monthly-only (server guard)
+    const cycle: BillingCycle = plan === "enterprise" ? "monthly" : requestedCycle;
 
-    if (!["solo", "team"].includes(plan)) {
-      if (plan === "enterprise") {
-        return NextResponse.json({ ok: false, error: "enterprise via contact sales" }, { status: 400 });
+    const items: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+    let mode: "subscription" | "payment" = "subscription";
+    let metaSeats = 1;
+
+    if (plan === "solo") {
+      const base = reqd(
+        cycle === "yearly" ? process.env.STRIPE_PRICE_SOLO_Y : process.env.STRIPE_PRICE_SOLO_M,
+        "SOLO"
+      );
+      items.push({ price: base, quantity: 1 });
+
+      if (translate) {
+        const add = reqd(
+          cycle === "yearly" ? process.env.STRIPE_PRICE_TRANSLATE_Y : process.env.STRIPE_PRICE_TRANSLATE_M,
+          "TRANSLATE"
+        );
+        items.push({ price: add, quantity: 1 });
       }
-      return NextResponse.json({ ok: false, error: "invalid plan" }, { status: 400 });
-    }
+      metaSeats = 1;
 
-    if (!["monthly", "yearly"].includes(interval)) {
-      return NextResponse.json({ ok: false, error: "invalid interval" }, { status: 400 });
-    }
+    } else if (plan === "team5") {
+      // Bundle must be quantity:1 (never x5)
+      const base = reqd(
+        cycle === "yearly" ? process.env.STRIPE_PRICE_TEAM5_Y : process.env.STRIPE_PRICE_TEAM5_M,
+        "TEAM5"
+      );
+      items.push({ price: base, quantity: 1 });
 
-    const p = prices();
-    const baseId = p[plan as "solo" | "team"][interval as "monthly" | "yearly"];
-    if (!baseId) {
-      console.error("[checkout] price not configured", { plan, interval, p });
-      return NextResponse.json({ ok: false, error: "price not configured" }, { status: 500 });
-    }
-
-    const qty = Math.max(1, Number(seats) || 1);
-
-    const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-      { price: baseId, quantity: qty },
-    ];
-
-    if (translate) {
-      const addOnId = p.translate[interval as "monthly" | "yearly"];
-      if (!addOnId) {
-        console.error("[checkout] translate price not configured", { interval, p });
-        return NextResponse.json({ ok: false, error: "translate price not configured" }, { status: 500 });
+      if (translate) {
+        const add = reqd(
+          cycle === "yearly"
+            ? process.env.STRIPE_PRICE_TEAM5_TRANSLATE_Y
+            : process.env.STRIPE_PRICE_TEAM5_TRANSLATE_M,
+          "TEAM5_TRANSLATE"
+        );
+        items.push({ price: add, quantity: 1 });
       }
-      line_items.push({ price: addOnId, quantity: qty });
+      metaSeats = 5;
+
+    } else if (plan === "enterprise") {
+      const seats = Math.max(6, Math.min(Number(body.seats || 0), 100));
+      // Base: prefer dedicated Enterprise $3/seat if provided; else fall back to Solo $5 seat
+      const base = reqd(
+        process.env.STRIPE_PRICE_ENTERPRISE_BASE_M || process.env.STRIPE_PRICE_SOLO_M,
+        "ENTERPRISE_BASE_M|SOLO_M"
+      );
+      items.push({ price: base, quantity: seats });
+
+      if (translate) {
+        const add = reqd(process.env.STRIPE_PRICE_TRANSLATE_ENTERPRISE_M, "TRANSLATE_ENTERPRISE_M");
+        items.push({ price: add, quantity: seats });
+      }
+      mode = "subscription";
+      metaSeats = seats;
+
+    } else if (plan === "weekpass") {
+      const pass = reqd(process.env.STRIPE_PRICE_WEEKPASS, "WEEKPASS");
+      items.push({ price: pass, quantity: 1 });
+      mode = "payment";
+      metaSeats = 1;
+
+    } else {
+      throw new Error("Invalid plan");
     }
 
-    const success_url = `${origin}/thanks`;
-    const cancel_url = `${origin}/pricing?checkout=cancel`;
-
+    const site = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
     const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      line_items,
+      mode,
+      line_items: items,
+      success_url: `${site}/thanks?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${site}/pricing`,
       allow_promotion_codes: true,
-      success_url,
-      cancel_url,
+      customer_creation: "always",
+      billing_address_collection: "auto",
       metadata: {
         plan,
-        interval,
-        seats: String(qty),
+        cycle,
         translate: String(translate),
+        seats: String(metaSeats),
       },
     });
 
-    return NextResponse.json({ ok: true, url: session.url });
-  } catch (e: any) {
-    console.error("[checkout:error]", e?.message || e, e?.stack || "");
-    const msg = String(e?.message || "checkout-error");
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return NextResponse.json({ url: session.url }, { status: 200 });
+  } catch (err: any) {
+    return new NextResponse(err?.message || "Checkout error", { status: 400 });
   }
 }
