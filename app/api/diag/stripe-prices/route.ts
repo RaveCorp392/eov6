@@ -3,7 +3,7 @@ import Stripe from "stripe";
 
 export const dynamic = "force-dynamic";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 const keys = {
   SOLO_M: process.env.STRIPE_PRICE_SOLO_M,
@@ -46,3 +46,4 @@ export async function GET(_req: NextRequest) {
 
   return NextResponse.json(out, { status: 200 });
 }
+

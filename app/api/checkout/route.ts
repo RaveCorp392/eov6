@@ -13,7 +13,7 @@ type CheckoutPayload = {
   seats?: number; // enterprise only
 };
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2024-06-20" });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 function reqd(id?: string, name?: string) {
   if (!id) throw new Error(`Missing price id${name ? ` (${name})` : ""}`);
@@ -119,3 +119,4 @@ export async function POST(req: NextRequest) {
     return new NextResponse(err?.message || "Checkout error", { status: 400 });
   }
 }
+
