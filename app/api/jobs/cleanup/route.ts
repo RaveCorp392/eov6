@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
-import { getStorage } from "firebase-admin/storage";
-
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+import { NextRequest, NextResponse } from "next/server";
+import { getFirestore, getStorage } from "@/lib/firebase-admin";
 
 const CRON_SECRET = process.env.CRON_SECRET || "";
 
