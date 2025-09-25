@@ -4,13 +4,17 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getFirestore, getStorage } from "@/lib/firebase-admin";
 
-const CRON_SECRET = process.env.CRON_SECRET || "";
+// Keep a secret for manual calls, but allow the Vercel scheduler through.
+const AUTH = process.env.CRON_SECRET || "";
 
 export async function GET(req: NextRequest) {
-  if (CRON_SECRET) {
-    if (req.headers.get("x-cron-secret") !== CRON_SECRET) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
+  // Vercel sets this header on scheduled invocations:
+  const isVercelCron = req.headers.get("x-vercel-cron") === "1";
+
+  // If a secret is configured, require it for manual calls.
+  // Scheduled jobs (x-vercel-cron=1) bypass the secret.
+  if (AUTH && !isVercelCron && req.headers.get("x-cron-secret") !== AUTH) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const db = getFirestore();
