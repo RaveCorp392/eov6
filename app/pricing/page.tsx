@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import PricingFAQ from "@/components/pricing/FAQ";
 
 type BillingCycle = "monthly" | "yearly";
 type Plan = "solo" | "team5" | "enterprise" | "weekpass";
@@ -199,8 +200,11 @@ export default function PricingPage() {
           </button>
         </div>
       </div>
+
+      <PricingFAQ />
     </div>
   );
 }
+
 
 
