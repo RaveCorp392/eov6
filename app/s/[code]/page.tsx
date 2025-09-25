@@ -12,11 +12,13 @@ import { sendMessage } from '@/lib/firebase';
 import { db } from '@/lib/firebase';
 import PrivacyCard from '@/components/PrivacyCard';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { useSessionJoin } from "@/hooks/useSessionJoin";
 
 export default function CallerSessionPage({ params }: { params: { code: string } }) {
   const code = params.code;
   const [session, setSession] = useState<any>(null);
   const [privacyText, setPrivacyText] = useState<string>("");
+  const err = useSessionJoin(code);
 
   useEffect(() => watchSession(code, setSession), [code]);
 
@@ -61,6 +63,21 @@ export default function CallerSessionPage({ params }: { params: { code: string }
     >
       <AckWatcherCaller code={code} />
       <div className="mx-auto max-w-2xl p-4 space-y-3">
+        {err === "already_joined" && (
+          <div className="mb-3 rounded bg-amber-100 p-3 text-amber-900">
+            This code has already been used — ask your agent for a new one.
+          </div>
+        )}
+        {err === "expired" && (
+          <div className="mb-3 rounded bg-rose-100 p-3 text-rose-900">
+            This code is expired — ask your agent for a new one.
+          </div>
+        )}
+        {err === "closed" && (
+          <div className="mb-3 rounded bg-rose-100 p-3 text-rose-900">
+            This session is closed.
+          </div>
+        )}
         <header className="mb-2 flex items-center justify-between">
           <div className="text-slate-600 dark:text-slate-300">EOV6 — Session {code}</div>
           <div className="text-xs text-slate-500">Ephemeral — clears on finish</div>
