@@ -1,14 +1,8 @@
 export default function PricingFAQ() {
   const faqs = [
-    {
-      q: "Can I add seats later?",
-      a: "Yes. Upgrade anytime-Team adds in 5-seat blocks; Enterprise supports 6-100 seats self-serve.",
-    },
-    {
-      q: "How does Translate pricing work?",
-      a: "Solo +$1/seat. Team +$5 per bundle. Enterprise +$0.50 per seat (or PAYG).",
-    },
-    { q: "Is there a trial?", a: "Use the One-Week Pass for A$5-no subscription." },
+    { q: "Can I add seats later?", a: "Yes. Team adds in 5-seat blocks; Enterprise supports 6\u2013100 seats self-serve." },
+    { q: "How does Translate pricing work?", a: "Solo +$1/seat. Team +$5 per bundle. Enterprise +$0.50 per seat (or PAYG)." },
+    { q: "Is there a trial?", a: "Use the One-Week Pass for A$5\u2014no subscription." },
     { q: "Can I cancel anytime?", a: "Yes. You can manage billing and changes via the portal." },
   ];
   return (
@@ -25,4 +19,3 @@ export default function PricingFAQ() {
     </div>
   );
 }
-
