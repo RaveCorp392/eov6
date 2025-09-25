@@ -1,7 +1,7 @@
 // lib/firebaseAdmin.ts
 import { cert, getApp, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 
 let adminApp: App | null = null;
 
@@ -49,9 +49,11 @@ export function getAdminApp(): App {
 }
 
 // Export a conventional `db` for server/Admin usage, and keep `adminDb` for existing imports.
-export const db = getFirestore(getAdminApp());
+export const db = getFirestoreAdmin(getAdminApp());
 export const adminDb = db;
+
+export const getFirestore = () => getFirestoreAdmin(getAdminApp());
 
 // New helpers if you prefer call-style usage
 export const adminAuth = () => getAuth(getAdminApp());
-export const adminDbFn = () => getFirestore(getAdminApp());
+export const adminDbFn = () => getFirestoreAdmin(getAdminApp());
