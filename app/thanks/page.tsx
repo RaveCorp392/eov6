@@ -1,11 +1,22 @@
 /* eslint-disable react/no-unescaped-entities */
 "use client";
 import { useEffect, useState } from "react";
+import { getAuth } from "firebase/auth";
 
 type Summary = { plan?: string; cycle?: string; seats?: number; translate?: boolean };
 
 export default function ThanksPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
+
+  async function claimOrg() {
+    const t = await getAuth().currentUser?.getIdToken();
+    const r = await fetch("/api/orgs/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${t}` },
+    });
+    if (r.ok) window.location.href = "/admin/organizations";
+    else alert("Claim failed \u2014 sign in with the payer email and try again.");
+  }
 
   useEffect(() => {
     const sid = new URLSearchParams(window.location.search).get("session_id");
@@ -60,6 +71,7 @@ export default function ThanksPage() {
       </div>
 
       <div className="flex gap-3">
+        <button onClick={claimOrg} className="rounded-xl bg-blue-600 text-white px-4 py-2">Claim ownership</button>
         <a href="https://agent.eov6.com/agent" className="rounded-xl bg-blue-600 text-white px-4 py-2">Open Agent</a>
         <a href="/admin/organizations" className="rounded-xl border px-4 py-2">Open Admin</a>
         <a href="/pricing" className="rounded-xl border px-4 py-2">Back to Pricing</a>
