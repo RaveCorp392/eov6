@@ -1,29 +1,27 @@
-// lib/firebase-admin.ts
 import { getApps, initializeApp, applicationDefault, cert } from "firebase-admin/app";
 import { getFirestore as _getFirestore } from "firebase-admin/firestore";
 import { getStorage as _getStorage } from "firebase-admin/storage";
 
-/**
- * Auth:
- * - Preferred: FIREBASE_SERVICE_ACCOUNT = stringified service-account JSON.
- * - Fallback: GOOGLE_APPLICATION_CREDENTIALS (ADC).
- * Optional: FIREBASE_STORAGE_BUCKET (e.g., eov6.appspot.com).
- */
-const app = getApps()[0] ?? initializeApp(
-  process.env.FIREBASE_SERVICE_ACCOUNT
-    ? {
-        credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT as string)),
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-      }
-    : {
-        credential: applicationDefault(),
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-      }
-);
+function fromTriplet() {
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  if (privateKey?.includes("\\n")) privateKey = privateKey.replace(/\\n/g, "\n");
+  if (projectId && clientEmail && privateKey) {
+    return cert({ projectId, clientEmail, privateKey });
+  }
+  return null;
+}
 
-export function getFirestore() {
-  return _getFirestore(app);
-}
-export function getStorage() {
-  return _getStorage(app);
-}
+const credential =
+  (process.env.FIREBASE_SERVICE_ACCOUNT && cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))) ||
+  fromTriplet() ||
+  applicationDefault();
+
+const app = getApps()[0] ?? initializeApp({
+  credential,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+});
+
+export function getFirestore() { return _getFirestore(app); }
+export function getStorage() { return _getStorage(app); }

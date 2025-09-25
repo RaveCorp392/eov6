@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-      await storage.bucket().deleteFiles({ prefix: "uploads/" + doc.id + "/" });
+      await storage.bucket().deleteFiles({ prefix: `uploads/${doc.id}/` });
     } catch {}
 
     await doc.ref.delete();
