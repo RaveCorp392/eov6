@@ -21,7 +21,7 @@ export default function ThanksPage() {
         headers: { authorization: `Bearer ${t}` },
       });
       if (r.ok) {
-        window.location.href = "/admin/organizations";
+        window.location.href = "/portal/organizations";
       } else {
         const j = await r.json().catch(() => ({}));
         alert("Claim failed: " + (j?.error || r.status));
@@ -61,7 +61,7 @@ export default function ThanksPage() {
         <h2 className="text-lg font-semibold mb-3">1) Add your users</h2>
         <ol className="list-decimal ml-5 space-y-2 text-zinc-800">
           <li>
-            Open <a className="text-blue-600 underline" href="/admin/organizations">Admin &rarr; Organizations</a>.
+            Open <a className="text-blue-600 underline" href="/portal/organizations">Portal &rarr; Organizations</a>.
           </li>
           <li>
             Click your org &rarr; <strong>Resolve owner</strong> if prompted.
@@ -97,16 +97,14 @@ export default function ThanksPage() {
         <button onClick={claimOrg} className="rounded-xl bg-blue-600 text-white px-4 py-2">
           Claim ownership
         </button>
-        <a href="https://agent.eov6.com/agent" className="rounded-xl bg-blue-600 text-white px-4 py-2">
+        <a href="/portal/organizations" className="rounded-xl border px-4 py-2">
+          Open Portal
+        </a>
+        <a href="https://agent.eov6.com/agent" className="rounded-xl border px-4 py-2">
           Open Agent
-        </a>
-        <a href="/admin/organizations" className="rounded-xl border px-4 py-2">
-          Open Admin
-        </a>
-        <a href="/pricing" className="rounded-xl border px-4 py-2">
-          Back to Pricing
         </a>
       </div>
     </div>
   );
 }
+
