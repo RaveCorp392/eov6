@@ -23,6 +23,7 @@ export default function AdminOrgsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<Row | null>(null);
   const [editForm, setEditForm] = useState<any>({});
+  const [privacyStatement, setPrivacyStatement] = useState("");
 
   function openEdit(r: Row) {
     setEditing(r);
@@ -82,7 +83,7 @@ export default function AdminOrgsPage() {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j?.ok === false) {
-          setError(`list failed: ${r.status}${j?.error ? ` â ${j.error}` : ""}`);
+          setError(`list failed: ${r.status}${j?.error ? ` Ã¢Â€Â” ${j.error}` : ""}`);
           return;
         }
         setRows(Array.isArray(j.rows) ? j.rows : []);
@@ -105,6 +106,7 @@ export default function AdminOrgsPage() {
           ownerEmail: String(form.ownerEmail || "").trim().toLowerCase(),
           domains: String(form.domains || "").split(",").map((s: string) => s.trim()).filter(Boolean),
           features: { allowUploads: !!form.allowUploads, translateUnlimited: !!form.translateUnlimited },
+          texts: { privacyStatement },
           acks: {
             slots: [
               { id: "slot1", title: form.slot1Title || "", body: form.slot1Body || "", required: !!form.slot1Required, order: 1 },
@@ -199,7 +201,7 @@ export default function AdminOrgsPage() {
       {process.env.NODE_ENV !== "production" && (
         <a href="/api/admin/ping" target="_blank" className="text-xs underline text-slate-400">/api/admin/ping</a>
       )}
-      {!ready && <p className="text-sm text-slate-500">Loadingâ¦</p>}
+      {!ready && <p className="text-sm text-slate-500">LoadingÃ¢Â€Â¦</p>}
       {ready && !token && (
         <div className="mb-4 rounded border border-amber-400 bg-amber-50 p-3 text-amber-900">
           Sign in required to use Admin.
@@ -243,6 +245,14 @@ export default function AdminOrgsPage() {
           </label>
         </div>
 
+        <label className="block text-sm font-medium mt-4">Privacy Statement</label>
+        <textarea
+          value={privacyStatement}
+          onChange={(e) => setPrivacyStatement(e.target.value)}
+          rows={6}
+          className="w-full rounded border px-3 py-2"
+        />
+
         <div className="grid gap-2 mt-3">
           <h3 className="font-medium">Ack templates (optional)</h3>
           <div className="grid md:grid-cols-2 gap-3">
@@ -276,7 +286,7 @@ export default function AdminOrgsPage() {
         </div>
 
         <div className="mt-3">
-          <button onClick={submit} disabled={busy} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{busy ? "Creatingâ¦" : "Create Organization"}</button>
+          <button onClick={submit} disabled={busy} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{busy ? "CreatingÃ¢Â€Â¦" : "Create Organization"}</button>
         </div>
       </section>
 
@@ -300,6 +310,31 @@ export default function AdminOrgsPage() {
                   <td className="px-2 py-1">{Array.isArray(r.domains) ? r.domains.join(", ") : ""}</td>
                   <td className="px-2 py-1 text-right">
                     <button className="px-2 py-1 rounded bg-slate-800 text-white" onClick={() => openEdit(r)}>Edit</button>
+                    <button
+                      className="ml-2 rounded border px-2 py-1 text-red-600"
+                      onClick={async () => {
+                        if (!confirm(`Delete org '${r.id}'? This cannot be undone.`)) return;
+                        const t = await getAuth().currentUser?.getIdToken();
+                        if (!t) {
+                          alert("Please sign in first.");
+                          return;
+                        }
+                        const res = await fetch("/api/admin/orgs/delete", {
+                          method: "POST",
+                          headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
+                          body: JSON.stringify({ orgId: r.id }),
+                        });
+                        if (res.ok) {
+                          alert("Deleted");
+                          window.location.reload();
+                        } else {
+                          const j = await res.json().catch(() => ({}));
+                          alert("Delete failed: " + (j?.error || res.status));
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -379,5 +414,6 @@ export default function AdminOrgsPage() {
     </main>
   );
 }
+
 
 
