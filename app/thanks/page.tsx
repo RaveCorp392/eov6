@@ -95,7 +95,10 @@ export default function ThanksPage() {
       </div>
 
       <div className="flex gap-3">
-        <button onClick={claimOrg} className="rounded-xl bg-blue-600 text-white px-4 py-2">
+        <a href={`/onboard${typeof window!=="undefined"&&window.location.search ? window.location.search : ""}`} className="rounded-xl bg-blue-600 text-white px-4 py-2">
+          Continue
+        </a>
+        <button onClick={claimOrg} className="rounded-xl border px-4 py-2">
           Claim ownership
         </button>
         <a href="/portal/organizations" className="rounded-xl border px-4 py-2">
@@ -109,4 +112,3 @@ export default function ThanksPage() {
     </div>
   );
 }
-

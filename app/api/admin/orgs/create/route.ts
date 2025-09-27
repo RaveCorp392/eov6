@@ -1,58 +1,67 @@
-import { NextRequest, NextResponse } from "next/server";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { requireAdmin } from "@/lib/admin-auth";
-import { adminDb, getAdminApp } from "@/lib/firebaseAdmin";
-import { getAuth } from "firebase-admin/auth";
-
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+import { NextRequest, NextResponse } from "next/server";
+import { getFirestore } from "@/lib/firebase-admin";
+import { getAuth } from "firebase-admin/auth";
 
 export async function POST(req: NextRequest) {
   try {
-    getAdminApp(); // ensure initialized
-    await requireAdmin(req);
-    const body = await req.json();
-    const { orgId, name, ownerEmail, domains = [], features = {}, texts = {}, acks = {}, commissions = {} } = body || {};
-    if (!orgId || !/^[a-z0-9-]{3,50}$/.test(orgId)) return NextResponse.json({ error: "Invalid orgId" }, { status: 400 });
-    if (!name) return NextResponse.json({ error: "Missing name" }, { status: 400 });
+    const authz = req.headers.get("authorization") || "";
+    const idToken = authz.startsWith("Bearer ") ? authz.slice(7) : null;
+    if (!idToken) return NextResponse.json({ error: "no_token" }, { status: 401 });
+    const decoded = await getAuth().verifyIdToken(idToken);
+    const email = (decoded.email || "").toLowerCase();
+    if (!email.endsWith("@eov6.com")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-    const orgRef = adminDb.doc(`orgs/${orgId}`);
-    const exists = await orgRef.get();
-    if (exists.exists) return NextResponse.json({ error: "orgId exists" }, { status: 409 });
-
-    const orgDoc: any = {
+    const b = await req.json();
+    const {
+      orgId,
       name,
-      domains: Array.isArray(domains) ? domains : [],
-      features: { allowUploads: false, translateUnlimited: false, ...(features || {}) },
-      texts: { privacyStatement: "", ackTemplate: "", ...(texts || {}) },
-      acks: { slots: (acks?.slots || []) },
-      commissions: commissions || {},
-      createdAt: FieldValue.serverTimestamp(),
-    };
-    await orgRef.set(orgDoc, { merge: true });
+      adminEmail,
+      domains = [],
+      seats = 5,
+      features = {},
+      privacyStatement = "",
+      ack1 = {},
+      ack2 = {}
+    } = b || {};
+    if (!orgId || !name || !adminEmail) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
-    let ownerUid: string | undefined;
-    if (ownerEmail) {
-      const email = String(ownerEmail).toLowerCase();
-      try {
-        const u = await getAuth(getAdminApp()).getUserByEmail(email);
-        ownerUid = u.uid;
-        await orgRef.collection("members").doc(ownerUid).set({
-          role: "owner",
-          email,
-          createdAt: Timestamp.now(),
-        }, { merge: true });
-      } catch {
-        await orgRef.collection("members").add({
-          role: "owner",
-          email,
-          createdAt: Timestamp.now(),
-          needsUidResolution: true,
-        });
-      }
-    }
+    const db = getFirestore();
+    const ref = db.collection("orgs").doc(String(orgId).toLowerCase());
+    if ((await ref.get()).exists) return NextResponse.json({ error: "org_exists" }, { status: 409 });
 
-    return NextResponse.json({ ok: true, orgId, ownerUid, placeholder: !ownerUid });
+    const now = Date.now();
+    await ref.set({
+      name,
+      domains,
+      features,
+      texts: { privacyStatement },
+      billing: { plan: "team5", cycle: "monthly", seats },
+      createdAt: now,
+      createdBy: email,
+      pendingOwnerEmail: String(adminEmail).toLowerCase()
+    });
+
+    if (ack1?.title || ack1?.body)
+      await ref
+        .collection("ackTemplates")
+        .doc("slot1")
+        .set({ title: ack1.title || "", body: ack1.body || "", required: !!ack1.required, order: 1 }, { merge: true });
+    if (ack2?.title || ack2?.body)
+      await ref
+        .collection("ackTemplates")
+        .doc("slot2")
+        .set({ title: ack2.title || "", body: ack2.body || "", required: !!ack2.required, order: 2 }, { merge: true });
+
+    await db
+      .collection("entitlements")
+      .doc(String(adminEmail).toLowerCase())
+      .set({ orgId, updatedAt: now }, { merge: true });
+
+    return NextResponse.json({ ok: true, orgId });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "error" }, { status: 403 });
+    return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
 }
