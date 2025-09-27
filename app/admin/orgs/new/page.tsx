@@ -51,7 +51,7 @@ export default function AdminOrgNewPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-bold mb-4">Admin — New Organization</h1>
+      <h1 className="text-2xl font-bold mb-4">Admin ï¿½ New Organization</h1>
       <p className="text-sm text-zinc-600 mb-6">Staff-only. One screen, everything set.</p>
       <div className="grid md:grid-cols-2 gap-4">
         <div>
@@ -140,7 +140,7 @@ export default function AdminOrgNewPage() {
         </label>
       </div>
       <button disabled={busy} onClick={create} className="mt-4 rounded-xl bg-blue-600 text-white px-4 py-2">
-        {busy ? "Working…" : "Create"}
+        {busy ? "Workingï¿½" : "Create"}
       </button>
     </main>
   );
