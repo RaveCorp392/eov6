@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import "@/lib/firebase";
-import { getFirestore, doc, setDoc, serverTimestamp, collection } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 export default function PortalOrganizationsPage() {
   const [orgId, setOrgId] = useState("");
@@ -28,39 +28,41 @@ export default function PortalOrganizationsPage() {
     }
     setBusy(true);
     try {
-      const firestore = getFirestore();
-      const normalizedId = orgId.trim().toLowerCase();
+      const auth = getAuth();
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        alert("Please sign in first.");
+        setBusy(false);
+        return;
+      }
+
       const domains = domainCsv.split(",").map((s) => s.trim()).filter(Boolean);
-      const orgRef = doc(firestore, "orgs", normalizedId);
+      const res = await fetch("/api/portal/orgs/create", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          orgId: orgId.trim(),
+          name,
+          ownerEmail: ownerEmail.trim(),
+          domains,
+          features: { allowUploads, translateUnlimited },
+          privacyStatement,
+          ack1: { title: slot1Title, body: slot1Body, required: !!slot1Req },
+          ack2: { title: slot2Title, body: slot2Body, required: !!slot2Req },
+        }),
+      });
 
-      await setDoc(orgRef, {
-        name,
-        domains,
-        features: { allowUploads, translateUnlimited },
-        texts: { privacyStatement },
-        pendingOwnerEmail: ownerEmail.trim().toLowerCase() || null,
-        createdAt: serverTimestamp(),
-      }, { merge: true });
-
-      const ackTemplates = collection(orgRef, "ackTemplates");
-      if (slot1Title || slot1Body) {
-        await setDoc(doc(ackTemplates, "slot1"), {
-          title: slot1Title || "",
-          body: slot1Body || "",
-          required: !!slot1Req,
-          order: 1,
-        }, { merge: true });
-      }
-      if (slot2Title || slot2Body) {
-        await setDoc(doc(ackTemplates, "slot2"), {
-          title: slot2Title || "",
-          body: slot2Body || "",
-          required: !!slot2Req,
-          order: 2,
-        }, { merge: true });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || res.statusText || "Request failed");
       }
 
-      alert("Organization created. You can now use Portal -> Organizations to edit details.");
+      const payload = await res.json();
+      if (!payload?.ok) {
+        throw new Error(payload?.error || "Create failed");
+      }
+
+      alert("Organization created.");
       setOrgId("");
       setName("");
       setOwnerEmail("");
@@ -154,3 +156,4 @@ export default function PortalOrganizationsPage() {
     </main>
   );
 }
+
