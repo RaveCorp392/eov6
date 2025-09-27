@@ -37,11 +37,13 @@ export default function OnboardPage() {
     (async () => {
       try {
         if (sid) {
-          const s = await fetch(`/api/checkout/summary?session_id=${encodeURIComponent(sid)}`).then((r) =>
-            r.ok ? r.json() : {}
+          const s: Summary | null = await fetch(`/api/checkout/summary?session_id=${encodeURIComponent(sid)}`).then((r) =>
+            r.ok ? r.json() : null
           );
-          setSummary(s || {});
-          if (s?.translate) setTranslateUnlimited(true);
+          if (s) {
+            setSummary(s);
+            if (s.translate) setTranslateUnlimited(true);
+          }
         }
         const t = await getAuth().currentUser?.getIdToken();
         if (!t) return;
@@ -299,3 +301,6 @@ export default function OnboardPage() {
     </main>
   );
 }
+
+
+
