@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import "@/lib/firebase";
 import { getAuth } from "firebase/auth";
+import MyOrgButton from "@/components/MyOrgButton";
 
 type Summary = { plan?: string; cycle?: string; seats?: number; translate?: boolean };
 
@@ -100,6 +101,7 @@ export default function ThanksPage() {
         <a href="/portal/organizations" className="rounded-xl border px-4 py-2">
           Open Portal
         </a>
+        <MyOrgButton />
         <a href="https://agent.eov6.com/agent" className="rounded-xl border px-4 py-2">
           Open Agent
         </a>

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import "@/lib/firebase";
 import { getAuth } from "firebase/auth";
+import MyOrgButton from "@/components/MyOrgButton";
 
 export default function PortalOrganizationsPage() {
   const [orgId, setOrgId] = useState("");
@@ -85,6 +86,9 @@ export default function PortalOrganizationsPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mb-4">
+        <MyOrgButton toAdminIfStaff />
+      </div>
       <h1 className="text-2xl font-bold mb-4">Organizations</h1>
 
       <form onSubmit={onCreate} className="rounded-2xl border p-6 space-y-4">
