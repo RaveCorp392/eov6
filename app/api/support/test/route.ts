@@ -26,7 +26,7 @@ async function send(to: string) {
 }
 
 function getToFromUrl(req: NextRequest) {
-  return new URL(req.url).searchParams.get("to") || "";
+  return req.nextUrl.searchParams.get("to") || "";
 }
 
 async function getToFromBody(req: NextRequest) {
