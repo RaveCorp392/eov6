@@ -15,38 +15,99 @@ function mailer() {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
+  const db = getFirestore();
+  const t = mailer();
+
   try {
     const { name = "", email = "", subject = "", message = "" } = await req.json();
-    if (!email || !message) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    if (!email || !message) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+    const staffTo = process.env.SUPPORT_TO || process.env.ZOHO_SMTP_USER || "";
+    const from = process.env.EMAIL_FROM || `EOV6 <${process.env.ZOHO_SMTP_USER}>`;
 
-    const db = getFirestore();
     const ref = await db.collection("tickets").add({
       name,
       email: email.toLowerCase(),
       subject,
       message,
       status: "open",
-      createdAt: Date.now()
+      createdAt: startedAt
     });
 
-    const to = process.env.SUPPORT_TO || "hello@eov6.com";
-    const t = mailer();
-    await t.sendMail({
-      from: process.env.EMAIL_FROM || `EOV6 <${process.env.ZOHO_SMTP_USER}>`,
-      to,
-      replyTo: email,
-      subject: `[EOV6 Support] ${subject || "(no subject)"} â€” ${email}`,
-      text: `Ticket ${ref.id}\nFrom: ${name} <${email}>\n\n${message}`
-    });
+    const deliveries: Array<{
+      type: "staff" | "ack";
+      to: string;
+      ok: boolean;
+      messageId?: string;
+      response?: string;
+      error?: string;
+    }> = [];
 
-    await t.sendMail({
-      from: process.env.EMAIL_FROM || `EOV6 <${process.env.ZOHO_SMTP_USER}>`,
-      to: email,
-      subject: "Weâ€™ve got your request",
-      text: `Thanks for reaching out â€” your ticket id is ${ref.id}. Weâ€™ll email you back shortly.\n\nâ€” EOV6`
-    });
+    try {
+      const info = await t.sendMail({
+        from,
+        to: staffTo,
+        replyTo: email,
+        subject: `[EOV6 Support] ${subject || "(no subject)"} — ${email}`,
+        text: `Ticket ${ref.id}\nFrom: ${name} <${email}>\n\n${message}`
+      });
+      deliveries.push({
+        type: "staff",
+        to: staffTo,
+        ok: true,
+        messageId: info.messageId,
+        response: String(info.response || "")
+      });
+    } catch (e: any) {
+      deliveries.push({
+        type: "staff",
+        to: staffTo,
+        ok: false,
+        error: String(e?.message || e)
+      });
+    }
 
-    return NextResponse.json({ ok: true, id: ref.id });
+    try {
+      const info = await t.sendMail({
+        from,
+        to: email,
+        subject: "We’ve got your request",
+        text: `Thanks for reaching out — your ticket id is ${ref.id}. We’ll email you back shortly.\n\n— EOV6`
+      });
+      deliveries.push({
+        type: "ack",
+        to: email,
+        ok: true,
+        messageId: info.messageId,
+        response: String(info.response || "")
+      });
+    } catch (e: any) {
+      deliveries.push({
+        type: "ack",
+        to: email,
+        ok: false,
+        error: String(e?.message || e)
+      });
+    }
+
+    const allOk = deliveries.every((d) => d.ok);
+    const someOk = deliveries.some((d) => d.ok);
+    const lastResult = allOk ? "ok" : someOk ? "partial" : "error";
+
+    await ref.set(
+      {
+        smtp: {
+          lastResult,
+          deliveries,
+          updatedAt: Date.now()
+        }
+      },
+      { merge: true }
+    );
+
+    return NextResponse.json({ ok: true, id: ref.id, lastResult, deliveries });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
