@@ -5,19 +5,53 @@ import { NextRequest, NextResponse } from "next/server";
 import { getFirestore } from "@/lib/firebase-admin";
 import nodemailer from "nodemailer";
 
-function mailer() {
-  return nodemailer.createTransport({
-    host: process.env.ZOHO_SMTP_HOST || "smtp.zoho.com.au",
-    port: Number(process.env.ZOHO_SMTP_PORT || 587),
-    secure: false,
-    auth: { user: process.env.ZOHO_SMTP_USER!, pass: process.env.ZOHO_SMTP_PASS! },
-  });
+type SendOpts = { to: string; subject: string; text: string };
+
+async function sendWithFallback({ to, subject, text }: SendOpts) {
+  const hostPrimary = process.env.ZOHO_SMTP_HOST || "smtp.zoho.com";
+  const portEnv = Number(process.env.ZOHO_SMTP_PORT || 587);
+  const user = process.env.ZOHO_SMTP_USER!;
+  const pass = process.env.ZOHO_SMTP_PASS!;
+  const from = process.env.EMAIL_FROM || `EOV6 <${user}>`;
+
+  const hosts = [hostPrimary];
+  if (!hosts.includes("smtp.zoho.com")) hosts.push("smtp.zoho.com");
+
+  const combos: Array<{ host: string; port: number; secure: boolean }> = [];
+  for (const h of hosts) {
+    combos.push({ host: h, port: portEnv, secure: portEnv === 465 });
+    if (portEnv !== 465) combos.push({ host: h, port: 465, secure: true });
+  }
+
+  let lastErr: any = null;
+  for (const cfg of combos) {
+    try {
+      const tx = nodemailer.createTransport({
+        host: cfg.host,
+        port: cfg.port,
+        secure: cfg.secure,
+        auth: { user, pass }
+      });
+      const info = await tx.sendMail({ from, to, subject, text });
+      return {
+        ok: true,
+        to,
+        usedHost: cfg.host,
+        usedPort: cfg.port,
+        secure: cfg.secure,
+        messageId: info.messageId,
+        response: String(info.response || "")
+      };
+    } catch (e: any) {
+      lastErr = e;
+    }
+  }
+  throw new Error(String(lastErr?.message || lastErr));
 }
 
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   const db = getFirestore();
-  const t = mailer();
 
   try {
     const { name = "", email = "", subject = "", message = "" } = await req.json();
@@ -25,16 +59,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
     const staffTo = process.env.SUPPORT_TO || process.env.ZOHO_SMTP_USER || "";
-    const from = process.env.EMAIL_FROM || `EOV6 <${process.env.ZOHO_SMTP_USER}>`;
 
-    // 1) Create ticket
     const ref = await db.collection("tickets").add({
       name,
       email: email.toLowerCase(),
       subject,
       message,
       status: "open",
-      createdAt: startedAt,
+      createdAt: startedAt
     });
 
     const deliveries: Array<{
@@ -46,45 +78,61 @@ export async function POST(req: NextRequest) {
       error?: string;
     }> = [];
 
-    // 2) Notify staff
     try {
-      const info = await t.sendMail({
-        from,
+      const staffRes = await sendWithFallback({
         to: staffTo,
-        replyTo: email,
-        subject: `[EOV6 Support] ${subject || "(no subject)"} — ${email}`,
-        text: `Ticket ${ref.id}\nFrom: ${name} <${email}>\n\n${message}`,
+        subject: `[EOV6 Support] ${subject || "(no subject)"} - ${email}`,
+        text: `Ticket ${ref.id}\nFrom: ${name} <${email}>\n\n${message}`
       });
-      deliveries.push({ type: "staff", to: staffTo, ok: true, messageId: info.messageId, response: String(info.response || "") });
+      deliveries.push({
+        type: "staff",
+        to: staffTo,
+        ok: true,
+        messageId: staffRes.messageId,
+        response: staffRes.response
+      });
     } catch (e: any) {
-      deliveries.push({ type: "staff", to: staffTo, ok: false, error: String(e?.message || e) });
+      deliveries.push({
+        type: "staff",
+        to: staffTo,
+        ok: false,
+        error: String(e?.message || e)
+      });
     }
 
-    // 3) Auto-acknowledge user
     try {
-      const info = await t.sendMail({
-        from,
+      const ackRes = await sendWithFallback({
         to: email,
         subject: "We have your request",
-        text: `Thanks for reaching out - your ticket id is ${ref.id}. We will email you back shortly.\n\n- EOV6`,
+        text: `Thanks for reaching out - your ticket id is ${ref.id}. We will email you back shortly.\n\n- EOV6`
       });
-      deliveries.push({ type: "ack", to: email, ok: true, messageId: info.messageId, response: String(info.response || "") });
+      deliveries.push({
+        type: "ack",
+        to: email,
+        ok: true,
+        messageId: ackRes.messageId,
+        response: ackRes.response
+      });
     } catch (e: any) {
-      deliveries.push({ type: "ack", to: email, ok: false, error: String(e?.message || e) });
+      deliveries.push({
+        type: "ack",
+        to: email,
+        ok: false,
+        error: String(e?.message || e)
+      });
     }
 
-    const allOk = deliveries.every(d => d.ok);
-    const someOk = deliveries.some(d => d.ok);
-    const lastResult = allOk ? "ok" : (someOk ? "partial" : "error");
+    const allOk = deliveries.every((d) => d.ok);
+    const someOk = deliveries.some((d) => d.ok);
+    const lastResult = allOk ? "ok" : someOk ? "partial" : "error";
 
-    // 4) Log SMTP outcome on ticket
     await ref.set(
       {
         smtp: {
           lastResult,
           deliveries,
-          updatedAt: Date.now(),
-        },
+          updatedAt: Date.now()
+        }
       },
       { merge: true }
     );
