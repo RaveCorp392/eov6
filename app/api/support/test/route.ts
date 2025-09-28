@@ -30,21 +30,22 @@ async function parseTo(req: NextRequest) {
   return { fromUrl, fromBody };
 }
 
-export async function GET(req: NextRequest) {
-  const { fromUrl, fromBody } = await parseTo(req);
-  const to = fromUrl || fromBody;
-  if (!to) return NextResponse.json({ error: "no_to", debug: { fromUrl, fromBody } }, { status: 400 });
-
+export async function GET() {
   try {
+    const to = "stephen.mcleish@gmail.com";
     const from = process.env.EMAIL_FROM || `EOV6 <${process.env.ZOHO_SMTP_USER}>`;
     const t = mailer();
-    const info = await t.sendMail({ from, to, subject: "EOV6 SMTP test", text: "SMTP OK" });
+    const info = await t.sendMail({
+      from,
+      to,
+      subject: "EOV6 SMTP test",
+      text: "SMTP OK"
+    });
     return NextResponse.json({ ok: true, to, messageId: info.messageId, response: String(info.response || "") });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
 }
-
 export async function POST(req: NextRequest) {
   const { fromUrl, fromBody } = await parseTo(req);
   const to = fromUrl || fromBody;
@@ -59,3 +60,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
 }
+
