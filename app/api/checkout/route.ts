@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     const params: Stripe.Checkout.SessionCreateParams = {
       mode,
       line_items: items,
-      success_url: `${site}/thanks?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${site}/onboard?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${site}/pricing?checkout=cancel`,
       allow_promotion_codes: true,
       billing_address_collection: "auto",
@@ -106,3 +106,4 @@ export async function POST(req: NextRequest) {
     return new NextResponse(err?.message || "Checkout error", { status: 400 });
   }
 }
+

@@ -17,7 +17,7 @@ type Req = {
 };
 
 function slugify(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(1, 24);
+  return s.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24); // keep first char; cap length only
 }
 
 export async function POST(req: NextRequest) {
@@ -94,4 +94,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
 }
+
 
