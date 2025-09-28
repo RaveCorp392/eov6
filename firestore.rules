@@ -5,6 +5,17 @@ service cloud.firestore {
     // -------- helpers ----------
     function isSignedIn() { return request.auth != null; }
     function isAdmin() { return isSignedIn() && request.auth.token.admin == true; }
+    function myEmail() {
+      return isSignedIn() && request.auth.token.email != null ? lower(request.auth.token.email) : "";
+    }
+    function isStaff() { return myEmail().endsWith("@eov6.com"); }
+
+    // -------- support tickets -------
+    match /tickets/{tid} {
+      allow create: if true;
+      allow read: if isStaff() || (lower(resource.data.email) == myEmail());
+      allow update, delete: if isStaff();
+    }
 
     // -------- contact form -------
     match /contacts/{id} {
@@ -115,3 +126,4 @@ service cloud.firestore {
     }
   }
 }
+

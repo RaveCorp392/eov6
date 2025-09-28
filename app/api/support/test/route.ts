@@ -2,72 +2,45 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import nodemailer from "nodemailer";
+import { sendWithZohoFallback } from "@/lib/mail";
 
-type SendOpts = { to: string; subject: string; text: string };
+function getToFromUrl(req: NextRequest) {
+  return req.nextUrl.searchParams.get("to") || "";
+}
 
-async function sendWithFallback({ to, subject, text }: SendOpts) {
-  const hostPrimary = process.env.ZOHO_SMTP_HOST || "smtp.zoho.com";
-  const portEnv = Number(process.env.ZOHO_SMTP_PORT || 587);
-  const user = process.env.ZOHO_SMTP_USER!;
-  const pass = process.env.ZOHO_SMTP_PASS!;
-  const from = process.env.EMAIL_FROM || `EOV6 <${user}>`;
-
-  const hosts = [hostPrimary];
-  if (!hosts.includes("smtp.zoho.com")) hosts.push("smtp.zoho.com");
-
-  const combos: Array<{ host: string; port: number; secure: boolean }> = [];
-  for (const h of hosts) {
-    combos.push({ host: h, port: portEnv, secure: portEnv === 465 });
-    if (portEnv !== 465) combos.push({ host: h, port: 465, secure: true });
-  }
-
-  let lastErr: any = null;
-  for (const cfg of combos) {
-    try {
-      const tx = nodemailer.createTransport({
-        host: cfg.host,
-        port: cfg.port,
-        secure: cfg.secure,
-        auth: { user, pass }
-      });
-      const info = await tx.sendMail({ from, to, subject, text });
-      return {
-        ok: true,
-        to,
-        usedHost: cfg.host,
-        usedPort: cfg.port,
-        secure: cfg.secure,
-        messageId: info.messageId,
-        response: String(info.response || "")
-      };
-    } catch (e: any) {
-      lastErr = e;
+async function getToFromBody(req: NextRequest) {
+  try {
+    const ct = (req.headers.get("content-type") || "").toLowerCase();
+    if (ct.includes("application/json")) {
+      const j = await req.json();
+      return (j?.to as string) || "";
     }
-  }
-  throw new Error(String(lastErr?.message || lastErr));
+    if (ct.includes("application/x-www-form-urlencoded")) {
+      const txt = await req.text();
+      const params = new URLSearchParams(txt);
+      return params.get("to") || "";
+    }
+  } catch {}
+  return "";
 }
 
 export async function GET(req: NextRequest) {
-  const to = req.nextUrl.searchParams.get("to") || "stephen.mcleish@gmail.com";
+  const to = getToFromUrl(req) || "hello@eov6.com";
   try {
-    return NextResponse.json(await sendWithFallback({ to, subject: "EOV6 SMTP test", text: "SMTP OK" }));
+    const res = await sendWithZohoFallback({ to, subject: "EOV6 SMTP test", text: "SMTP OK" });
+    return NextResponse.json({ ok: true, to, ...res });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
 }
 
 export async function POST(req: NextRequest) {
-  let to = req.nextUrl.searchParams.get("to") || "";
-  if (!to) {
-    try {
-      const j = await req.json();
-      to = j?.to || "";
-    } catch {}
-  }
+  let to = getToFromUrl(req);
+  if (!to) to = await getToFromBody(req);
   if (!to) return NextResponse.json({ error: "no_to" }, { status: 400 });
   try {
-    return NextResponse.json(await sendWithFallback({ to, subject: "EOV6 SMTP test", text: "SMTP OK" }));
+    const res = await sendWithZohoFallback({ to, subject: "EOV6 SMTP test", text: "SMTP OK" });
+    return NextResponse.json({ ok: true, to, ...res });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
