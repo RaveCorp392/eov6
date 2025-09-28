@@ -25,6 +25,7 @@ async function bodyTo(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  // one-deploy debug (remove after green)
   if (req.nextUrl.searchParams.get("debug") === "1") {
     return NextResponse.json({
       ok: true,
@@ -37,10 +38,15 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const to = urlTo(req) || process.env.SUPPORT_TO || "hello@eov6.com";
+  const to = urlTo(req) || (process.env.SUPPORT_TO || "hello@eov6.com");
   try {
-    const res = await sendWithZohoFallback({ to, subject: "EOV6 SMTP test", text: "SMTP OK" });
-    return NextResponse.json({ ok: true, to, ...res });
+    const res = await sendWithZohoFallback({
+      to,
+      subject: "EOV6 SMTP test",
+      text: "SMTP OK"
+    });
+    // res already contains ok:true; do not set 'ok' again
+    return NextResponse.json({ to, ...res });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
@@ -50,11 +56,16 @@ export async function POST(req: NextRequest) {
   let to = urlTo(req);
   if (!to) to = await bodyTo(req);
   if (!to) return NextResponse.json({ error: "no_to" }, { status: 400 });
+
   try {
-    const res = await sendWithZohoFallback({ to, subject: "EOV6 SMTP test", text: "SMTP OK" });
-    return NextResponse.json({ ok: true, to, ...res });
+    const res = await sendWithZohoFallback({
+      to,
+      subject: "EOV6 SMTP test",
+      text: "SMTP OK"
+    });
+    // res already contains ok:true; do not set 'ok' again
+    return NextResponse.json({ to, ...res });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
 }
-
