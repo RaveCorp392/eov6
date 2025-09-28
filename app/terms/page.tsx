@@ -1,4 +1,4 @@
-export const metadata = { title: "Terms ó EOV6" };
+export const metadata = { title: "Terms ‚Äî EOV6" };
 
 export default function TermsPage() {
   return (
@@ -20,10 +20,10 @@ export default function TermsPage() {
         </div>
         <div>
           <h2 className="text-lg font-semibold">Liability</h2>
-          <p>Service is provided ìas isî. To the fullest extent permitted by law, we disclaim indirect damages.</p>
+          <p>Service is provided ‚Äúas is‚Äù. To the fullest extent permitted by law, we disclaim indirect damages.</p>
         </div>
         <div className="text-xs text-zinc-500">
-          Placeholder copy ó replace with your legal terms before launch.
+          Placeholder copy ‚Äî replace with your legal terms before launch.
         </div>
       </section>
     </main>
