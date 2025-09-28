@@ -32,6 +32,21 @@ export async function POST(req: NextRequest) {
     });
     await batch.commit();
 
+    const invitedDomains = new Set<string>();
+    for (const raw of emails || []) {
+      const le = (raw || "").toLowerCase().trim();
+      const at = le.indexOf("@");
+      if (at > -1 && at < le.length - 1) invitedDomains.add(le.slice(at + 1));
+    }
+
+    if (invitedDomains.size) {
+      const orgSnap = await orgRef.get();
+      const existing: string[] = (orgSnap.exists && (orgSnap.data() as any)?.domains) || [];
+      const merged = new Set<string>(Array.isArray(existing) ? existing.map((d) => String(d).toLowerCase()) : []);
+      for (const d of invitedDomains) merged.add(d);
+      await orgRef.set({ domains: Array.from(merged) }, { merge: true });
+    }
+
     return NextResponse.json({ ok: true, count: (emails || []).length });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });

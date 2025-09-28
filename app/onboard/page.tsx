@@ -138,7 +138,7 @@ export default function OnboardPage() {
           const j = await r.json().catch(() => ({}));
           throw new Error(j?.error || r.statusText);
         }
-        window.location.href = "/portal/organizations";
+        window.location.href = "/thanks/setup";
       }
     } catch (e: any) {
       setErr(String(e?.message || e));
@@ -301,6 +301,7 @@ export default function OnboardPage() {
     </main>
   );
 }
+
 
 
 
