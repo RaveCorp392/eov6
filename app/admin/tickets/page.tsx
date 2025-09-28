@@ -67,7 +67,7 @@ export default function AdminTicketsPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
-      <h1 className="text-2xl font-bold mb-4">Admin — Tickets</h1>
+      <h1 className="text-2xl font-bold mb-4">Admin - Tickets</h1>
       <div className="mb-4 text-sm text-zinc-600">
         {loading ? "Loading..." : `${tickets.length} open ticket(s)`}
       </div>

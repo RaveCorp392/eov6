@@ -6,16 +6,18 @@ export async function sendWithZohoFallback({ to, subject, text, html }: SendInpu
   const user = process.env.ZOHO_SMTP_USER!;
   const pass = process.env.ZOHO_SMTP_PASS!;
   const from = process.env.EMAIL_FROM || `EOV6 <${user}>`;
-  const hostPrimary = process.env.ZOHO_SMTP_HOST || "smtp.zoho.com";
-  const portEnv = Number(process.env.ZOHO_SMTP_PORT || 587);
+
+  const hostPrimary = process.env.ZOHO_SMTP_HOST || "smtp.zoho.com.au";
+  const portConfig = Number(process.env.ZOHO_SMTP_PORT || 465);
 
   const hosts: string[] = [hostPrimary];
   if (!hosts.includes("smtp.zoho.com")) hosts.push("smtp.zoho.com");
 
   const combos: Array<{ host: string; port: number; secure: boolean }> = [];
   for (const host of hosts) {
-    combos.push({ host, port: portEnv, secure: portEnv === 465 });
-    if (portEnv !== 465) combos.push({ host, port: 465, secure: true });
+    combos.push({ host, port: portConfig, secure: portConfig === 465 });
+    if (portConfig !== 465) combos.push({ host, port: 465, secure: true });
+    if (portConfig !== 587) combos.push({ host, port: 587, secure: false });
   }
 
   let lastError: unknown = null;
