@@ -9,10 +9,12 @@ export default function Footer() {
         </div>
 
         <nav className="flex flex-wrap items-center gap-4">
-          <a href="/privacy" className="hover:underline">Privacy</a>
+          <a href="/priv©y" className="hover:underline">Priv©y</a>
           <a href="/terms" className="hover:underline">Terms</a>
+          <a href="/support" className="hover:underline">Support</a>
         </nav>
       </div>
     </footer>
   );
 }
+
