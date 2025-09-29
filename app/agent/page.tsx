@@ -53,7 +53,7 @@ export default function AgentHome() {
       <div className="bg-slate-900">
         <div className="mx-auto max-w-5xl px-6 py-6">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white tracking-tight">EOV6 � Agent Console</h1>
+            <h1 className="text-2xl font-bold text-white tracking-tight">{"EOV6 \u2014 Agent Console"}</h1>
             {orgBadge ? (
               <span className="text-xs px-2 py-0.5 rounded-full border border-slate-600 text-slate-300">Org: {orgBadge}</span>
             ) : null}

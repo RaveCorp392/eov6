@@ -295,7 +295,7 @@ export default function OnboardPage() {
           className="rounded-xl bg-blue-600 text-white px-4 py-2"
           onClick={next}
         >
-          {busy ? "Working�" : step < 3 ? "Next" : "Finish"}
+          {busy ? "Working\u2026" : step < 3 ? "Next" : "Finish"}
         </button>
       </div>
     </main>

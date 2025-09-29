@@ -2,13 +2,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   watchDetails,
-  saveDetails,
   watchSession,
   sendMessage,
   setTranslateConfig,
   LANGUAGES,
   normLang2,
+  db,
 } from "@/lib/firebase";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import AckMenu from "@/components/ack/AckMenu";
 
 export default function AgentDetailsPanel({ sessionId, membershipReady = false }: { sessionId: string; membershipReady?: boolean }) {
@@ -21,10 +22,18 @@ export default function AgentDetailsPanel({ sessionId, membershipReady = false }
     () =>
       watchDetails(sessionId, (d) => {
         setCaller(d || {});
-        setNotes(d?.notes || "");
       }),
     [sessionId]
   );
+
+  useEffect(() => {
+    const notesRef = doc(db, "sessions", sessionId, "details", "agent");
+    const unsub = onSnapshot(notesRef, (snap) => {
+      const data = snap.data();
+      setNotes(typeof data?.notes === "string" ? data.notes : "");
+    });
+    return () => unsub();
+  }, [sessionId]);
 
   // hydrate translate config + preview count
   useEffect(() => watchSession(sessionId, (s) => setSessionObj(s)), [sessionId]);
@@ -50,11 +59,16 @@ export default function AgentDetailsPanel({ sessionId, membershipReady = false }
   const shouldBill = !(orgUnlimited || userUnlimited); // bill only when nobody has unlimited
 
   const debouncedSave = useMemo(() => {
-    let t: any;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const notesRef = doc(db, "sessions", sessionId, "details", "agent");
     return (value: string) => {
-      clearTimeout(t);
+      if (t) clearTimeout(t);
       t = setTimeout(() => {
-        saveDetails(sessionId, { notes: value });
+        void setDoc(
+          notesRef,
+          { notes: value, updatedAt: Date.now() },
+          { merge: true }
+        );
       }, 500);
     };
   }, [sessionId]);

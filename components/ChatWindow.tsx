@@ -37,9 +37,16 @@ export default function ChatWindow({
 }: Props) {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [session, setSession] = useState<any>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  }, []);
 
   useEffect(() => {
     const off = watchMessages(code, (rows) => {
@@ -60,10 +67,15 @@ export default function ChatWindow({
     return () => off();
   }, [code]);
   useEffect(() => watchSession(code, setSession), [code]);
-  useEffect(
-    () => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }),
-    [msgs.length]
-  );
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const threshold = 120;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    if (atBottom) {
+      scrollToBottom(true);
+    }
+  }, [msgs.length, scrollToBottom]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -71,12 +83,16 @@ export default function ChatWindow({
     // live translate if enabled
     const tx = session?.translate;
     const live = tx?.enabled === true;
+    const afterSend = () => {
+      setInput("");
+      scrollToBottom(true);
+    };
     if (live) {
       const { src, tgt } = targetLangFor(role, tx);
       // If same-language, just send original and skip API
       if (src === tgt) {
         await sendMessage(code, role, text);
-        setInput("");
+        afterSend();
         return;
       }
       try {
@@ -87,15 +103,15 @@ export default function ChatWindow({
         });
         const j = await res.json();
         if (!res.ok) throw new Error(j?.error || "translate failed");
-        setInput("");
+        afterSend();
         return;
       } catch (e) {
         alert("Translate/send failed. Sent original instead.");
       }
     }
     await sendMessage(code, role, text);
-    setInput("");
-  }, [code, input, role, session]);
+    afterSend();
+  }, [code, input, role, session, scrollToBottom]);
 
   function displayTextFor(msg: ChatMsg) {
     if (!msg?.meta?.translated) return msg.text ?? "";
@@ -111,7 +127,7 @@ export default function ChatWindow({
           href={msg.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="underline break-words"
+          className="chat-file inline-flex px-3 py-1.5 rounded-2xl break-words"
         >
           {label}
         </a>
@@ -123,21 +139,17 @@ export default function ChatWindow({
 
   function bubbleFor(msg: ChatMsg) {
     const mine = msg.role === role;
+    const isFile = msg.type === "file" && !!msg.url;
+    const align = mine ? "justify-end" : "justify-start";
+    let innerClass = "max-w-[70%]";
+    if (!isFile) {
+      innerClass += mine
+        ? " bg-blue-600 text-white rounded-2xl px-3 py-1.5"
+        : " chat-text text-slate-900 rounded-2xl px-3 py-1.5";
+    }
     return (
-      <div
-        key={msg.id}
-        className={
-          "flex " + (mine ? "justify-end" : "justify-start") + " my-1"
-        }
-      >
-        <div
-          className={
-            (mine ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-900") +
-            " rounded-2xl px-3 py-1.5 max-w-[70%]"
-          }
-        >
-          {renderContent(msg)}
-        </div>
+      <div key={msg.id} className={`flex ${align} my-1`}>
+        <div className={innerClass}>{renderContent(msg)}</div>
       </div>
     );
   }
@@ -151,9 +163,11 @@ export default function ChatWindow({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="h-[55vh] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/80 dark:bg-slate-900/60">
+      <div
+        ref={listRef}
+        className="h-[55vh] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-white/80 dark:bg-slate-900/60"
+      >
         {msgs.map((m, i) => renderMessage(m, i))}
-        <div ref={endRef} />
       </div>
 
       <div className="flex gap-2">
@@ -202,17 +216,24 @@ export default function ChatWindow({
                   return;
                 }
                 try {
-                  const url = await uploadFileToSession(code, file);
+                  setUploadProgress(0);
+                  const url = await uploadFileToSession(code, file, (pct) =>
+                    setUploadProgress(Math.round(pct))
+                  );
                   await sendMessage(code, {
                     sender: role,
                     type: "file",
                     url,
                     text: file.name,
                   });
+                  scrollToBottom(true);
                 } catch (e) {
                   alert(
                     "Upload failed. If you're running locally, please retry or disable any ad-blockers. (It should work fine on Vercel.)"
                   );
+                } finally {
+                  setUploadProgress(null);
+                  e.currentTarget.value = "";
                 }
               }}
             />
@@ -223,6 +244,9 @@ export default function ChatWindow({
             >
               Upload
             </button>
+            {uploadProgress !== null && (
+              <span className="upload-progress">{uploadProgress}%</span>
+            )}
           </>
         )}
       </div>

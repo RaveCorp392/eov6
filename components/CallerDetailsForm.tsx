@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { watchDetails, saveDetails } from "@/lib/firebase";
 
-type Details = { name?: string; email?: string; phone?: string; notes?: string };
+type Details = { name?: string; email?: string; phone?: string };
 
 export default function CallerDetailsForm({ code }: { code: string }) {
   const [form, setForm] = useState<Details>({});
@@ -18,7 +18,6 @@ export default function CallerDetailsForm({ code }: { code: string }) {
         if (d?.name !== undefined && d?.name !== prev.name) next.name = d.name;
         if (d?.email !== undefined && d?.email !== prev.email) next.email = d.email;
         if (d?.phone !== undefined && d?.phone !== prev.phone) next.phone = d.phone;
-        if (d?.notes !== undefined && d?.notes !== prev.notes) next.notes = d.notes;
         return next;
       });
     });
@@ -34,16 +33,15 @@ export default function CallerDetailsForm({ code }: { code: string }) {
         name: form.name?.trim() || "",
         email: form.email?.trim() || "",
         phone: form.phone?.trim() || "",
-        notes: form.notes?.trim() || "",
       });
     }, 600);
     return () => {
       if (debTimer.current) clearTimeout(debTimer.current);
     };
-  }, [code, form.name, form.email, form.phone, form.notes]);
+  }, [code, form.name, form.email, form.phone]);
 
   const setField =
-    (key: keyof Details) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    (key: keyof Details) => (e: React.ChangeEvent<HTMLInputElement>) => {
       const next = { ...form, [key]: e.target.value };
       setForm(next);
     };
@@ -55,7 +53,6 @@ export default function CallerDetailsForm({ code }: { code: string }) {
         name: form.name?.trim() || "",
         email: form.email?.trim() || "",
         phone: form.phone?.trim() || "",
-        notes: form.notes?.trim() || "",
       });
     }, 150);
   };
@@ -117,22 +114,6 @@ export default function CallerDetailsForm({ code }: { code: string }) {
             className="rounded-lg border px-3 py-2 bg-white/90 dark:bg-slate-900/70"
             value={form.phone || ""}
             onChange={setField("phone")}
-            onBlur={blurSaveOne}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="caller-notes" className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Notes
-          </label>
-          <textarea
-            id="caller-notes"
-            name="notes"
-            autoComplete="on"
-            rows={4}
-            placeholder="Notes for the agent"
-            className="rounded-lg border px-3 py-2 bg-white/90 dark:bg-slate-900/70"
-            value={form.notes || ""}
-            onChange={setField("notes")}
             onBlur={blurSaveOne}
           />
         </div>
