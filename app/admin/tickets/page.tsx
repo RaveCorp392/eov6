@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import "@/lib/firebase";
 import { getAuth } from "firebase/auth";
-import { getFirestore, collection, getDocs, doc, updateDoc, query, where, orderBy, limit } from "firebase/firestore";
-import { isInternalAdminClient } from "@/lib/is-internal";
 import AuthBar from "@/components/AuthBar";
+import { isInternalAdminClient } from "@/lib/is-internal";
 
 type Ticket = {
   id: string;
@@ -27,74 +26,86 @@ export default function AdminTicketsPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const auth = getAuth();
-  const db = getFirestore();
+
+  async function load() {
+    setLoading(true);
+    setErr(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Missing auth token.");
+
+      const res = await fetch("/api/admin/tickets/list", {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || res.statusText || "Failed to load tickets.");
+      setTickets(json.tickets || []);
+    } catch (e: any) {
+      setErr(e?.message || "Failed to load tickets.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
       const staff = await isInternalAdminClient();
       setIsStaff(staff);
-      if (!staff) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const q1 = query(
-          collection(db, "tickets"),
-          where("status", "==", "open"),
-          orderBy("createdAt", "desc"),
-          limit(200)
-        );
-        const snap1 = await getDocs(q1);
-        const rows: Ticket[] = [];
-        snap1.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
-        setTickets(rows);
-      } catch (e: any) {
-        const code = e?.code || "";
-        const msg = e?.message || "Unknown error";
-        if (code === "failed-precondition") {
-          try {
-            const q2 = query(
-              collection(db, "tickets"),
-              where("status", "==", "open"),
-              limit(200)
-            );
-            const snap2 = await getDocs(q2);
-            const rows2: Ticket[] = [];
-            snap2.forEach((d) => rows2.push({ id: d.id, ...(d.data() as any) }));
-            setTickets(rows2);
-            setErr(
-              "Using fallback (unsorted). Add composite index: tickets(status Asc, createdAt Desc) in Firestore Indexes."
-            );
-          } catch (e2: any) {
-            setErr(`Firestore error: ${e2?.code || ""} ${e2?.message || ""}`);
-          }
-        } else if (code === "permission-denied") {
-          setErr("Missing or insufficient permissions.");
-        } else {
-          setErr(`Firestore error: ${code} ${msg}`);
-        }
-      } finally {
+      if (staff) {
+        await load();
+      } else {
         setLoading(false);
       }
     })();
-  }, [db]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  async function assignMe(t: Ticket) {
+  async function assignMe(id: string) {
     try {
-      const me = auth.currentUser?.email || "staff@eov6.com";
-      await updateDoc(doc(db, "tickets", t.id), { assignedTo: me, updatedAt: Date.now() });
-      setTickets((prev) => prev.map((x) => (x.id === t.id ? { ...x, assignedTo: me } : x)));
-    } catch {
-      setErr("Failed to assign ticket (permissions).");
+      setErr(null);
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Missing auth token.");
+
+      const res = await fetch("/api/admin/tickets/assign", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || res.statusText || "Assign failed.");
+      }
+      const me = auth.currentUser?.email || null;
+      setTickets((prev) => prev.map((t) => (t.id === id ? { ...t, assignedTo: me } : t)));
+    } catch (e: any) {
+      setErr(e?.message || "Assign failed.");
     }
   }
 
-  async function closeTicket(t: Ticket) {
+  async function closeTicket(id: string) {
     try {
-      await updateDoc(doc(db, "tickets", t.id), { status: "closed", updatedAt: Date.now() });
-      setTickets((prev) => prev.filter((x) => x.id !== t.id));
-    } catch {
-      setErr("Failed to close ticket (permissions).");
+      setErr(null);
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Missing auth token.");
+
+      const res = await fetch("/api/admin/tickets/close", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || res.statusText || "Close failed.");
+      }
+      setTickets((prev) => prev.filter((t) => t.id !== id));
+    } catch (e: any) {
+      setErr(e?.message || "Close failed.");
     }
   }
 
@@ -111,9 +122,10 @@ export default function AdminTicketsPage() {
             Signed in as: {typeof window !== "undefined" ? ((window as any).firebase?.auth?.currentUser?.email || "(see AuthBar)") : "(n/a)"}
           </div>
           <div>Pre-check isStaff: {String(isStaff)}</div>
-          <div>Tip: Server uses Firestore Rules isStaff() — ensure the exact lowercase email is allowlisted or @eov6.com.</div>
+          <div>Tip: Server honors ADMIN_ALLOWLIST and @eov6.com via API token.</div>
         </div>
       )}
+
       {isStaff === false && (
         <>
           <p className="text-zinc-700">
@@ -122,7 +134,7 @@ export default function AdminTicketsPage() {
           <div className="mt-2 text-xs text-zinc-500">
             Staff (client pre-check): NEXT_PUBLIC_INTERNAL_DOMAIN / NEXT_PUBLIC_INTERNAL_ADMINS
             <br />
-            Staff (authoritative): Firestore Rules isStaff() allowlist/domain
+            Staff (authoritative, server): ADMIN_ALLOWLIST and @eov6.com via API
           </div>
         </>
       )}
@@ -154,10 +166,10 @@ export default function AdminTicketsPage() {
                       </td>
                       <td className="px-3 py-2">{t.assignedTo || "-"}</td>
                       <td className="px-3 py-2 flex gap-2">
-                        <button className="rounded border px-2 py-1" onClick={() => assignMe(t)}>
+                        <button className="rounded border px-2 py-1" onClick={() => assignMe(t.id)}>
                           Assign to me
                         </button>
-                        <button className="rounded border px-2 py-1" onClick={() => closeTicket(t)}>
+                        <button className="rounded border px-2 py-1" onClick={() => closeTicket(t.id)}>
                           Close
                         </button>
                       </td>
