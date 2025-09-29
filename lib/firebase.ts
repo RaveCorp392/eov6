@@ -28,7 +28,7 @@ import {
   browserLocalPersistence,
   type User,
 } from "firebase/auth";
-import { ref, uploadBytes, getDownloadURL, getStorage } from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL, getStorage } from "firebase/storage";
 
 /* =========
    Config
@@ -186,10 +186,36 @@ export async function clearAck(code: string) {
   await _updateDoc(doc(db, "sessions", code), { ackRequest: _deleteField() });
 }
 
-export async function uploadFileToSession(code: string, file: File): Promise<string> {
-  const r = ref(storage, `sessions/${code}/${Date.now()}_${file.name}`);
-  await uploadBytes(r, file);
-  return await getDownloadURL(r);
+export async function uploadFileToSession(
+  code: string,
+  file: File | Blob,
+  onProgress?: (pct: number) => void
+): Promise<string> {
+  const originalName = (file as File).name ? (file as File).name.replace(/\s+/g, "_") : `blob_${Date.now()}`;
+  const path = `uploads/${code}/${Date.now()}_${originalName}`;
+  const storageRef = ref(storage, path);
+  const task = uploadBytesResumable(storageRef, file);
+
+  return await new Promise<string>((resolve, reject) => {
+    task.on(
+      "state_changed",
+      (snapshot) => {
+        if (onProgress && snapshot.totalBytes > 0) {
+          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          onProgress(pct);
+        }
+      },
+      (error) => reject(error),
+      async () => {
+        try {
+          const url = await getDownloadURL(task.snapshot.ref);
+          resolve(url);
+        } catch (err) {
+          reject(err);
+        }
+      }
+    );
+  });
 }
 
 // --- Translate session config & preview count ---
@@ -212,6 +238,4 @@ export async function setTranslateConfig(
 export async function bumpTranslatePreviewCount(code: string) {
   await _updateDoc(doc(db, "sessions", code), { translatePreviewCount: _increment(1) });
 }
-
-
 
