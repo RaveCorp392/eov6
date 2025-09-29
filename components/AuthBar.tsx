@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import "@/lib/firebase";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
 
 export default function AuthBar() {
   const [email, setEmail] = useState<string | null>(null);
@@ -14,7 +14,7 @@ export default function AuthBar() {
   }, [auth]);
 
   async function doSignIn() {
-    await signInWithPopup(auth, new GoogleAuthProvider());
+    await signInWithRedirect(auth, new GoogleAuthProvider());
   }
 
   async function doSignOut() {

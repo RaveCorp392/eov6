@@ -10,7 +10,13 @@ const openSans = Open_Sans({ subsets: ["latin"], variable: "--font-open-sans", d
 export const metadata: Metadata = {
   title: "EOV6",
   description: "Clarity at every call",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icon.png", sizes: "512x512", type: "image/png" }
+    ],
+    shortcut: ["/favicon.ico"],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
