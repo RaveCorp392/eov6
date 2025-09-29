@@ -5,6 +5,7 @@ import "@/lib/firebase";
 import { getAuth } from "firebase/auth";
 import { getFirestore, collection, getDocs, doc, updateDoc, query, where, orderBy, limit } from "firebase/firestore";
 import { isInternalAdminClient } from "@/lib/is-internal";
+import AuthBar from "@/components/AuthBar";
 
 type Ticket = {
   id: string;
@@ -74,55 +75,61 @@ export default function AdminTicketsPage() {
     }
   }
 
-  if (isStaff === false) {
-    return (
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        <h1 className="text-2xl font-bold mb-4">Admin - Tickets</h1>
-        <p className="text-zinc-700">This view is for EOV6 staff. Sign in with an EOV6 email or a temporarily allowed address.</p>
-      </main>
-    );
-  }
-
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <h1 className="text-2xl font-bold mb-4">Admin - Tickets</h1>
-      {loading && <div className="mb-4 text-sm text-zinc-600">Loading...</div>}
-      {err && <div className="mb-4 rounded bg-rose-100 text-rose-900 p-3">{err}</div>}
-      {!loading && !tickets.length && !err && <div className="mb-4 text-sm text-zinc-600">No open tickets</div>}
-      {!loading && !!tickets.length && (
-        <div className="rounded-2xl border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50">
-              <tr>
-                <th className="text-left px-3 py-2">Code</th>
-                <th className="text-left px-3 py-2">Subject</th>
-                <th className="text-left px-3 py-2">From</th>
-                <th className="text-left px-3 py-2">Assigned</th>
-                <th className="text-left px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map((t) => (
-                <tr key={t.id} className="border-t">
-                  <td className="px-3 py-2 font-mono">{t.code}</td>
-                  <td className="px-3 py-2">{t.subject || "(no subject)"}</td>
-                  <td className="px-3 py-2">
-                    {t.name} <span className="text-zinc-500">&lt;{t.email}&gt;</span>
-                  </td>
-                  <td className="px-3 py-2">{t.assignedTo || "-"}</td>
-                  <td className="px-3 py-2 flex gap-2">
-                    <button className="rounded border px-2 py-1" onClick={() => assignMe(t)}>
-                      Assign to me
-                    </button>
-                    <button className="rounded border px-2 py-1" onClick={() => closeTicket(t)}>
-                      Close
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <AuthBar />
+      {isStaff === false ? (
+        <>
+          <p className="text-zinc-700">
+            This view is for EOV6 staff. Sign in with an EOV6 email or a temporarily allowed address.
+          </p>
+          <div className="mt-2 text-xs text-zinc-500">
+            Staff (client pre-check): NEXT_PUBLIC_INTERNAL_DOMAIN / NEXT_PUBLIC_INTERNAL_ADMINS<br />
+            Staff (authoritative): Firestore Rules isStaff() allowlist/domain
+          </div>
+        </>
+      ) : (
+        <>
+          {loading && <div className="mb-4 text-sm text-zinc-600">Loading...</div>}
+          {err && <div className="mb-4 rounded bg-rose-100 text-rose-900 p-3">{err}</div>}
+          {!loading && !tickets.length && !err && <div className="mb-4 text-sm text-zinc-600">No open tickets</div>}
+          {!loading && !!tickets.length && (
+            <div className="rounded-2xl border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-50">
+                  <tr>
+                    <th className="text-left px-3 py-2">Code</th>
+                    <th className="text-left px-3 py-2">Subject</th>
+                    <th className="text-left px-3 py-2">From</th>
+                    <th className="text-left px-3 py-2">Assigned</th>
+                    <th className="text-left px-3 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tickets.map((t) => (
+                    <tr key={t.id} className="border-t">
+                      <td className="px-3 py-2 font-mono">{t.code}</td>
+                      <td className="px-3 py-2">{t.subject || "(no subject)"}</td>
+                      <td className="px-3 py-2">
+                        {t.name} <span className="text-zinc-500">&lt;{t.email}&gt;</span>
+                      </td>
+                      <td className="px-3 py-2">{t.assignedTo || "-"}</td>
+                      <td className="px-3 py-2 flex gap-2">
+                        <button className="rounded border px-2 py-1" onClick={() => assignMe(t)}>
+                          Assign to me
+                        </button>
+                        <button className="rounded border px-2 py-1" onClick={() => closeTicket(t)}>
+                          Close
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </main>
   );
