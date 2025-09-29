@@ -60,9 +60,15 @@ export default function PricingPage() {
 
   const enterpriseTotal = useMemo(() => {
     const s = Math.max(0, Math.min(seats || 0, 100));
-    const perSeat = 500 + (enterpriseTranslate ? PRICES.translateEnterprise.monthly : 0);
-    return s * perSeat;
+    const basePerSeat = 300; // $3.00 in cents
+    const translatePerSeat = enterpriseTranslate ? PRICES.translateEnterprise.monthly : 0; // $0.50 in cents
+    return s * (basePerSeat + translatePerSeat);
   }, [seats, enterpriseTranslate]);
+
+  const enterpriseBasePerSeat = 3.0;
+  const enterpriseTranslatePerSeat = 0.5;
+  const enterprisePerSeat = enterpriseBasePerSeat + (enterpriseTranslate ? enterpriseTranslatePerSeat : 0);
+  const enterpriseSeatsClamped = Math.max(0, Math.min(seats || 0, 100));
 
   async function postCheckout(payload: CheckoutPayload) {
     const r = await fetch("/api/checkout", {
@@ -155,12 +161,13 @@ export default function PricingPage() {
             <span>Include Translate (+{formatAUD(PRICES.translateEnterprise.monthly)} / seat)</span>
           </label>
 
-          <p className="text-sm text-zinc-600 my-2">
-            Per seat: {formatAUD(500)}{enterpriseTranslate ? ` + ${formatAUD(PRICES.translateEnterprise.monthly)}` : ""}
+          <p className="text-xs text-zinc-600">
+            Per seat: ${enterpriseBasePerSeat.toFixed(2)}
+            {enterpriseTranslate ? ` + $${enterpriseTranslatePerSeat.toFixed(2)}` : ""}
           </p>
 
-          <div className="text-lg mb-4">
-            Total ({Math.min(Math.max(seats, 0), 100)} seats): <strong>{formatAUD(enterpriseTotal)}</strong> / mo
+          <div className="mt-1 font-medium">
+            Total ({enterpriseSeatsClamped} {enterpriseSeatsClamped === 1 ? "seat" : "seats"}): {formatAUD(enterpriseTotal)} / mo
           </div>
 
           {over ? (

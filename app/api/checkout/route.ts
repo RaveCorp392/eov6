@@ -23,6 +23,38 @@ export async function POST(req: NextRequest) {
       b.cycle === "yearly" ? "yearly" : b.cycle === "weekly" ? "weekly" : "monthly";
     const translate = !!b.translate;
     const cycle: BillingCycle = plan === "enterprise" ? "monthly" : requested;
+    const site = getSiteUrl();
+
+    if (plan === "enterprise") {
+      const seats = Math.max(6, Math.min(Number(b.seats || 0), 100));
+      const baseId = process.env.STRIPE_PRICE_ENTERPRISE_BASE_M;
+      const translateId = process.env.STRIPE_PRICE_TRANSLATE_ENTERPRISE_M;
+
+      if (!baseId) throw new Error("Missing STRIPE_PRICE_ENTERPRISE_BASE_M");
+      if (translate && !translateId) throw new Error("Missing STRIPE_PRICE_TRANSLATE_ENTERPRISE_M");
+
+      const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+        { price: baseId, quantity: seats },
+      ];
+      if (translate) {
+        line_items.push({ price: translateId!, quantity: seats });
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        success_url: `${site}/thanks?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${site}/pricing?checkout=cancel`,
+        line_items,
+        metadata: {
+          plan: "enterprise",
+          cycle: "monthly",
+          seats: String(seats),
+          translate: String(translate),
+        },
+      });
+
+      return NextResponse.json({ url: session.url! });
+    }
 
     const items: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
     let mode: "subscription" | "payment" = "subscription";
@@ -66,20 +98,6 @@ export async function POST(req: NextRequest) {
         });
       }
       metaSeats = 5;
-    } else if (plan === "enterprise") {
-      const seats = Math.max(6, Math.min(Number(b.seats || 0), 100));
-      const base = reqd(
-        process.env.STRIPE_PRICE_ENTERPRISE_BASE_M || process.env.STRIPE_PRICE_SOLO_M,
-        "ENTERPRISE_BASE_M|SOLO_M"
-      );
-      items.push({ price: base, quantity: seats });
-      if (translate) {
-        items.push({
-          price: reqd(process.env.STRIPE_PRICE_TRANSLATE_ENTERPRISE_M, "TRANSLATE_ENTERPRISE_M"),
-          quantity: seats,
-        });
-      }
-      metaSeats = seats;
     } else if (plan === "weekpass") {
       items.push({ price: reqd(process.env.STRIPE_PRICE_WEEKPASS, "WEEKPASS"), quantity: 1 });
       mode = "payment";
@@ -88,7 +106,6 @@ export async function POST(req: NextRequest) {
       throw new Error("Invalid plan");
     }
 
-    const site = getSiteUrl();
     const params: Stripe.Checkout.SessionCreateParams = {
       mode,
       line_items: items,
