@@ -10,11 +10,11 @@ function splitCSV(v?: string | null) {
 export async function isInternalAdminClient(): Promise<boolean> {
   try {
     const auth = getAuth();
-    await (auth as any).authStateReady?.();
+    await auth.authStateReady?.();
     const email = auth.currentUser?.email?.toLowerCase() || "";
 
     const allow = splitCSV(process.env.NEXT_PUBLIC_INTERNAL_ADMINS);
-    const domain = (process.env.NEXT_PUBLIC_INTERNAL_DOMAIN || "").toLowerCase();
+    const domain = (process.env.NEXT_PUBLIC_INTERNAL_DOMAIN || "eov6.com").toLowerCase();
 
     if (!email) return false;
     if (allow.includes(email)) return true;
