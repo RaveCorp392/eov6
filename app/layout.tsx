@@ -22,19 +22,22 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.className}>
+      <head>
+        {/* Force UTF-8 everywhere to avoid mojibake */}
+        <meta charSet="utf-8" />
+      </head>
       <body>
         <header className="border-b bg-white">
           <div className="mx-auto max-w-6xl px-6 h-14 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2">
-              <Image src="/icon.svg" alt="EOV6" width={24} height={24} />
-              <span className="font-semibold">EOV6</span>
+            <Link href="/" className="flex items-center gap-2" aria-label="EOV6 home">
+              <Image src="/logo.png" alt="EOV6" width={88} height={20} priority />
             </Link>
             <nav className="flex items-center gap-5 text-sm text-zinc-700">
               <Link href="/how-it-works" className="hover:text-zinc-900">How it works</Link>
               <Link href="/solutions/call-centers" className="hover:text-zinc-900">Solutions</Link>
               <Link href="/pricing" className="hover:text-zinc-900">Pricing</Link>
               <Link href="/about" className="hover:text-zinc-900">About</Link>
-              <Link href="/contact" className="button-ghost">Contact</Link>
+              <Link href="/contact" className="inline-flex items-center rounded-lg border border-zinc-300 px-3 py-2 hover:bg-zinc-50">Contact</Link>
             </nav>
           </div>
         </header>
