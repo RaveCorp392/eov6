@@ -38,18 +38,41 @@ export default function AdminTicketsPage() {
         return;
       }
       try {
-        const q = query(
+        const q1 = query(
           collection(db, "tickets"),
           where("status", "==", "open"),
           orderBy("createdAt", "desc"),
           limit(200)
         );
-        const snap = await getDocs(q);
+        const snap1 = await getDocs(q1);
         const rows: Ticket[] = [];
-        snap.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
+        snap1.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
         setTickets(rows);
       } catch (e: any) {
-        setErr("Missing or insufficient permissions.");
+        const code = e?.code || "";
+        const msg = e?.message || "Unknown error";
+        if (code === "failed-precondition") {
+          try {
+            const q2 = query(
+              collection(db, "tickets"),
+              where("status", "==", "open"),
+              limit(200)
+            );
+            const snap2 = await getDocs(q2);
+            const rows2: Ticket[] = [];
+            snap2.forEach((d) => rows2.push({ id: d.id, ...(d.data() as any) }));
+            setTickets(rows2);
+            setErr(
+              "Using fallback (unsorted). Add composite index: tickets(status Asc, createdAt Desc) in Firestore Indexes."
+            );
+          } catch (e2: any) {
+            setErr(`Firestore error: ${e2?.code || ""} ${e2?.message || ""}`);
+          }
+        } else if (code === "permission-denied") {
+          setErr("Missing or insufficient permissions.");
+        } else {
+          setErr(`Firestore error: ${code} ${msg}`);
+        }
       } finally {
         setLoading(false);
       }
@@ -79,20 +102,35 @@ export default function AdminTicketsPage() {
     <main className="mx-auto max-w-5xl px-6 py-10">
       <h1 className="text-2xl font-bold mb-4">Admin - Tickets</h1>
       <AuthBar />
-      {isStaff === false ? (
+      {typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1" && (
+        <div className="mb-3 rounded border bg-zinc-50 p-3 text-xs text-zinc-700">
+          <div>
+            <b>Client debug</b>
+          </div>
+          <div>
+            Signed in as: {typeof window !== "undefined" ? ((window as any).firebase?.auth?.currentUser?.email || "(see AuthBar)") : "(n/a)"}
+          </div>
+          <div>Pre-check isStaff: {String(isStaff)}</div>
+          <div>Tip: Server uses Firestore Rules isStaff() — ensure the exact lowercase email is allowlisted or @eov6.com.</div>
+        </div>
+      )}
+      {isStaff === false && (
         <>
           <p className="text-zinc-700">
             This view is for EOV6 staff. Sign in with an EOV6 email or a temporarily allowed address.
           </p>
           <div className="mt-2 text-xs text-zinc-500">
-            Staff (client pre-check): NEXT_PUBLIC_INTERNAL_DOMAIN / NEXT_PUBLIC_INTERNAL_ADMINS<br />
+            Staff (client pre-check): NEXT_PUBLIC_INTERNAL_DOMAIN / NEXT_PUBLIC_INTERNAL_ADMINS
+            <br />
             Staff (authoritative): Firestore Rules isStaff() allowlist/domain
           </div>
         </>
-      ) : (
+      )}
+
+      {isStaff && (
         <>
           {loading && <div className="mb-4 text-sm text-zinc-600">Loading...</div>}
-          {err && <div className="mb-4 rounded bg-rose-100 text-rose-900 p-3">{err}</div>}
+          {err && <div className="mb-4 rounded bg-amber-100 text-amber-900 p-3">{err}</div>}
           {!loading && !tickets.length && !err && <div className="mb-4 text-sm text-zinc-600">No open tickets</div>}
           {!loading && !!tickets.length && (
             <div className="rounded-2xl border overflow-hidden">
