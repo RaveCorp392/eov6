@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
-import { sendMailZoho } from "@/lib/mailer";
+import { sendWithZohoFallback } from "@/lib/mail";
+import { roiEmailHtml } from "@/lib/email";
 import { getAdminApp } from "@/lib/firebaseAdmin";
 
 function seatBucket(agents: number): string {
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
       `;
       const text = `[${bucket} seats] ${payload.company || payload.email}\n\nInputs:\n${JSON.stringify(payload.inputs, null, 2)}\n\nOutputs:\n${JSON.stringify(payload.outputs, null, 2)}\nUA: ${payload.userAgent}\nIP: ${payload.ip}`;
 
-      await sendMailZoho({
+      await sendWithZohoFallback({
         to: toSales,
         subject,
         html,
@@ -95,18 +96,10 @@ export async function POST(req: NextRequest) {
     if (payload.consentEmail && payload.email) {
       try {
         const subject = "Your EOV6 ROI estimate";
-        const html = `
-          <p>Thanks for trying EOV6's ROI calculator.</p>
-          <p><b>Seat bucket:</b> ${bucket}</p>
-          <h3>Your inputs</h3>
-          <pre>${esc(JSON.stringify(payload.inputs, null, 2))}</pre>
-          <h3>Estimate</h3>
-          <pre>${esc(JSON.stringify(payload.outputs, null, 2))}</pre>
-          <p>Reply to this email for a quick demo or start a session: <a href="https://eov6.com/agent">eov6.com/agent</a></p>
-        `;
-        const text = `Seat bucket: ${bucket}\n\nInputs:\n${JSON.stringify(payload.inputs, null, 2)}\n\nEstimate:\n${JSON.stringify(payload.outputs, null, 2)}\n\nNeed help? https://eov6.com/agent`;
+        const html = roiEmailHtml({ inputs: payload.inputs || {}, estimate: payload.outputs || {} });
+        const text = "View in an HTML-capable client.";
 
-        await sendMailZoho({
+        await sendWithZohoFallback({
           to: payload.email,
           subject,
           html,
