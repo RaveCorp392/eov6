@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import OrgTabs, { OrgTabKey } from "@/components/admin/org/OrgTabs";
@@ -8,26 +8,15 @@ import OrgFeatures from "@/components/admin/org/OrgFeatures";
 import OrgBilling from "@/components/admin/org/OrgBilling";
 import OrgUsage from "@/components/admin/org/OrgUsage";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { doc, getDoc, getFirestore } from "firebase/firestore";
 import { resolveOrgIdFromEmail } from "@/lib/org-resolver";
+import { OrgDoc } from "@/lib/org-types";
 
 export default function AdminOrgPage() {
   const auth = getAuth();
+  const db = getFirestore();
 
   const [tab, setTab] = useState<OrgTabKey>("general");
-type OrgDoc = {
-  id: string;
-  name?: string;
-  ownerEmail?: string | null;
-  pendingOwnerEmail?: string | null;
-  domains?: string[];
-  features?: Record<string, any>;
-  texts?: Record<string, any>;
-  createdAt?: number;
-  updatedAt?: number;
-};
-
   const [org, setOrg] = useState<Partial<OrgDoc> | null>(null);
   const [orgId, setOrgId] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -167,12 +156,13 @@ type OrgDoc = {
       {header}
       <OrgTabs current={tab} onChange={setTab} />
       <div className="p-4">
-        {tab === "general" && <OrgGeneral orgId={orgId} org={org} onSaved={setOrg} canManage={canManage} />}
-        {tab === "staff" && <OrgStaff orgId={orgId} org={org} onSaved={setOrg} canManage={canManage} />}
-        {tab === "features" && <OrgFeatures orgId={orgId} org={org} onSaved={setOrg} canManage={canManage} />}
-        {tab === "billing" && <OrgBilling orgId={orgId} org={org} onSaved={setOrg} canManage={canManage} />}
+        {tab === "general" && <OrgGeneral orgId={orgId} org={org} onSaved={(next) => setOrg(next)} canManage={canManage} />}
+        {tab === "staff" && <OrgStaff orgId={orgId} org={org} onSaved={(next) => setOrg(next)} canManage={canManage} />}
+        {tab === "features" && <OrgFeatures orgId={orgId} org={org} onSaved={(next) => setOrg(next)} canManage={canManage} />}
+        {tab === "billing" && <OrgBilling orgId={orgId} org={org} onSaved={(next) => setOrg(next)} canManage={canManage} />}
         {tab === "usage" && <OrgUsage orgId={orgId} />}
       </div>
     </div>
   );
 }
+

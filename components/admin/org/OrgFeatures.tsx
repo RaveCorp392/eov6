@@ -1,41 +1,56 @@
-"use client";
+﻿"use client";
 
-import { doc, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import type { Org } from "@/types/org";
 import { useState } from "react";
+import { doc, getFirestore, setDoc } from "firebase/firestore";
+import { OrgDoc } from "@/lib/org-types";
 
-export default function OrgFeatures({ orgId, org, onSaved, canManage = true }:{ orgId: string; org: Org; onSaved: (o: Org)=>void; canManage?: boolean; }){
+type Props = {
+  orgId: string;
+  org: Partial<OrgDoc>;
+  onSaved: (next: Partial<OrgDoc>) => void;
+  canManage?: boolean;
+};
+
+export default function OrgFeatures({ orgId, org, onSaved, canManage = true }: Props) {
+  const db = getFirestore();
   const [allowUploads, setAllowUploads] = useState(Boolean(org.features?.allowUploads));
   const [translateUnlimited, setTranslateUnlimited] = useState(Boolean(org.features?.translateUnlimited));
   const [privacyStatement, setPrivacyStatement] = useState(org.texts?.privacyStatement ?? "");
-  const [ackTemplate, setAckTemplate] = useState(org.texts?.ackTemplate ?? "");
-  const [slot1Title, setSlot1Title] = useState(org.acks?.slots?.find(s=>s.id==="slot1")?.title ?? "");
-  const [slot1Body, setSlot1Body] = useState(org.acks?.slots?.find(s=>s.id==="slot1")?.body ?? "");
-  const [slot1Required, setSlot1Required] = useState(Boolean(org.acks?.slots?.find(s=>s.id==="slot1")?.required));
-  const [slot2Title, setSlot2Title] = useState(org.acks?.slots?.find(s=>s.id==="slot2")?.title ?? "");
-  const [slot2Body, setSlot2Body] = useState(org.acks?.slots?.find(s=>s.id==="slot2")?.body ?? "");
-  const [slot2Required, setSlot2Required] = useState(Boolean(org.acks?.slots?.find(s=>s.id==="slot2")?.required));
+  const [ackTemplate, setAckTemplate] = useState((org.texts as any)?.ackTemplate ?? "");
+  const slots = (org as any)?.acks?.slots ?? [];
+  const slot1 = slots.find((s: any) => s?.id === "slot1") || {};
+  const slot2 = slots.find((s: any) => s?.id === "slot2") || {};
+  const [slot1Title, setSlot1Title] = useState(slot1.title ?? "");
+  const [slot1Body, setSlot1Body] = useState(slot1.body ?? "");
+  const [slot1Required, setSlot1Required] = useState(Boolean(slot1.required));
+  const [slot2Title, setSlot2Title] = useState(slot2.title ?? "");
+  const [slot2Body, setSlot2Body] = useState(slot2.body ?? "");
+  const [slot2Required, setSlot2Required] = useState(Boolean(slot2.required));
   const [busy, setBusy] = useState(false);
 
-  async function save(){
+  async function save() {
     setBusy(true);
-    const slots = [
-      (slot1Title.trim() || slot1Body.trim()) ? {
-        id: "slot1" as const,
-        title: slot1Title.replace(/\r\n?/g, "\n").trim().slice(0,120),
-        body: slot1Body.replace(/\r\n?/g, "\n").trim().slice(0,2000),
-        required: Boolean(slot1Required),
-        order: 1 as const,
-      } : null,
-      (slot2Title.trim() || slot2Body.trim()) ? {
-        id: "slot2" as const,
-        title: slot2Title.replace(/\r\n?/g, "\n").trim().slice(0,120),
-        body: slot2Body.replace(/\r\n?/g, "\n").trim().slice(0,2000),
-        required: Boolean(slot2Required),
-        order: 2 as const,
-      } : null,
-    ].filter(Boolean) as any[];
+    const slotEntries = [
+      slot1Title.trim() || slot1Body.trim()
+        ? {
+            id: "slot1" as const,
+            title: slot1Title.replace(/\r\n?/g, "\n").trim().slice(0, 120),
+            body: slot1Body.replace(/\r\n?/g, "\n").trim().slice(0, 2000),
+            required: Boolean(slot1Required),
+            order: 1 as const,
+          }
+        : null,
+      slot2Title.trim() || slot2Body.trim()
+        ? {
+            id: "slot2" as const,
+            title: slot2Title.replace(/\r\n?/g, "\n").trim().slice(0, 120),
+            body: slot2Body.replace(/\r\n?/g, "\n").trim().slice(0, 2000),
+            required: Boolean(slot2Required),
+            order: 2 as const,
+          }
+        : null,
+    ].filter(Boolean) as Array<{ id: "slot1" | "slot2"; title: string; body: string; required: boolean; order: 1 | 2 }>;
+
     const next = {
       features: {
         allowUploads,
@@ -45,10 +60,11 @@ export default function OrgFeatures({ orgId, org, onSaved, canManage = true }:{ 
         privacyStatement: privacyStatement.trim(),
         ackTemplate: ackTemplate.trim(),
       },
-      acks: { slots },
+      acks: { slots: slotEntries },
     };
+
     await setDoc(doc(db, "orgs", orgId), next, { merge: true });
-    onSaved({ ...org, ...next } as Org);
+    onSaved({ ...org, ...next });
     setBusy(false);
   }
 
@@ -57,23 +73,47 @@ export default function OrgFeatures({ orgId, org, onSaved, canManage = true }:{ 
       <div className="grid gap-2">
         <h3 className="font-medium">Toggles</h3>
         <label className="flex items-center gap-2">
-          <input type="checkbox" checked={allowUploads} onChange={e=>setAllowUploads(e.target.checked)} disabled={!canManage} />
+          <input
+            type="checkbox"
+            checked={allowUploads}
+            onChange={(e) => setAllowUploads(e.target.checked)}
+            disabled={!canManage}
+          />
           <span className="text-sm">Enable file uploads (images/PDF)</span>
         </label>
         <label className="flex items-center gap-2">
-          <input type="checkbox" checked={translateUnlimited} onChange={e=>setTranslateUnlimited(e.target.checked)} disabled={!canManage} />
+          <input
+            type="checkbox"
+            checked={translateUnlimited}
+            onChange={(e) => setTranslateUnlimited(e.target.checked)}
+            disabled={!canManage}
+          />
           <span className="text-sm">Translate add-on (unlimited) — skip metering in /api/translate</span>
         </label>
       </div>
 
       <div className="grid gap-2">
         <h3 className="font-medium">Privacy Statement (shown to callers)</h3>
-        <textarea value={privacyStatement} onChange={e=>setPrivacyStatement(e.target.value)} rows={4} className="border rounded px-3 py-2 w-full bg-white dark:bg-slate-900" placeholder="e.g. We collect only the information necessary to assist with your enquiry. All data here is ephemeral and cleared when your session ends." disabled={!canManage}/>
+        <textarea
+          value={privacyStatement}
+          onChange={(e) => setPrivacyStatement(e.target.value)}
+          rows={4}
+          className="border rounded px-3 py-2 w-full bg-white dark:bg-slate-900"
+          placeholder="e.g. We collect only the information necessary to assist with your enquiry. All data here is ephemeral and cleared when your session ends."
+          disabled={!canManage}
+        />
       </div>
 
       <div className="grid gap-2">
         <h3 className="font-medium">Personalised Acknowledgement Text</h3>
-        <textarea value={ackTemplate} onChange={e=>setAckTemplate(e.target.value)} rows={4} className="border rounded px-3 py-2 w-full bg-white dark:bg-slate-900" placeholder="e.g. I confirm that the details provided are accurate to the best of my knowledge." disabled={!canManage}/>
+        <textarea
+          value={ackTemplate}
+          onChange={(e) => setAckTemplate(e.target.value)}
+          rows={4}
+          className="border rounded px-3 py-2 w-full bg-white dark:bg-slate-900"
+          placeholder="e.g. I confirm that the details provided are accurate to the best of my knowledge."
+          disabled={!canManage}
+        />
         <p className="text-xs text-slate-500">Used by the Ack modal; does not overwrite the caller name. Keep it short and plain-language.</p>
       </div>
 
@@ -82,28 +122,60 @@ export default function OrgFeatures({ orgId, org, onSaved, canManage = true }:{ 
         <div className="grid md:grid-cols-2 gap-4">
           <label className="grid gap-1">
             <span className="text-sm font-medium">Slot 1 — Title</span>
-            <input value={slot1Title} onChange={e=>setSlot1Title(e.target.value)} className="border rounded px-3 py-2 bg-white dark:bg-slate-900" disabled={!canManage} />
+            <input
+              value={slot1Title}
+              onChange={(e) => setSlot1Title(e.target.value)}
+              className="border rounded px-3 py-2 bg-white dark:bg-slate-900"
+              disabled={!canManage}
+            />
           </label>
           <label className="grid gap-1">
             <span className="text-sm font-medium">Slot 2 — Title</span>
-            <input value={slot2Title} onChange={e=>setSlot2Title(e.target.value)} className="border rounded px-3 py-2 bg-white dark:bg-slate-900" disabled={!canManage} />
+            <input
+              value={slot2Title}
+              onChange={(e) => setSlot2Title(e.target.value)}
+              className="border rounded px-3 py-2 bg-white dark:bg-slate-900"
+              disabled={!canManage}
+            />
           </label>
         </div>
         <label className="grid gap-1">
           <span className="text-sm font-medium">Slot 1 — Body</span>
-          <textarea rows={4} value={slot1Body} onChange={e=>setSlot1Body(e.target.value)} className="border rounded px-3 py-2 w-full bg-white dark:bg-slate-900" disabled={!canManage} />
+          <textarea
+            rows={4}
+            value={slot1Body}
+            onChange={(e) => setSlot1Body(e.target.value)}
+            className="border rounded px-3 py-2 w-full bg-white dark:bg-slate-900"
+            disabled={!canManage}
+          />
         </label>
         <label className="grid gap-1">
           <span className="text-sm font-medium">Slot 2 — Body</span>
-          <textarea rows={4} value={slot2Body} onChange={e=>setSlot2Body(e.target.value)} className="border rounded px-3 py-2 w-full bg-white dark:bg-slate-900" disabled={!canManage} />
+          <textarea
+            rows={4}
+            value={slot2Body}
+            onChange={(e) => setSlot2Body(e.target.value)}
+            className="border rounded px-3 py-2 w-full bg-white dark:bg-slate-900"
+            disabled={!canManage}
+          />
         </label>
         <div className="flex gap-6">
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={slot1Required} onChange={e=>setSlot1Required(e.target.checked)} disabled={!canManage} />
+            <input
+              type="checkbox"
+              checked={slot1Required}
+              onChange={(e) => setSlot1Required(e.target.checked)}
+              disabled={!canManage}
+            />
             <span>Slot 1 required</span>
           </label>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={slot2Required} onChange={e=>setSlot2Required(e.target.checked)} disabled={!canManage} />
+            <input
+              type="checkbox"
+              checked={slot2Required}
+              onChange={(e) => setSlot2Required(e.target.checked)}
+              disabled={!canManage}
+            />
             <span>Slot 2 required</span>
           </label>
         </div>
@@ -111,10 +183,15 @@ export default function OrgFeatures({ orgId, org, onSaved, canManage = true }:{ 
       </div>
 
       <div>
-        <button onClick={save} disabled={busy} className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{busy?"Saving…":"Save features"}</button>
+        <button
+          onClick={save}
+          disabled={busy}
+          className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+        >
+          {busy ? "Saving…" : "Save features"}
+        </button>
       </div>
     </div>
   );
 }
-
 
