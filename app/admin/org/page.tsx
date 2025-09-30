@@ -10,14 +10,25 @@ import OrgUsage from "@/components/admin/org/OrgUsage";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { Org } from "@/types/org";
 import { resolveOrgIdFromEmail } from "@/lib/org-resolver";
 
 export default function AdminOrgPage() {
   const auth = getAuth();
 
   const [tab, setTab] = useState<OrgTabKey>("general");
-  const [org, setOrg] = useState<Org | null>(null);
+type OrgDoc = {
+  id: string;
+  name?: string;
+  ownerEmail?: string | null;
+  pendingOwnerEmail?: string | null;
+  domains?: string[];
+  features?: Record<string, any>;
+  texts?: Record<string, any>;
+  createdAt?: number;
+  updatedAt?: number;
+};
+
+  const [org, setOrg] = useState<Partial<OrgDoc> | null>(null);
   const [orgId, setOrgId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +41,7 @@ export default function AdminOrgPage() {
     try {
       const snap = await getDoc(doc(db, "orgs", id));
       if (snap.exists()) {
-        setOrg({ id: snap.id, ...(snap.data() as Omit<Org, "id">) });
+        setOrg({ id: snap.id, ...(snap.data() as any) } as Partial<OrgDoc>);
         setError(null);
       } else {
         setOrg(null);
@@ -165,4 +176,3 @@ export default function AdminOrgPage() {
     </div>
   );
 }
-
