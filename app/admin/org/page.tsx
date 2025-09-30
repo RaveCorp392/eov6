@@ -35,12 +35,8 @@ export default function AdminOrgPage() {
 
       setLoading(true);
 
-      let resolvedOrgId =
-        process.env.NODE_ENV === "development"
-          ? "fivebyte"
-          : user.email
-          ? resolveOrgIdFromEmail(user.email)
-          : "default";
+      let resolvedOrgId = user.email ? resolveOrgIdFromEmail(user.email) : "";
+      if (!resolvedOrgId) resolvedOrgId = "default";
 
       try {
         const tok = await user.getIdToken();

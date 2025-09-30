@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { watchMessages } from "@/lib/watchMessages";
 import { sendMessage, watchSession,
   type Role,
-  uploadFileToSession,
   targetLangFor,
 } from "@/lib/firebase";
 import AckLine from "@/components/chat/AckLine";
@@ -161,6 +160,39 @@ export default function ChatWindow({
     return bubbleFor(m);
   }
 
+  const uploadViaApi = useCallback(
+    (file: File) => {
+      return new Promise<{ url: string; name: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/upload/session?code=${encodeURIComponent(code)}`);
+        xhr.responseType = "json";
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const pct = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(pct);
+          }
+        };
+
+        xhr.onload = () => {
+          const res = xhr.response;
+          if (xhr.status >= 200 && xhr.status < 300 && res?.ok) {
+            resolve({ url: res.url, name: res.name || file.name });
+          } else {
+            reject(new Error(res?.error || `upload_failed_${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("network_error"));
+
+        const fd = new FormData();
+        fd.append("file", file);
+        xhr.send(fd);
+      });
+    },
+    [code]
+  );
+
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -217,19 +249,17 @@ export default function ChatWindow({
                 }
                 try {
                   setUploadProgress(0);
-                  const url = await uploadFileToSession(code, file, (pct) =>
-                    setUploadProgress(Math.round(pct))
-                  );
+                  const { url, name } = await uploadViaApi(file);
                   await sendMessage(code, {
                     sender: role,
                     type: "file",
                     url,
-                    text: file.name,
+                    text: name,
                   });
                   scrollToBottom(true);
-                } catch (e) {
+                } catch (error) {
                   alert(
-                    "Upload failed. If you're running locally, please retry or disable any ad-blockers. (It should work fine on Vercel.)"
+                    "Upload failed. Please retry — browser extensions (e.g. ad-blockers) can interfere."
                   );
                 } finally {
                   setUploadProgress(null);

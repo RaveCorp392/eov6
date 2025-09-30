@@ -5,7 +5,13 @@ import { getAdminApp } from "@/lib/firebaseAdmin";
 // WARNING: test-only helper. Remove or lock before launch.
 export const dynamic = "force-dynamic";
 
+const DISABLED = process.env.NODE_ENV === "production" || process.env.ALLOW_DEV_SEED !== "true";
+
 export async function POST(req: NextRequest) {
+  if (DISABLED) {
+    return NextResponse.json({ ok: false, error: "seed_disabled" }, { status: 403 });
+  }
+
   try {
     const { code, orgId } = await req.json();
     if (!code || !orgId) {
