@@ -2,22 +2,36 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // -------- helpers ----------
+    // ---------------- Helpers ----------------
     function isSignedIn() { return request.auth != null; }
-    function isAdmin() { return isSignedIn() && request.auth.token.admin == true; }
     function myEmail() {
       return isSignedIn() && request.auth.token.email != null ? lower(request.auth.token.email) : "";
     }
-    function isStaff() { return myEmail().endsWith("@eov6.com"); }
 
-    // -------- support tickets -------
+    // Staff gate (soft-launch)
+    // - Any @eov6.com address
+    // - Specific allowlist (lowercase exact matches)
+    function isStaff() {
+      return myEmail().endsWith("@eov6.com") ||
+             myEmail() in [
+               "stephen.mcleish@gmail.com",
+               "hello@meetsafe.io"
+             ];
+    }
+
+    // ---------------- Support tickets ----------------
     match /tickets/{tid} {
+      // Public form can create
       allow create: if true;
-      allow read: if isStaff() || (lower(resource.data.email) == myEmail());
+
+      // Staff can read all; users can read their own ticket by email
+      allow read: if isStaff() || (resource.data.email == myEmail());
+
+      // Only staff may update/close/assign
       allow update, delete: if isStaff();
     }
 
-    // -------- contact form -------
+    // ---------------- Contact form ----------------
     match /contacts/{id} {
       allow create: if
         request.resource.data.keys().hasOnly(['email','name','message','createdAt','source','status']) &&
@@ -29,10 +43,12 @@ service cloud.firestore {
         request.resource.data.email.size() <= 200 &&
         request.resource.data.name.size() <= 200 &&
         request.resource.data.message.size() <= 4000;
-      allow read, update, delete: if isAdmin();
+
+      // No client reads/updates/deletes; admin SDK only if needed
+      allow read, update, delete: if false;
     }
 
-    // -------- entitlements (read-only to self) -------
+    // ---------------- Entitlements (read-only to self) ----------------
     match /entitlements/{email} {
       allow read: if isSignedIn()
                   && request.auth.token.email != null
@@ -40,19 +56,29 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // -------- orgs + members (UID roles) -------
+    // ---------------- Leads (server-only) ----------------
+    match /leads/{id} {
+      allow read, create, update, delete: if false;
+    }
+
+    // ---------------- ORGS (UID roles) ----------------
     match /orgs/{orgId} {
+
       function isMember() {
-        return isSignedIn() && exists(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid));
+        return isSignedIn()
+               && exists(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid));
       }
+
       function myRole() {
-        return isMember() ? get(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid)).data.role : null;
+        return isMember()
+               ? get(/databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid)).data.role
+               : null;
       }
+
       function isManager() { return myRole() in ['owner','admin']; }
 
-      // Reads restricted to members (open up if you need public fields)
+      // org doc
       allow read: if isMember();
-      // Writes only for managers
       allow create, update, delete: if isManager();
 
       match /members/{uid} {
@@ -60,41 +86,35 @@ service cloud.firestore {
         allow create, update, delete: if isManager();
       }
 
-      // Optional legacy subcollection
       match /ackTemplates/{ackId} {
         allow read: if isMember();
         allow create, update, delete: if isManager();
       }
     }
 
-    // -------- sessions (middle setting for dev/pilot) -------
-    // Everyone can read. Creates allowed for messages with a constrained schema.
+    // ---------------- Sessions (MVP posture; tighten post-launch) ----------------
     match /sessions/{code} {
-      // Read the session doc (liberal for demo)
-      allow read: if true; // TODO: restrict to participants
 
-      // Writes allowed only if not closed and caller is a participant or admin (MVP)
-      function isParticipant() {
-        return request.auth != null && (
-          request.auth.token.admin == true ||
-          request.resource.data.participants[request.auth.uid] == true ||
-          resource.data.participants[request.auth.uid] == true
-        );
-      }
-      allow create, update: if isParticipant() && (('closed' in resource.data) ? resource.data.closed != true : true);
+      // Liberal read for demo/onboarding; tighten later to participants only
+      allow read: if true;
+
+      // MVP: allow create/update (your UI enforces UI-level constraints)
+      allow create, update: if true;
       allow delete: if false;
 
-      // Messages subcollection
+      // Messages
       match /messages/{msgId} {
-        allow read: if true; // TODO: restrict to participants
+        allow read: if true;
+
         allow create: if
-          (('closed' in get(/databases/$(database)/documents/sessions/$(code)).data) ? get(/databases/$(database)/documents/sessions/$(code)).data.closed != true : true) &&
           request.resource.data.role in ['caller','agent','system'] &&
-          request.resource.data.type in ['text','system','file','details','ack'] &&
+          request.resource.data.type in ['text','system','file','ack'] &&
           request.resource.data.text is string &&
           request.resource.data.text.size() <= 4000 &&
+          // file needs url
           (request.resource.data.type != 'file'
-             || (request.resource.data.url is string && request.resource.data.url.size() > 0)) &&
+            || (request.resource.data.url is string && request.resource.data.url.size() > 0)) &&
+          // optional maps typed
           (!('orig' in request.resource.data) || (
             request.resource.data.orig is map &&
             (!('text' in request.resource.data.orig) || request.resource.data.orig.text is string) &&
@@ -102,29 +122,33 @@ service cloud.firestore {
           )) &&
           (!('lang' in request.resource.data) || (
             request.resource.data.lang is map &&
-            (!('src' in request.resource.data.lang) || request.resource.data.lang.src is string) &&
-            (!('tgt' in request.resource.data.lang) || request.resource.data.lang.tgt is string)
+            (!('src' in request.resource.data) || request.resource.data.lang.src is string) &&
+            (!('tgt' in request.resource.data) || request.resource.data.lang.tgt is string)
           )) &&
           (!('meta' in request.resource.data) || (
             request.resource.data.meta is map &&
             (!('translated' in request.resource.data.meta) || request.resource.data.meta.translated is bool)
           ));
+
         allow update, delete: if false;
       }
 
-      // Caller details (name/email/phone/notes)
+      // Caller/agent details
       match /details/{docId} {
         allow read: if true;
         allow create, update: if
           request.resource.data.keys().hasOnly(['name','email','phone','notes','updatedAt']) &&
-          (!('name' in request.resource.data) || request.resource.data.name is string) &&
+          (!('name'  in request.resource.data) || request.resource.data.name  is string) &&
           (!('email' in request.resource.data) || request.resource.data.email is string) &&
           (!('phone' in request.resource.data) || request.resource.data.phone is string) &&
           (!('notes' in request.resource.data) || request.resource.data.notes is string);
         allow delete: if false;
       }
     }
+
+    // ---------------- (Post-launch hardening) ----------------
+    // - Restrict sessions/messages reads/writes to participants
+    // - Require closed==false on writes
+    // - Add Cloud Functions to clean expired sessions, scan files, etc.
   }
 }
-
-
