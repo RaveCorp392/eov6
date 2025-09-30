@@ -7,8 +7,7 @@ import { getAuth } from "firebase-admin/auth";
 
 type Req = {
   orgId: string;
-  name: string;
-  ownerEmail: string;
+  name?: string;
   domains?: string[];
   features?: { allowUploads?: boolean; translateUnlimited?: boolean };
   privacyStatement?: string;
@@ -33,12 +32,13 @@ export async function POST(req: NextRequest) {
     const callerUid = decoded.uid;
 
     const body = (await req.json()) as Req;
-    if (!body?.orgId || !body?.name || !body?.ownerEmail) {
+    if (!body?.orgId) {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
 
     const orgId = slugify(body.orgId);
-    const ownerEmail = body.ownerEmail.toLowerCase();
+    const ownerEmail = callerEmail;
+    if (!ownerEmail) return NextResponse.json({ error: "owner_email_missing" }, { status: 400 });
     const allowUploads = !!body.features?.allowUploads;
     const translateUnlimited = !!body.features?.translateUnlimited;
     const domains = (body.domains || []).map((d) => d.toLowerCase()).filter(Boolean);
@@ -53,13 +53,15 @@ export async function POST(req: NextRequest) {
     }
 
     await orgRef.set({
-      name: body.name,
+      name: body.name || orgId,
       domains,
       features: { allowUploads, translateUnlimited },
       texts: { privacyStatement: body.privacyStatement || "" },
-      pendingOwnerEmail: ownerEmail,
+      ownerEmail,
+      pendingOwnerEmail: null,
       createdAt: now,
       createdFromPortal: true,
+      updatedAt: now,
     });
 
     // Ack templates (optional)
@@ -82,11 +84,19 @@ export async function POST(req: NextRequest) {
 
     // Entitlements mapping for owner
     const entRef = db.collection("entitlements").doc(ownerEmail);
-    await entRef.set({ orgId, updatedAt: now }, { merge: true });
+    await entRef.set({ orgId, claimedAt: now, updatedAt: now }, { merge: true });
 
     // If caller IS the owner email, promote immediately (idempotent)
-    if (callerEmail && callerEmail === ownerEmail && callerUid) {
-      await orgRef.collection("members").doc(callerUid).set({ role: "owner", email: ownerEmail }, { merge: true });
+    if (callerUid) {
+      await orgRef.collection("members").doc(callerUid).set(
+        {
+          role: "owner",
+          email: ownerEmail,
+          createdAt: now,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
     }
 
     return NextResponse.json({ ok: true, orgId });

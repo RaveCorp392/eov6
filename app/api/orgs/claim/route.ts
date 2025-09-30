@@ -32,27 +32,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "org_not_found" }, { status: 404 });
     }
 
-    const memberRef = orgRef.collection("members").doc(uid);
-    const memberSnap = await memberRef.get();
-    if (memberSnap.exists) {
-      await memberRef.set({ email, updatedAt: Date.now() }, { merge: true });
-    } else {
-      await memberRef.set(
-        {
-          role: "owner",
-          email,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
+    const data = orgSnap.data() || {};
+    const ownerEmail = (data.ownerEmail || "").toLowerCase();
+    const pendingEmail = (data.pendingOwnerEmail || "").toLowerCase();
+    const now = Date.now();
+
+    if (!ownerEmail) {
+      if (pendingEmail && pendingEmail !== email) {
+        return NextResponse.json({ error: "not_pending_owner" }, { status: 403 });
+      }
+      await orgRef.set(
+        { ownerEmail: email, pendingOwnerEmail: null, updatedAt: now },
         { merge: true }
       );
+      if (uid) {
+        await orgRef.collection("members").doc(uid).set(
+          { role: "owner", email, createdAt: now, updatedAt: now },
+          { merge: true }
+        );
+      }
+    } else {
+      if (uid) {
+        const roleToSet = ownerEmail === email ? "owner" : "viewer";
+        await orgRef.collection("members").doc(uid).set(
+          { role: roleToSet, email, updatedAt: now },
+          { merge: true }
+        );
+      }
     }
 
     await db.collection("entitlements").doc(email).set(
       {
         orgId,
-        claimedAt: Date.now(),
-        updatedAt: Date.now(),
+        claimedAt: now,
+        updatedAt: now,
       },
       { merge: true }
     );

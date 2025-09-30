@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import OrgTabs, { OrgTabKey } from "@/components/admin/org/OrgTabs";
 import OrgGeneral from "@/components/admin/org/OrgGeneral";
 import OrgStaff from "@/components/admin/org/OrgStaff";
@@ -20,6 +20,8 @@ export default function AdminOrgPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   useEffect(() => {
     const auth = getAuth();
@@ -30,12 +32,15 @@ export default function AdminOrgPage() {
         setOrg(null);
         setOrgId("");
         setLoading(false);
+        setCurrentEmail(null);
         return;
       }
 
       setLoading(true);
+      const email = user.email?.toLowerCase() || "";
+      setCurrentEmail(email || null);
 
-      let resolvedOrgId = user.email ? resolveOrgIdFromEmail(user.email) : "";
+      let resolvedOrgId = email ? resolveOrgIdFromEmail(email) : "";
       if (!resolvedOrgId) resolvedOrgId = "default";
 
       try {
@@ -63,44 +68,29 @@ export default function AdminOrgPage() {
     return () => off();
   }, []);
 
+  const fetchOrg = useCallback(async (targetOrgId: string) => {
+    try {
+      setLoading(true);
+      const ref = doc(db, "orgs", targetOrgId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        setOrg({ id: targetOrgId, ...(snap.data() as Omit<Org, "id">) });
+        setError(null);
+      } else {
+        setOrg(null);
+        setError(null);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!orgId) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setLoading(true);
-        const ref = doc(db, "orgs", orgId);
-        const snap = await getDoc(ref);
-        if (cancelled) return;
-
-        if (snap.exists()) {
-          setOrg({ id: orgId, ...(snap.data() as Omit<Org, "id">) });
-          setError(null);
-        } else {
-          const currentUserEmail = getAuth().currentUser?.email;
-          setOrg({
-            id: orgId,
-            name: orgId.toUpperCase(),
-            domains: [],
-            admins: currentUserEmail ? [currentUserEmail] : [],
-            features: { allowUploads: false, translateUnlimited: false },
-            texts: { privacyStatement: "", ackTemplate: "" },
-            billing: { plan: "starter", stripeCustomerId: "" },
-            users: currentUserEmail ? [currentUserEmail] : []
-          });
-        }
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? String(e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [orgId]);
+    void fetchOrg(orgId);
+  }, [orgId, fetchOrg]);
 
   const header = useMemo(
     () => (
@@ -124,10 +114,20 @@ export default function AdminOrgPage() {
           >
             {role || "--"}
           </span>
+          {canResolve && (
+            <button
+              type="button"
+              className="button-ghost"
+              onClick={resolveOwner}
+              disabled={resolving}
+            >
+              {resolving ? "Resolving..." : "Resolve owner"}
+            </button>
+          )}
         </div>
       </div>
     ),
-    [orgId, role]
+    [orgId, role, canResolve, resolveOwner, resolving]
   );
 
   if (loading) return <div className="p-6">Loading org...</div>;
@@ -150,3 +150,36 @@ export default function AdminOrgPage() {
   );
 }
 
+  const resolveOwner = useCallback(async () => {
+    if (!orgId) return;
+    try {
+      setResolving(true);
+      const user = getAuth().currentUser;
+      const token = await user?.getIdToken();
+      if (!token) throw new Error("no_token");
+      const res = await fetch("/api/orgs/resolve-owner", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ orgId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || res.statusText);
+      await fetchOrg(orgId);
+    } catch (e: any) {
+      alert(e?.message || "resolve_failed");
+    } finally {
+      setResolving(false);
+    }
+  }, [orgId, fetchOrg]);
+
+  const ownerEmail = (org as any)?.ownerEmail?.toLowerCase?.() || "";
+  const pendingOwnerEmail = (org as any)?.pendingOwnerEmail?.toLowerCase?.() || "";
+  const normalizedCurrent = (currentEmail || "").toLowerCase();
+  const canResolve =
+    !ownerEmail &&
+    (!!pendingOwnerEmail
+      ? pendingOwnerEmail === normalizedCurrent
+      : !!normalizedCurrent && !!orgId);
