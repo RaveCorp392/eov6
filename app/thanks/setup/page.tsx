@@ -1,10 +1,10 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 export default function ThanksSetupPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-12">
-      <h1 className="text-3xl font-bold mb-2">You're all set {"\u{1F389}"}</h1>
-      <p className="text-zinc-600 mb-6">Setup complete. Here's how it works from here.</p>
+      <h1 className="text-3xl font-bold mb-2">{"You're all set \u{1F389}"}</h1>
+      <p className="text-zinc-600 mb-6">{"Setup complete. Here's how it works from here."}</p>
 
       <div className="card p-5 mb-6">
         <h2 className="font-semibold mb-2">What you can do next</h2>
@@ -23,9 +23,10 @@ export default function ThanksSetupPage() {
       <div className="rounded-2xl bg-amber-50 text-amber-900 p-5">
         <h3 className="font-semibold mb-1">Why this matters</h3>
         <p className="text-sm">
-          76% of customers won't reuse a service after one bad support interaction. Getting acknowledgements right helps prevent that one bad call.
+          76% of customers won{"'"}t reuse a service after one bad support interaction. Getting acknowledgements right helps prevent that one bad call.
         </p>
       </div>
     </div>
   );
 }
+
