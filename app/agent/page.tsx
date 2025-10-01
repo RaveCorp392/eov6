@@ -1,89 +1,112 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { randomCode, expiryInHours } from '@/lib/code';
-import AgentLandingInfo from '@/components/AgentLandingInfo';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import { resolveOrgIdFromEmail } from '@/lib/org-resolver';
-import { devlog } from '@/lib/devlog';
-import { ensureMembership } from '@/lib/membership';
+import { useEffect, useState } from "react";
+import "@/lib/firebase";
+import { getAuth } from "firebase/auth";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import AgentLandingInfo from "@/components/AgentLandingInfo";
 
-export default function AgentHome() {
-  const router = useRouter();
-  const [orgBadge, setOrgBadge] = useState<string | null>(null);
-  const [roleBadge, setRoleBadge] = useState<string | null>(null);
+export default function AgentConsole() {
+  const auth = getAuth();
+  const db = getFirestore();
+
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState<string>("-");
 
   useEffect(() => {
-    const off = onAuthStateChanged(getAuth(), async (user) => {
-      if (!user) return;
-      const email = user.email?.toLowerCase() || '';
-      const orgId = resolveOrgIdFromEmail(email);
-      try {
-        const boot = await ensureMembership();
-        setOrgBadge(boot.orgId || orgId || 'default');
-        setRoleBadge(boot.role || 'viewer');
-        devlog('bootstrap', boot);
-      } catch (e:any) {
-        devlog('agent-landing-error', { error: e?.message });
+    (async () => {
+      const email = auth.currentUser?.email?.toLowerCase() || "";
+      if (!email) return;
+      const pref = localStorage.getItem("activeOrgId");
+      if (pref) {
+        setActiveOrgId(pref);
+        return;
       }
-    });
-    return () => off();
-  }, []);
+      const ent = await getDoc(doc(db, "entitlements", email));
+      const mapped = ent.exists ? ((ent.data() as any)?.orgId || null) : null;
+      setActiveOrgId(mapped);
+      if (mapped) localStorage.setItem("activeOrgId", mapped);
+    })();
+  }, [auth, db]);
 
-  async function startSession() {
-    const code = randomCode();
-    await setDoc(
-      doc(collection(db, 'sessions'), code),
-      {
-        createdAt: serverTimestamp(),
-        expiresAt: expiryInHours(1),
-        closed: false,
-      },
-      { merge: true }
-    );
-    router.push(`/agent/s/${code}`);
+  useEffect(() => {
+    (async () => {
+      if (!activeOrgId) {
+        setOrgName("-");
+        return;
+      }
+      const s = await getDoc(doc(db, "orgs", activeOrgId));
+      setOrgName(s.exists() ? ((s.data() as any)?.name || activeOrgId) : activeOrgId);
+    })();
+  }, [activeOrgId, db]);
+
+  async function startNewSession() {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        alert("create_failed");
+        return;
+      }
+      const r = await fetch("/api/sessions/create", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer " + token,
+        },
+        body: JSON.stringify({ activeOrgId }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        alert(j?.error || "create_failed");
+        return;
+      }
+      window.location.href = "/agent/s/" + j.code;
+    } catch (err: any) {
+      alert(err?.message || "create_failed");
+    }
   }
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      {/* Brand header bar */}
-      <div className="bg-slate-900">
-        <div className="mx-auto max-w-5xl px-6 py-6">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white tracking-tight">{"EOV6 \u2014 Agent Console"}</h1>
-            {orgBadge ? (
-              <span className="text-xs px-2 py-0.5 rounded-full border border-slate-600 text-slate-300">Org: {orgBadge}</span>
-            ) : null}
-            {roleBadge ? (
-              <span className="text-xs px-2 py-0.5 rounded-full border border-slate-600 text-slate-300">{roleBadge}</span>
-            ) : null}
-          </div>
-          <p className="text-slate-300 text-sm mt-1">
-            Start a new session and share the 6-digit code with the caller.
-          </p>
-        </div>
+    <div className="mx-auto max-w-5xl px-6">
+      <div className="text-xs text-zinc-500 mb-2">
+        <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 bg-zinc-100 border">
+          Org: <b>{orgName}</b>
+        </span>
       </div>
 
-      {/* Main content */}
-      <div className="mx-auto max-w-5xl px-6 py-6 space-y-6">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={startSession}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-600"
-          >
-            Start a new session
-          </button>
-          <span className="text-xs text-slate-500">
-            Sessions auto-expire; end them to clear chat and uploads.
-          </span>
-        </div>
+      <button className="button-primary" onClick={startNewSession}>
+        Start a new session
+      </button>
 
-        {/* Info / instructions panel (your existing component) */}
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          className="rounded border px-2 py-1 text-sm"
+          placeholder="Set active orgId"
+          defaultValue={activeOrgId || ""}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              const id = (e.target as HTMLInputElement).value.trim();
+              if (id) {
+                setActiveOrgId(id);
+                localStorage.setItem("activeOrgId", id);
+              }
+            }
+          }}
+        />
+        <button
+          className="button-ghost text-sm"
+          onClick={() => {
+            setActiveOrgId(null);
+            localStorage.removeItem("activeOrgId");
+          }}
+        >
+          Clear
+        </button>
+      </div>
+
+      <div className="mt-6">
         <AgentLandingInfo />
       </div>
-    </main>
+    </div>
   );
 }
