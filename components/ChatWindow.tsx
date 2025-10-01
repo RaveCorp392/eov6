@@ -1,7 +1,10 @@
-﻿"use client";
+"use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { watchMessages } from "@/lib/watchMessages";
-import { sendMessage, watchSession,
+import {
+  sendMessage,
+  watchSession,
+  uploadFileToSession,
   type Role,
   targetLangFor,
 } from "@/lib/firebase";
@@ -40,6 +43,7 @@ export default function ChatWindow({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [session, setSession] = useState<any>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const useApi = process.env.NEXT_PUBLIC_UPLOAD_VIA_API === "true";
 
   const scrollToBottom = useCallback((smooth = true) => {
     const el = listRef.current;
@@ -193,6 +197,38 @@ export default function ChatWindow({
     [code]
   );
 
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      setUploadProgress(0);
+      try {
+        let url: string;
+        let name: string;
+
+        if (useApi) {
+          const result = await uploadViaApi(file);
+          url = result.url;
+          name = result.name || file.name;
+        } else {
+          url = await uploadFileToSession(code, file, (pct) => setUploadProgress(pct));
+          name = file.name;
+        }
+
+        await sendMessage(code, {
+          sender: role,
+          type: "file",
+          url,
+          text: name,
+        });
+        scrollToBottom(true);
+      } catch (err) {
+        console.error("[chat/upload]", err);
+        alert("Upload failed. Please retry.");
+      } finally {
+        setUploadProgress(null);
+      }
+    },
+    [useApi, uploadViaApi, code, role, scrollToBottom]
+  );
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -248,21 +284,8 @@ export default function ChatWindow({
                   return;
                 }
                 try {
-                  setUploadProgress(0);
-                  const { url, name } = await uploadViaApi(file);
-                  await sendMessage(code, {
-                    sender: role,
-                    type: "file",
-                    url,
-                    text: name,
-                  });
-                  scrollToBottom(true);
-                } catch (error) {
-                  alert(
-                    "Upload failed. Please retry — browser extensions (e.g. ad-blockers) can interfere."
-                  );
+                  await handleFileUpload(file);
                 } finally {
-                  setUploadProgress(null);
                   e.currentTarget.value = "";
                 }
               }}
@@ -283,3 +306,5 @@ export default function ChatWindow({
     </div>
   );
 }
+
+

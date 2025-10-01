@@ -15,7 +15,6 @@ export default function OnboardPage() {
   // Form state
   const [orgSlug, setOrgSlug] = useState("");
   const [orgName, setOrgName] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState("");
   const [domainsCsv, setDomainsCsv] = useState("");
   const [allowUploads, setAllowUploads] = useState(false);
   const [translateUnlimited, setTranslateUnlimited] = useState(false);
@@ -82,7 +81,6 @@ export default function OnboardPage() {
           body: JSON.stringify({
             orgId: orgSlug,
             name: orgName,
-            ownerEmail,
             domains: domainsCsv.split(",").map((s) => s.trim()).filter(Boolean),
             features: { allowUploads, translateUnlimited: translateLocked ? true : translateUnlimited },
             privacyStatement: privacy,
@@ -95,6 +93,14 @@ export default function OnboardPage() {
           throw new Error(j?.error || res.statusText);
         }
         const j = await res.json();
+        if (j?.orgId) {
+          try {
+            window.localStorage.setItem("lastCreatedOrgId", j.orgId);
+            window.localStorage.setItem("activeOrgId", j.orgId);
+          } catch {
+            // ignore storage failures (private mode, etc.)
+          }
+        }
         setOrgId(j.orgId);
 
         // idempotent claim
@@ -138,7 +144,7 @@ export default function OnboardPage() {
           const j = await r.json().catch(() => ({}));
           throw new Error(j?.error || r.statusText);
         }
-        window.location.href = "/thanks/setup";
+        window.location.href = `/thanks/setup?org=${encodeURIComponent(orgId || "")}`;
       }
     } catch (e: any) {
       setErr(String(e?.message || e));
@@ -148,7 +154,7 @@ export default function OnboardPage() {
   }
 
   function canNext() {
-    if (step === 1) return orgSlug && orgName && ownerEmail;
+    if (step === 1) return Boolean(orgSlug.trim() && orgName.trim());
     if (step === 2) return true; // invites optional
     return true;
   }
@@ -186,7 +192,6 @@ export default function OnboardPage() {
             </div>
             <div>
               <label className="block text-sm font-medium">Owner email</label>
-              <input className="w-full rounded border px-3 py-2" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} />
             </div>
             <div>
               <label className="block text-sm font-medium">Domains (csv)</label>
