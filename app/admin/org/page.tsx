@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import OrgTabs, { OrgTabKey } from "@/components/admin/org/OrgTabs";
@@ -25,28 +25,11 @@ export default function AdminOrgPage() {
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
 
-  async function loadOrg(id: string) {
-    setLoading(true);
-    try {
-      const snap = await getDoc(doc(db, "orgs", id));
-      if (snap.exists()) {
-        setOrg({ id: snap.id, ...(snap.data() as any) } as Partial<OrgDoc>);
-        setError(null);
-      } else {
-        setOrg(null);
-        setError(null);
-      }
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function resolveOwner() {
     if (!orgId) return;
+    setResolving(true);
+    setLoading(true);
     try {
-      setResolving(true);
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("no_token");
       const res = await fetch("/api/orgs/resolve-owner", {
@@ -59,11 +42,15 @@ export default function AdminOrgPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || res.statusText);
-      await loadOrg(orgId);
+      const snap = await getDoc(doc(db, "orgs", orgId));
+      setOrg(snap.exists() ? ({ id: snap.id, ...(snap.data() as any) } as Partial<OrgDoc>) : null);
+      setError(null);
     } catch (e: any) {
+      setError(e?.message ?? String(e));
       alert(e?.message || "resolve_failed");
     } finally {
       setResolving(false);
+      setLoading(false);
     }
   }
 
@@ -107,8 +94,28 @@ export default function AdminOrgPage() {
   }, [auth]);
 
   useEffect(() => {
-    if (orgId) void loadOrg(orgId);
-  }, [orgId]);
+    if (!orgId) return;
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      try {
+        const snap = await getDoc(doc(db, "orgs", orgId));
+        if (!cancelled) {
+          setOrg(snap.exists() ? ({ id: snap.id, ...(snap.data() as any) } as Partial<OrgDoc>) : null);
+          setError(null);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, db]);
 
   const myEmail = (currentEmail || "").toLowerCase();
   const ownerEmail = (org?.ownerEmail || "").toLowerCase();
@@ -165,4 +172,3 @@ export default function AdminOrgPage() {
     </div>
   );
 }
-
