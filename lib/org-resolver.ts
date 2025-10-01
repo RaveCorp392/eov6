@@ -8,15 +8,20 @@ export function resolveOrgIdFromEmail(email?: string | null): string {
   return slug.replace(/[^a-z0-9_-]/g, "").slice(0, 24);
 }
 
-export async function resolveOrgForEmail(db: Firestore, email: string): Promise<string | null> {
+export async function resolveEntitledOrgId(
+  db: Firestore,
+  email: string
+): Promise<string | null> {
   const lower = (email || "").toLowerCase();
   if (!lower) return null;
 
-  const entitlementRef = db.collection("entitlements").doc(lower);
-  const entSnap = await entitlementRef.get();
-  const mapped = entSnap.exists ? (entSnap.data() as any)?.orgId || null : null;
+  const entSnap = await db.collection("entitlements").doc(lower).get();
+  const mapped = entSnap.exists ? ((entSnap.data() as any)?.orgId || null) : null;
   if (!mapped || mapped === "default") return null;
 
   const orgSnap = await db.collection("orgs").doc(mapped).get();
   return orgSnap.exists ? mapped : null;
 }
+
+// TODO: remove once all call sites migrate
+export const resolveOrgForEmail = resolveEntitledOrgId;
