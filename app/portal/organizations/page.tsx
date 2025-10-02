@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import "@/lib/firebase";
@@ -49,9 +49,13 @@ export default function PortalOrganizationsPage() {
   const [loading, setLoading] = useState(false);
   const [inviteInput, setInviteInput] = useState("");
   const [privacyDraft, setPrivacyDraft] = useState("");
+  const [showAckModal, setShowAckModal] = useState(false);
+  const [ackTitle, setAckTitle] = useState("");
+  const [ackBody, setAckBody] = useState("");
 
   const applyOrgId = useCallback(async () => {
     if (typeof window === "undefined") return;
+
     const url = new URL(window.location.href);
     const qOrg = url.searchParams.get("org");
     if (qOrg) {
@@ -77,8 +81,8 @@ export default function PortalOrganizationsPage() {
 
     const email = auth.currentUser?.email?.toLowerCase() || "";
     if (!email) return;
-    const ent = await getDoc(doc(db, "entitlements", email));
-    const mapped = ent.exists() ? ((ent.data() as any)?.orgId || null) : null;
+    const entitlement = await getDoc(doc(db, "entitlements", email));
+    const mapped = entitlement.exists() ? ((entitlement.data() as any)?.orgId || null) : null;
     setOrgId(mapped);
     if (mapped) {
       try {
@@ -88,6 +92,48 @@ export default function PortalOrganizationsPage() {
       }
     }
   }, [auth, db]);
+
+  const reloadOrg = useCallback(
+    async (id: string) => {
+      const snap = await getDoc(doc(db, "orgs", id));
+      if (snap.exists()) {
+        const data = { id: snap.id, ...(snap.data() as any) } as PartialOrg;
+        setOrg(data);
+        setPrivacyDraft(String(data?.texts?.privacyStatement || ""));
+      } else {
+        setOrg(null);
+        setPrivacyDraft("");
+      }
+    },
+    [db]
+  );
+
+  const reloadAcks = useCallback(
+    async (id: string) => {
+      const snap = await getDocs(collection(db, "orgs", id, "ackTemplates"));
+      const rows = snap.docs
+        .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) }))
+        .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
+      setAcks(rows);
+    },
+    [db]
+  );
+
+  const reloadInvites = useCallback(
+    async (id: string) => {
+      const snap = await getDocs(collection(db, "orgs", id, "invites"));
+      setInvites(snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) })));
+    },
+    [db]
+  );
+
+  const reloadMembers = useCallback(
+    async (id: string) => {
+      const snap = await getDocs(collection(db, "orgs", id, "members"));
+      setMembers(snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) })));
+    },
+    [db]
+  );
 
   useEffect(() => {
     void applyOrgId();
@@ -114,36 +160,14 @@ export default function PortalOrganizationsPage() {
 
       setLoading(true);
       try {
-        const orgRef = doc(db, "orgs", orgId);
-        const [orgSnap, acksSnap, invitesSnap, membersSnap] = await Promise.all([
-          getDoc(orgRef),
-          getDocs(collection(db, "orgs", orgId, "ackTemplates")),
-          getDocs(collection(db, "orgs", orgId, "invites")),
-          getDocs(collection(db, "orgs", orgId, "members")),
+        await Promise.all([
+          reloadOrg(orgId),
+          reloadAcks(orgId),
+          reloadInvites(orgId),
+          reloadMembers(orgId),
         ]);
-
-        if (cancelled) return;
-
-        const orgData = orgSnap.exists()
-          ? ({ id: orgSnap.id, ...(orgSnap.data() as any) } as PartialOrg)
-          : null;
-        setOrg(orgData);
-        setPrivacyDraft(String(orgData?.texts?.privacyStatement || ""));
-
-        const sortedAcks = acksSnap.docs
-          .map((d) => ({ id: d.id, ...(d.data() as any) }))
-          .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
-        setAcks(sortedAcks);
-        setInvites(invitesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
-        setMembers(membersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       } catch (err) {
         console.error("[portal/org] load failed", err);
-        if (!cancelled) {
-          setOrg(null);
-          setAcks([]);
-          setInvites([]);
-          setMembers([]);
-        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -152,7 +176,7 @@ export default function PortalOrganizationsPage() {
     return () => {
       cancelled = true;
     };
-  }, [orgId, db]);
+  }, [orgId, reloadOrg, reloadAcks, reloadInvites, reloadMembers]);
 
   async function savePrivacy(nextText: string) {
     if (!orgId) return;
@@ -175,39 +199,40 @@ export default function PortalOrganizationsPage() {
     }
   }
 
-  async function addAck() {
-    if (!orgId) return;
-    const title = (prompt("Ack title?") || "").trim();
-    const body = (prompt("Ack body?") || "").trim();
-    if (!title || !body) return;
-    try {
-      const nextOrder = acks.reduce((max, item) => Math.max(max, Number(item.order || 0)), 0) + 1;
-      await addDoc(collection(db, "orgs", orgId, "ackTemplates"), {
-        title,
-        body,
-        required: false,
-        order: nextOrder,
-        createdAt: Date.now(),
-      });
-      const snap = await getDocs(collection(db, "orgs", orgId, "ackTemplates"));
-      const sorted = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) }))
-        .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
-      setAcks(sorted);
-    } catch (err) {
-      console.error("[portal/org] add ack failed", err);
-      alert("Could not add acknowledgement. Please retry.");
-    }
-  }
-
   async function deleteAck(id: string) {
     if (!orgId || !id) return;
     try {
       await deleteDoc(doc(db, "orgs", orgId, "ackTemplates", id));
-      setAcks((prev) => prev.filter((item) => item.id !== id));
+      await reloadAcks(orgId);
     } catch (err) {
       console.error("[portal/org] delete ack failed", err);
       alert("Delete failed. Please try again.");
+    }
+  }
+
+  async function handleCreateAck() {
+    if (!orgId) return;
+    const title = ackTitle.trim();
+    const body = ackBody.trim();
+    if (!title || !body) {
+      alert("Please provide both a title and body.");
+      return;
+    }
+    try {
+      await addDoc(collection(db, "orgs", orgId, "ackTemplates"), {
+        title,
+        body,
+        required: false,
+        order: acks.length + 1,
+        createdAt: Date.now(),
+      });
+      await reloadAcks(orgId);
+      setShowAckModal(false);
+      setAckTitle("");
+      setAckBody("");
+    } catch (err) {
+      console.error("[portal/org] add ack failed", err);
+      alert("Could not add acknowledgement. Please retry.");
     }
   }
 
@@ -215,49 +240,38 @@ export default function PortalOrganizationsPage() {
     if (!orgId) return;
     const emails = inviteInput
       .split(/[\s,;]+/)
-      .map((e) => e.toLowerCase().trim())
+      .map((email) => email.toLowerCase().trim())
       .filter(Boolean);
     if (emails.length === 0) return;
 
     try {
       const token = await auth.currentUser?.getIdToken();
-      if (!token) {
-        alert("Please sign in to send invites.");
-        return;
-      }
       const response = await fetch("/api/orgs/invite/bulk", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${token}`,
-        },
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
         body: JSON.stringify({ orgId, emails }),
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        alert(payload?.error || "invite_failed");
+
+      let payload: any = null;
+      try {
+        payload = await response.json();
+      } catch {
+        // ignore parse failure
+      }
+
+      if (!response.ok || !payload?.ok) {
+        const msg = payload?.error || response.statusText || "Invite send failed. Please retry.";
+        alert(msg);
         return;
       }
+
       setInviteInput("");
-      const snap = await getDocs(collection(db, "orgs", orgId, "invites"));
-      setInvites(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
-      const invitedCount = typeof payload?.invited === "number" ? payload.invited : emails.length;
-      alert(`Invited ${invitedCount} recipient${invitedCount === 1 ? "" : "s"}.`);
+      await reloadInvites(orgId);
+      const count = typeof payload?.invited === "number" ? payload.invited : emails.length;
+      alert(`Invited ${count} recipient(s).`);
     } catch (err) {
       console.error("[portal/org] send invites failed", err);
       alert("Invite send failed. Please retry.");
-    }
-  }
-
-  async function removeMember(uid: string) {
-    if (!orgId || !uid) return;
-    if (!confirm("Remove this member from the organization?")) return;
-    try {
-      await deleteDoc(doc(db, "orgs", orgId, "members", uid));
-      setMembers((prev) => prev.filter((m) => m.id !== uid));
-    } catch (err) {
-      console.error("[portal/org] remove member failed", err);
-      alert("Could not remove member. Please try again.");
     }
   }
 
@@ -266,10 +280,22 @@ export default function PortalOrganizationsPage() {
     if (!confirm("Revoke this invite?")) return;
     try {
       await deleteDoc(doc(db, "orgs", orgId, "invites", id));
-      setInvites((prev) => prev.filter((invite) => invite.id !== id));
+      await reloadInvites(orgId);
     } catch (err) {
       console.error("[portal/org] revoke invite failed", err);
       alert("Could not revoke invite. Please try again.");
+    }
+  }
+
+  async function removeMember(uid: string) {
+    if (!orgId || !uid) return;
+    if (!confirm("Remove this member from the organization?")) return;
+    try {
+      await deleteDoc(doc(db, "orgs", orgId, "members", uid));
+      await reloadMembers(orgId);
+    } catch (err) {
+      console.error("[portal/org] remove member failed", err);
+      alert("Could not remove member. Please try again.");
     }
   }
 
@@ -304,8 +330,8 @@ export default function PortalOrganizationsPage() {
           <button
             className="button-ghost text-sm"
             onClick={() => {
-              const v = prompt("Enter orgId")?.trim();
-              if (v) manualOrgSetter(v);
+              const value = prompt("Enter orgId")?.trim();
+              if (value) manualOrgSetter(value);
             }}
           >
             Set
@@ -314,6 +340,12 @@ export default function PortalOrganizationsPage() {
       </div>
     );
   }
+
+  const renderAckBody = (body: string | undefined) => {
+    const text = body || "";
+    if (text.length <= 240) return text;
+    return `${text.slice(0, 240)}…`;
+  };
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
@@ -341,15 +373,24 @@ export default function PortalOrganizationsPage() {
           {acks.map((ack) => (
             <div key={ack.id} className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <div className="font-medium truncate">{ack.title || ack.id}</div>
-                <div className="text-sm text-zinc-600 truncate">{ack.body}</div>
+                <div className="font-medium">{ack.title || ack.id}</div>
+                <div className="text-sm text-zinc-600 whitespace-pre-wrap">
+                  {renderAckBody(ack.body)}
+                </div>
               </div>
               <button className="button-ghost text-sm" onClick={() => deleteAck(ack.id)}>
                 Delete
               </button>
             </div>
           ))}
-          <button className="button-primary w-fit" onClick={addAck}>
+          <button
+            className="button-primary w-fit"
+            onClick={() => {
+              setAckTitle("");
+              setAckBody("");
+              setShowAckModal(true);
+            }}
+          >
             Add template
           </button>
         </div>
@@ -374,13 +415,13 @@ export default function PortalOrganizationsPage() {
       <div className="card p-4 mb-6">
         <h2 className="font-semibold mb-2">Members</h2>
         {members.length === 0 && <div className="text-sm text-zinc-500">No members yet.</div>}
-        {members.map((m) => (
-          <div key={m.id} className="flex items-center justify-between py-1">
+        {members.map((member) => (
+          <div key={member.id} className="flex items-center justify-between py-1">
             <div className="text-sm">
-              <div className="font-medium">{m.email || m.id}</div>
-              <div className="text-zinc-500">Role: {m.role || "viewer"}</div>
+              <div className="font-medium">{member.email || member.id}</div>
+              <div className="text-zinc-500">Role: {member.role || "viewer"}</div>
             </div>
-            <button className="button-ghost text-sm" onClick={() => removeMember(m.id)}>
+            <button className="button-ghost text-sm" onClick={() => removeMember(member.id)}>
               Remove
             </button>
           </div>
@@ -408,6 +449,45 @@ export default function PortalOrganizationsPage() {
           If an invite is accepted, it moves to Members automatically.
         </div>
       </div>
+
+      {showAckModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl border p-4 w-[min(640px,90vw)]">
+            <h3 className="font-semibold mb-2">New acknowledgement</h3>
+            <div className="mb-2">
+              <label className="text-xs text-zinc-600 block mb-1">Title</label>
+              <input
+                className="w-full rounded border px-3 py-2"
+                value={ackTitle}
+                onChange={(e) => setAckTitle(e.target.value)}
+              />
+            </div>
+            <div className="mb-4">
+              <label className="text-xs text-zinc-600 block mb-1">Body</label>
+              <textarea
+                className="w-full rounded border px-3 py-2 min-h-[140px] resize-y"
+                value={ackBody}
+                onChange={(e) => setAckBody(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button className="button-primary" onClick={handleCreateAck}>
+                Save
+              </button>
+              <button
+                className="button-ghost"
+                onClick={() => {
+                  setShowAckModal(false);
+                  setAckTitle("");
+                  setAckBody("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
