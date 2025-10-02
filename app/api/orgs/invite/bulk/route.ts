@@ -1,10 +1,18 @@
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "@/lib/firebase-admin";
 import nodemailer from "nodemailer";
+
+type InviteStatus = "pending" | "accepted" | "revoked";
+type InviteDoc = {
+  email: string;
+  status: InviteStatus;
+  invitedAt: number;
+  invitedBy: string;
+};
 
 function mailer() {
   return nodemailer.createTransport({
@@ -29,9 +37,10 @@ export async function POST(req: NextRequest) {
     const decoded = await getAuth().verifyIdToken(idToken);
     const invitedBy = (decoded.email || "").toLowerCase();
 
-    const body = await req.json().catch(() => null) as any;
+    const body = (await req.json().catch(() => null)) as { orgId?: string; emails?: unknown[] } | null;
     const orgId = typeof body?.orgId === "string" ? body.orgId.trim() : "";
-    const emails = Array.isArray(body?.emails) ? body.emails : [];
+    const emails = Array.isArray(body?.emails) ? body?.emails : [];
+
     if (!orgId || emails.length === 0) {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
@@ -49,24 +58,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
 
-    const clean = Array.from(
+    const clean: string[] = Array.from(
       new Set(
         emails
-          .map((e: string) => (e || "").toLowerCase().trim())
+          .map((value) => String(value || "").toLowerCase().trim())
           .filter(Boolean)
       )
     );
+
     if (clean.length === 0) {
       return NextResponse.json({ error: "no_recipients" }, { status: 400 });
     }
 
     const batch = db.batch();
-    const created: Array<{ id: string; email: string; status: string; invitedAt: number; invitedBy: string }> = [];
+    const created: Array<InviteDoc & { id: string }> = [];
     const now = Date.now();
 
     for (const email of clean) {
       const ref = orgRef.collection("invites").doc();
-      const data = {
+      const data: InviteDoc = {
         email,
         status: "pending",
         invitedAt: now,
@@ -75,6 +85,7 @@ export async function POST(req: NextRequest) {
       batch.set(ref, data, { merge: true });
       created.push({ id: ref.id, ...data });
     }
+
     await batch.commit();
 
     const transporter = mailer();
