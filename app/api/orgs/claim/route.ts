@@ -12,61 +12,69 @@ export async function POST(req: NextRequest) {
     if (!idToken) return NextResponse.json({ error: "no_token" }, { status: 401 });
 
     const decoded = await getAuth().verifyIdToken(idToken);
-    const uid = decoded.uid;
+    const uid = decoded.uid || "";
     const email = (decoded.email || "").toLowerCase();
     if (!uid || !email) return NextResponse.json({ error: "no_email" }, { status: 400 });
 
-    let payload: any = null;
-    try {
-      payload = await req.json();
-    } catch {}
+    const payload = await req.json().catch(() => null) as any;
     const orgId = typeof payload?.orgId === "string" ? payload.orgId.trim() : "";
-    if (!orgId) {
-      return NextResponse.json({ error: "missing_orgId" }, { status: 400 });
-    }
+    if (!orgId) return NextResponse.json({ error: "missing_orgId" }, { status: 400 });
 
     const db = getFirestore();
     const orgRef = db.collection("orgs").doc(orgId);
     const orgSnap = await orgRef.get();
-    if (!orgSnap.exists) {
-      return NextResponse.json({ error: "org_not_found" }, { status: 404 });
-    }
+    if (!orgSnap.exists) return NextResponse.json({ error: "org_not_found" }, { status: 404 });
 
     const data = orgSnap.data() || {};
-    const ownerEmail = (data.ownerEmail || "").toLowerCase();
-    const pendingEmail = (data.pendingOwnerEmail || "").toLowerCase();
+    const owner = (data.ownerEmail || "").toLowerCase();
+    const pendingOwner = (data.pendingOwnerEmail || "").toLowerCase();
     const now = Date.now();
 
-    if (!ownerEmail) {
-      if (pendingEmail && pendingEmail !== email) {
-        return NextResponse.json({ error: "not_pending_owner" }, { status: 403 });
-      }
+    const memRef = orgRef.collection("members").doc(uid);
+    const memSnap = await memRef.get();
+
+    if (memSnap.exists) {
+      await db.collection("entitlements").doc(email).set(
+        { orgId, updatedAt: now },
+        { merge: true }
+      );
+      return NextResponse.json({ ok: true, orgId });
+    }
+
+    if (!owner || pendingOwner === email) {
       await orgRef.set(
         { ownerEmail: email, pendingOwnerEmail: null, updatedAt: now },
         { merge: true }
       );
-      if (uid) {
-        await orgRef.collection("members").doc(uid).set(
-          { role: "owner", email, createdAt: now, updatedAt: now },
-          { merge: true }
-        );
-      }
+      await memRef.set(
+        { role: "owner", email, createdAt: now, updatedAt: now },
+        { merge: true }
+      );
     } else {
-      if (uid) {
-        const roleToSet = ownerEmail === email ? "owner" : "viewer";
-        await orgRef.collection("members").doc(uid).set(
-          { role: roleToSet, email, updatedAt: now },
-          { merge: true }
-        );
+      const inviteSnap = await orgRef
+        .collection("invites")
+        .where("email", "==", email)
+        .where("status", "==", "pending")
+        .limit(1)
+        .get();
+
+      if (inviteSnap.empty) {
+        return NextResponse.json({ error: "no_pending_invite" }, { status: 403 });
       }
+
+      const inviteRef = inviteSnap.docs[0].ref;
+      await memRef.set(
+        { role: "viewer", email, createdAt: now, updatedAt: now },
+        { merge: true }
+      );
+      await inviteRef.set(
+        { status: "accepted", acceptedAt: now },
+        { merge: true }
+      );
     }
 
     await db.collection("entitlements").doc(email).set(
-      {
-        orgId,
-        claimedAt: now,
-        updatedAt: now,
-      },
+      { orgId, claimedAt: now, updatedAt: now },
       { merge: true }
     );
 

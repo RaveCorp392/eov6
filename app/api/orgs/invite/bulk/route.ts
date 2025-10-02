@@ -2,78 +2,97 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
 import { getAuth } from "firebase-admin/auth";
-import { sendWithZohoFallback } from "@/lib/mail";
+import { getFirestore } from "@/lib/firebase-admin";
+import nodemailer from "nodemailer";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.eov6.com";
+function mailer() {
+  return nodemailer.createTransport({
+    host: process.env.ZOHO_SMTP_HOST!,
+    port: Number(process.env.ZOHO_SMTP_PORT || 587),
+    secure: Number(process.env.ZOHO_SMTP_PORT || 0) === 465,
+    auth: {
+      user: process.env.ZOHO_SMTP_USER!,
+      pass: process.env.ZOHO_SMTP_PASS!,
+    },
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
     const authz = req.headers.get("authorization") || "";
-    const idToken = authz.startsWith("Bearer ") ? authz.slice(7) : null;
-    if (!idToken) return NextResponse.json({ error: "no_token" }, { status: 401 });
-    const decoded = await getAuth().verifyIdToken(idToken);
-    const email = (decoded.email || "").toLowerCase();
+    const idToken = authz.startsWith("Bearer ") ? authz.slice(7) : "";
+    if (!idToken) {
+      return NextResponse.json({ error: "no_token" }, { status: 401 });
+    }
 
-    const { orgId, emails } = (await req.json()) as { orgId: string; emails: string[] };
-    if (!orgId) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    const decoded = await getAuth().verifyIdToken(idToken);
+    const invitedBy = (decoded.email || "").toLowerCase();
+
+    const body = await req.json().catch(() => null) as any;
+    const orgId = typeof body?.orgId === "string" ? body.orgId.trim() : "";
+    const emails = Array.isArray(body?.emails) ? body.emails : [];
+    if (!orgId || emails.length === 0) {
+      return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
 
     const db = getFirestore();
     const orgRef = db.collection("orgs").doc(orgId);
     const orgSnap = await orgRef.get();
-    if (!orgSnap.exists) return NextResponse.json({ error: "org_not_found" }, { status: 404 });
-    const orgData = orgSnap.data() || {};
+    if (!orgSnap.exists) {
+      return NextResponse.json({ error: "org_not_found" }, { status: 404 });
+    }
 
-    const me = await orgRef.collection("members").doc(decoded.uid).get();
-    const isInternal = email.endsWith("@eov6.com");
-    if (!me.exists && !isInternal) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    const memberSnap = await orgRef.collection("members").doc(decoded.uid || "").get();
+    const isInternal = invitedBy.endsWith("@eov6.com");
+    if (!memberSnap.exists && !isInternal) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
 
-    const cleanEmails = Array.from(
+    const clean = Array.from(
       new Set(
-        (emails || [])
-          .map((e) => (e || "").toLowerCase().trim())
+        emails
+          .map((e: string) => (e || "").toLowerCase().trim())
           .filter(Boolean)
       )
     );
+    if (clean.length === 0) {
+      return NextResponse.json({ error: "no_recipients" }, { status: 400 });
+    }
 
     const batch = db.batch();
-    for (const le of cleanEmails) {
-      const inviteRef = orgRef.collection("invites").doc();
-      batch.set(inviteRef, {
-        email: le,
+    const created: Array<{ id: string; email: string; status: string; invitedAt: number; invitedBy: string }> = [];
+    const now = Date.now();
+
+    for (const email of clean) {
+      const ref = orgRef.collection("invites").doc();
+      const data = {
+        email,
         status: "pending",
-        invitedAt: Date.now(),
-        invitedBy: email,
-      });
+        invitedAt: now,
+        invitedBy,
+      };
+      batch.set(ref, data, { merge: true });
+      created.push({ id: ref.id, ...data });
     }
     await batch.commit();
 
-    const invitedDomains = new Set<string>();
-    for (const le of cleanEmails) {
-      const at = le.indexOf("@");
-      if (at > -1 && at < le.length - 1) invitedDomains.add(le.slice(at + 1));
-    }
+    const transporter = mailer();
+    const base = process.env.NEXT_PUBLIC_SITE_URL || "https://www.eov6.com";
+    const from = process.env.EMAIL_FROM || `EOV6 <${process.env.ZOHO_SMTP_USER}>`;
+    const orgName = ((orgSnap.data() as any)?.name || orgId) as string;
 
-    if (invitedDomains.size) {
-      const existing: string[] = Array.isArray(orgData?.domains) ? orgData.domains : [];
-      const merged = new Set<string>(existing.map((d) => String(d).toLowerCase()));
-      for (const d of invitedDomains) merged.add(d);
-      await orgRef.set({ domains: Array.from(merged) }, { merge: true });
-    }
-
-    const orgName = orgData?.name || orgId;
-    for (const le of cleanEmails) {
-      const link = `${SITE_URL}/onboard/claim?org=${encodeURIComponent(orgId)}&email=${encodeURIComponent(le)}`;
-      await sendWithZohoFallback({
-        to: le,
-        subject: `You're invited to join ${orgName} on EOV6`,
-        text: `You've been invited to join ${orgName} on EOV6. Accept the invite: ${link}`,
-        html: `<!doctype html><p>You've been invited to join <strong>${orgName}</strong> on EOV6.</p><p><a href="${link}">Accept invitation</a></p><p>If the button doesn't work, copy and paste this URL:<br/>${link}</p>`,
+    for (const invite of created) {
+      const link = `${base}/onboard/claim?org=${encodeURIComponent(orgId)}&email=${encodeURIComponent(invite.email)}`;
+      await transporter.sendMail({
+        from,
+        to: invite.email,
+        subject: `Invitation to ${orgName} on EOV6`,
+        text: `You've been invited to join ${orgName} on EOV6.\n\nClaim: ${link}\n\nIf you weren't expecting this, ignore this email.`,
       });
     }
 
-    return NextResponse.json({ ok: true, count: cleanEmails.length });
+    return NextResponse.json({ ok: true, invited: created.length, invites: created });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }

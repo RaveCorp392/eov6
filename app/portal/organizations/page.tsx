@@ -199,17 +199,6 @@ export default function PortalOrganizationsPage() {
     }
   }
 
-  async function deleteAck(id: string) {
-    if (!orgId || !id) return;
-    try {
-      await deleteDoc(doc(db, "orgs", orgId, "ackTemplates", id));
-      await reloadAcks(orgId);
-    } catch (err) {
-      console.error("[portal/org] delete ack failed", err);
-      alert("Delete failed. Please try again.");
-    }
-  }
-
   async function handleCreateAck() {
     if (!orgId) return;
     const title = ackTitle.trim();
@@ -233,6 +222,17 @@ export default function PortalOrganizationsPage() {
     } catch (err) {
       console.error("[portal/org] add ack failed", err);
       alert("Could not add acknowledgement. Please retry.");
+    }
+  }
+
+  async function deleteAck(id: string) {
+    if (!orgId || !id) return;
+    try {
+      await deleteDoc(doc(db, "orgs", orgId, "ackTemplates", id));
+      await reloadAcks(orgId);
+    } catch (err) {
+      console.error("[portal/org] delete ack failed", err);
+      alert("Delete failed. Please try again.");
     }
   }
 
@@ -344,8 +344,11 @@ export default function PortalOrganizationsPage() {
   const renderAckBody = (body: string | undefined) => {
     const text = body || "";
     if (text.length <= 240) return text;
-    return `${text.slice(0, 240)}…`;
+    return `${text.slice(0, 240)}...`;
   };
+
+  const pendingInvites = invites.filter((invite) => (invite.status || "pending") === "pending");
+  const otherInvites = invites.filter((invite) => (invite.status || "pending") !== "pending");
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
@@ -433,8 +436,8 @@ export default function PortalOrganizationsPage() {
 
       <div className="card p-4 mb-6">
         <h2 className="font-semibold mb-2">Pending invites</h2>
-        {invites.length === 0 && <div className="text-sm text-zinc-500">No invites yet.</div>}
-        {invites.map((invite) => (
+        {pendingInvites.length === 0 && <div className="text-sm text-zinc-500">No invites yet.</div>}
+        {pendingInvites.map((invite) => (
           <div key={invite.id} className="flex items-center justify-between py-1">
             <div className="text-sm">
               <div className="font-medium">{invite.email || invite.id}</div>
@@ -448,6 +451,16 @@ export default function PortalOrganizationsPage() {
         <div className="text-xs text-zinc-500 mt-2">
           If an invite is accepted, it moves to Members automatically.
         </div>
+        {otherInvites.length > 0 && (
+          <div className="mt-4 border-t pt-3">
+            <h3 className="font-medium mb-2">Other invites</h3>
+            {otherInvites.map((invite) => (
+              <div key={invite.id} className="text-sm text-zinc-600">
+                {invite.email || invite.id} - {invite.status || "pending"}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {showAckModal && (
