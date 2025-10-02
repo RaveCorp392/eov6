@@ -14,6 +14,7 @@ export default function AgentConsole() {
   const [orgName, setOrgName] = useState<string>("-");
   const [translateUnlimited, setTranslateUnlimited] = useState<boolean | null>(null);
   const [draftOrgId, setDraftOrgId] = useState<string>("");
+  const showSwitcher = !activeOrgId || process.env.NODE_ENV !== "production";
 
   // Resolve active org from ?org=, stored preference, or entitlement mapping
   useEffect(() => {
@@ -123,34 +124,30 @@ export default function AgentConsole() {
           </div>
         </div>
 
-        <div className="mt-3 flex items-center gap-2 text-sm">
-          <input
-            className="rounded border px-2 py-1"
-            placeholder="Set active orgId"
-            value={draftOrgId}
-            onChange={(e) => setDraftOrgId(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                commitOrg((e.target as HTMLInputElement).value);
-              }
-            }}
-          />
-          <button
-            className="button-ghost"
-            onClick={() => {
-              setDraftOrgId("");
-              commitOrg("");
-            }}
-          >
-            Clear
-          </button>
-          <button
-            className="button-ghost"
-            onClick={() => commitOrg(draftOrgId)}
-          >
-            Apply
-          </button>
-        </div>
+        {showSwitcher && (
+          <div className="mt-3 flex items-center gap-2 text-sm">
+            <input
+              className="rounded border px-2 py-1"
+              placeholder="Set active orgId"
+              value={draftOrgId}
+              onChange={(e) => setDraftOrgId(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  commitOrg((e.target as HTMLInputElement).value);
+                }
+              }}
+            />
+            <button
+              className="button-ghost"
+              onClick={() => {
+                setDraftOrgId("");
+                commitOrg("");
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         <div className="mt-6">
           <AgentLandingInfo />
@@ -159,3 +156,4 @@ export default function AgentConsole() {
     </div>
   );
 }
+
