@@ -1,6 +1,6 @@
-﻿'use client';
+'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { watchSession } from '@/lib/firebase';
 import ConsentGate from '@/components/ConsentGate';
 import ChatWindow from '@/components/ChatWindow';
@@ -19,18 +19,21 @@ export default function CallerSessionPage({ params }: { params: { code: string }
 
   useEffect(() => watchSession(code, setSession), [code]);
 
-  async function openPrivacyModal(body: string) {
-    if (!body) return;
-    await updateDoc(doc(db, 'sessions', code), {
-      pendingAck: {
-        id: 'privacy',
-        title: 'Privacy acknowledgement',
-        body,
-        requestedAt: serverTimestamp(),
-        requestedBy: 'system',
-      },
-    });
-  }
+  const requestPrivacyAck = useCallback(
+    async (body: string) => {
+      if (!body) return;
+      await updateDoc(doc(db, 'sessions', code), {
+        pendingAck: {
+          id: 'privacy',
+          title: 'Privacy acknowledgement',
+          body,
+          requestedAt: serverTimestamp(),
+          requestedBy: 'system',
+        },
+      });
+    },
+    [code]
+  );
 
   // Automatically surface the privacy acknowledgement when an org is linked to the session.
   useEffect(() => {
@@ -60,13 +63,13 @@ export default function CallerSessionPage({ params }: { params: { code: string }
       }
 
       try {
-        await openPrivacyModal(text);
+        await requestPrivacyAck(text);
         privacyRequestRef.current = orgId;
       } catch (err) {
         console.error('[caller/privacy]', err);
       }
     })();
-  }, [session?.orgId, session?.ackProgress?.privacy, session?.pendingAck?.id, code]);
+  }, [session?.orgId, session?.ackProgress?.privacy, session?.pendingAck?.id, code, requestPrivacyAck]);
 
   const consentAccepted = Boolean(session?.consent?.accepted);
   const blocked = Boolean(session?.policySnapshot?.required) && !consentAccepted;
@@ -141,3 +144,4 @@ export default function CallerSessionPage({ params }: { params: { code: string }
     </ConsentGate>
   );
 }
+
