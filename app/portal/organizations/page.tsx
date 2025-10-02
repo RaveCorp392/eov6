@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "@/lib/firebase";
 import { getAuth } from "firebase/auth";
 import {
@@ -13,6 +13,8 @@ import {
   addDoc,
   deleteDoc,
 } from "firebase/firestore";
+
+type PartialOrg = { id: string; texts?: { privacyStatement?: string } } & Record<string, any>;
 
 type AckTemplate = {
   id: string;
@@ -33,8 +35,7 @@ export default function PortalOrganizationsPage() {
   const db = getFirestore();
 
   const [orgId, setOrgId] = useState<string | null>(null);
-  const orgIdRef = useRef<string | null>(null);
-  const [org, setOrg] = useState<any | null>(null);
+  const [org, setOrg] = useState<PartialOrg | null>(null);
   const [acks, setAcks] = useState<AckTemplate[]>([]);
   const [invites, setInvites] = useState<InviteRecord[]>([]);
   const [saving, setSaving] = useState(false);
@@ -42,128 +43,92 @@ export default function PortalOrganizationsPage() {
   const [inviteInput, setInviteInput] = useState("");
   const [privacyDraft, setPrivacyDraft] = useState("");
 
-  useEffect(() => {
-    orgIdRef.current = orgId;
-  }, [orgId]);
-
-  const persistActiveOrg = (value: string | null) => {
+  const applyOrgId = useCallback(async () => {
     if (typeof window === "undefined") return;
-    try {
-      if (value) {
-        localStorage.setItem("activeOrgId", value);
-      } else {
-        localStorage.removeItem("activeOrgId");
-      }
-    } catch {
-      // ignore storage issues
-    }
-  };
-
-  const applyOrgId = (value: string | null, force = false) => {
-    const trimmed = value?.trim();
-    if (!trimmed) return false;
-    if (!force && orgIdRef.current) return false;
-    orgIdRef.current = trimmed;
-    setOrgId(trimmed);
-    persistActiveOrg(trimmed);
-    return true;
-  };
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    let cancelled = false;
-
-    const fetchOrgForEmail = async (email: string | null | undefined) => {
-      const normalized = email?.trim().toLowerCase();
-      if (!normalized || cancelled || orgIdRef.current) return;
+    const url = new URL(window.location.href);
+    const qOrg = url.searchParams.get("org");
+    if (qOrg) {
+      setOrgId(qOrg);
       try {
-        const entSnap = await getDoc(doc(db, "entitlements", normalized));
-        if (!entSnap.exists()) return;
-        const mapped = (entSnap.data() as any)?.orgId;
-        if (mapped && !cancelled) {
-          applyOrgId(String(mapped));
-        }
-      } catch (err) {
-        console.error("[portal/org] entitlement lookup failed", err);
-      }
-    };
-
-    const bootstrap = async () => {
-      if (cancelled) return;
-      const current = new URL(window.location.href);
-      const qOrg = current.searchParams.get("org");
-      if (qOrg) {
-        applyOrgId(qOrg, true);
-        return;
-      }
-
-      try {
-        const stored = localStorage.getItem("activeOrgId");
-        if (stored) {
-          applyOrgId(stored, true);
-          return;
-        }
+        localStorage.setItem("activeOrgId", qOrg);
       } catch {
-        // ignore storage read issues
+        // ignore storage issues
       }
-
-      await fetchOrgForEmail(auth.currentUser?.email);
-    };
-
-    bootstrap();
-
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (cancelled || orgIdRef.current) return;
-      fetchOrgForEmail(user?.email);
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [auth, db]);
-
-  async function readAckTemplates(id: string) {
-    const snap = await getDocs(collection(db, "orgs", id, "ackTemplates"));
-    return snap.docs
-      .map((d) => ({ id: d.id, ...(d.data() as any) }))
-      .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
-  }
-
-  async function readInvites(id: string) {
-    const snap = await getDocs(collection(db, "orgs", id, "invites"));
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!orgId) {
-      setOrg(null);
-      setAcks([]);
-      setInvites([]);
-      setPrivacyDraft("");
       return;
     }
 
-    const load = async () => {
+    let pref: string | null = null;
+    try {
+      pref = localStorage.getItem("activeOrgId");
+    } catch {
+      // ignore storage issues
+    }
+    if (pref) {
+      setOrgId(pref);
+      return;
+    }
+
+    const email = auth.currentUser?.email?.toLowerCase() || "";
+    if (!email) return;
+    const ent = await getDoc(doc(db, "entitlements", email));
+    const mapped = ent.exists() ? ((ent.data() as any)?.orgId || null) : null;
+    setOrgId(mapped);
+    if (mapped) {
+      try {
+        localStorage.setItem("activeOrgId", mapped);
+      } catch {
+        // ignore storage issues
+      }
+    }
+  }, [auth, db]);
+
+  const readAckTemplates = useCallback(
+    async (id: string) => {
+      const snap = await getDocs(collection(db, "orgs", id, "ackTemplates"));
+      setAcks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+    },
+    [db]
+  );
+
+  const readInvites = useCallback(
+    async (id: string) => {
+      const snap = await getDocs(collection(db, "orgs", id, "invites"));
+      setInvites(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+    },
+    [db]
+  );
+
+  useEffect(() => {
+    void applyOrgId();
+    const unsubscribe = auth.onAuthStateChanged(() => {
+      void applyOrgId();
+    });
+    return () => unsubscribe();
+  }, [auth, applyOrgId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!orgId) {
+        if (!cancelled) {
+          setOrg(null);
+          setAcks([]);
+          setInvites([]);
+          setPrivacyDraft("");
+        }
+        return;
+      }
+
       setLoading(true);
       try {
-        const orgRef = doc(db, "orgs", orgId);
-        const snap = await getDoc(orgRef);
-        const orgData = snap.exists() ? { id: snap.id, ...(snap.data() as any) } : null;
+        const snap = await getDoc(doc(db, "orgs", orgId));
         if (!cancelled) {
-          setOrg(orgData);
-          setPrivacyDraft(String(orgData?.texts?.privacyStatement || ""));
+          const data = snap.exists() ? ({ id: snap.id, ...(snap.data() as any) } as PartialOrg) : null;
+          setOrg(data);
+          setPrivacyDraft(String(data?.texts?.privacyStatement || ""));
         }
-        const [ackList, inviteList] = await Promise.all([
-          readAckTemplates(orgId),
-          readInvites(orgId),
-        ]);
-        if (!cancelled) {
-          setAcks(ackList);
-          setInvites(inviteList);
-        }
+        await Promise.all([readAckTemplates(orgId), readInvites(orgId)]);
       } catch (err) {
         console.error("[portal/org] load failed", err);
         if (!cancelled) {
@@ -174,14 +139,12 @@ export default function PortalOrganizationsPage() {
       } finally {
         if (!cancelled) setLoading(false);
       }
-    };
-
-    load();
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [orgId, db]);
+  }, [orgId, readAckTemplates, readInvites]);
 
   async function savePrivacy(nextText: string) {
     if (!orgId) return;
@@ -195,7 +158,7 @@ export default function PortalOrganizationsPage() {
         { texts: nextTexts, updatedAt: Date.now() },
         { merge: true }
       );
-      setOrg((prev) => (prev ? { ...prev, texts: nextTexts } : { id: orgId, texts: nextTexts }));
+      setOrg((prev: PartialOrg | null) => (prev ? { ...prev, texts: nextTexts } : { id: orgId, texts: nextTexts }));
     } catch (err) {
       console.error("[portal/org] save privacy failed", err);
       alert("Could not save the privacy statement. Please try again.");
@@ -218,7 +181,7 @@ export default function PortalOrganizationsPage() {
         order: nextOrder,
         createdAt: Date.now(),
       });
-      setAcks(await readAckTemplates(orgId));
+      await readAckTemplates(orgId);
     } catch (err) {
       console.error("[portal/org] add ack failed", err);
       alert("Could not add acknowledgement. Please retry.");
@@ -264,7 +227,7 @@ export default function PortalOrganizationsPage() {
         return;
       }
       setInviteInput("");
-      setInvites(await readInvites(orgId));
+      await readInvites(orgId);
       const invitedCount = typeof payload?.invited === "number" ? payload.invited : emails.length;
       alert(`Invited ${invitedCount} recipient${invitedCount === 1 ? "" : "s"}.`);
     } catch (err) {
@@ -276,7 +239,12 @@ export default function PortalOrganizationsPage() {
   const manualOrgSetter = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    applyOrgId(trimmed, true);
+    setOrgId(trimmed);
+    try {
+      localStorage.setItem("activeOrgId", trimmed);
+    } catch {
+      // ignore storage issues
+    }
   };
 
   if (!orgId) {
@@ -284,7 +252,7 @@ export default function PortalOrganizationsPage() {
       <div className="mx-auto max-w-4xl px-6 py-10">
         <h1 className="text-2xl font-bold mb-3">Organization</h1>
         <p className="text-sm text-zinc-600">
-          We couldn't find your org automatically. Paste an org ID to continue.
+          We couldn&apos;t find your org automatically. Paste an org ID to continue.
         </p>
         <div className="mt-3 flex gap-2">
           <input
@@ -314,9 +282,7 @@ export default function PortalOrganizationsPage() {
     <div className="mx-auto max-w-4xl px-6 py-10">
       <h1 className="text-2xl font-bold mb-3">Organization - {org?.name || orgId}</h1>
 
-      <div className="text-sm text-zinc-500 mb-4">
-        {loading ? "Loading details..." : null}
-      </div>
+      <div className="text-sm text-zinc-500 mb-4">{loading ? "Loading details..." : null}</div>
 
       <div className="card p-4 mb-6">
         <h2 className="font-semibold mb-2">Privacy statement</h2>
@@ -374,18 +340,9 @@ export default function PortalOrganizationsPage() {
               {invite.email || invite.id} - {invite.status || "pending"}
             </div>
           ))}
+          <div className="text-sm text-zinc-500">If you don&apos;t see invites here, they may have already been accepted.</div>
         </div>
       </div>
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
