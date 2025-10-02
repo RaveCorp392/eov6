@@ -30,6 +30,12 @@ type InviteRecord = {
   status?: string;
 };
 
+type MemberRecord = {
+  id: string;
+  email?: string;
+  role?: string;
+};
+
 export default function PortalOrganizationsPage() {
   const auth = getAuth();
   const db = getFirestore();
@@ -38,6 +44,7 @@ export default function PortalOrganizationsPage() {
   const [org, setOrg] = useState<PartialOrg | null>(null);
   const [acks, setAcks] = useState<AckTemplate[]>([]);
   const [invites, setInvites] = useState<InviteRecord[]>([]);
+  const [members, setMembers] = useState<MemberRecord[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inviteInput, setInviteInput] = useState("");
@@ -82,22 +89,6 @@ export default function PortalOrganizationsPage() {
     }
   }, [auth, db]);
 
-  const readAckTemplates = useCallback(
-    async (id: string) => {
-      const snap = await getDocs(collection(db, "orgs", id, "ackTemplates"));
-      setAcks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
-    },
-    [db]
-  );
-
-  const readInvites = useCallback(
-    async (id: string) => {
-      const snap = await getDocs(collection(db, "orgs", id, "invites"));
-      setInvites(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
-    },
-    [db]
-  );
-
   useEffect(() => {
     void applyOrgId();
     const unsubscribe = auth.onAuthStateChanged(() => {
@@ -115,6 +106,7 @@ export default function PortalOrganizationsPage() {
           setOrg(null);
           setAcks([]);
           setInvites([]);
+          setMembers([]);
           setPrivacyDraft("");
         }
         return;
@@ -122,19 +114,35 @@ export default function PortalOrganizationsPage() {
 
       setLoading(true);
       try {
-        const snap = await getDoc(doc(db, "orgs", orgId));
-        if (!cancelled) {
-          const data = snap.exists() ? ({ id: snap.id, ...(snap.data() as any) } as PartialOrg) : null;
-          setOrg(data);
-          setPrivacyDraft(String(data?.texts?.privacyStatement || ""));
-        }
-        await Promise.all([readAckTemplates(orgId), readInvites(orgId)]);
+        const orgRef = doc(db, "orgs", orgId);
+        const [orgSnap, acksSnap, invitesSnap, membersSnap] = await Promise.all([
+          getDoc(orgRef),
+          getDocs(collection(db, "orgs", orgId, "ackTemplates")),
+          getDocs(collection(db, "orgs", orgId, "invites")),
+          getDocs(collection(db, "orgs", orgId, "members")),
+        ]);
+
+        if (cancelled) return;
+
+        const orgData = orgSnap.exists()
+          ? ({ id: orgSnap.id, ...(orgSnap.data() as any) } as PartialOrg)
+          : null;
+        setOrg(orgData);
+        setPrivacyDraft(String(orgData?.texts?.privacyStatement || ""));
+
+        const sortedAcks = acksSnap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) }))
+          .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
+        setAcks(sortedAcks);
+        setInvites(invitesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+        setMembers(membersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       } catch (err) {
         console.error("[portal/org] load failed", err);
         if (!cancelled) {
           setOrg(null);
           setAcks([]);
           setInvites([]);
+          setMembers([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -144,7 +152,7 @@ export default function PortalOrganizationsPage() {
     return () => {
       cancelled = true;
     };
-  }, [orgId, readAckTemplates, readInvites]);
+  }, [orgId, db]);
 
   async function savePrivacy(nextText: string) {
     if (!orgId) return;
@@ -181,7 +189,11 @@ export default function PortalOrganizationsPage() {
         order: nextOrder,
         createdAt: Date.now(),
       });
-      await readAckTemplates(orgId);
+      const snap = await getDocs(collection(db, "orgs", orgId, "ackTemplates"));
+      const sorted = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
+      setAcks(sorted);
     } catch (err) {
       console.error("[portal/org] add ack failed", err);
       alert("Could not add acknowledgement. Please retry.");
@@ -227,12 +239,37 @@ export default function PortalOrganizationsPage() {
         return;
       }
       setInviteInput("");
-      await readInvites(orgId);
+      const snap = await getDocs(collection(db, "orgs", orgId, "invites"));
+      setInvites(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       const invitedCount = typeof payload?.invited === "number" ? payload.invited : emails.length;
       alert(`Invited ${invitedCount} recipient${invitedCount === 1 ? "" : "s"}.`);
     } catch (err) {
       console.error("[portal/org] send invites failed", err);
       alert("Invite send failed. Please retry.");
+    }
+  }
+
+  async function removeMember(uid: string) {
+    if (!orgId || !uid) return;
+    if (!confirm("Remove this member from the organization?")) return;
+    try {
+      await deleteDoc(doc(db, "orgs", orgId, "members", uid));
+      setMembers((prev) => prev.filter((m) => m.id !== uid));
+    } catch (err) {
+      console.error("[portal/org] remove member failed", err);
+      alert("Could not remove member. Please try again.");
+    }
+  }
+
+  async function revokeInvite(id: string) {
+    if (!orgId || !id) return;
+    if (!confirm("Revoke this invite?")) return;
+    try {
+      await deleteDoc(doc(db, "orgs", orgId, "invites", id));
+      setInvites((prev) => prev.filter((invite) => invite.id !== id));
+    } catch (err) {
+      console.error("[portal/org] revoke invite failed", err);
+      alert("Could not revoke invite. Please try again.");
     }
   }
 
@@ -332,15 +369,43 @@ export default function PortalOrganizationsPage() {
             Send invites
           </button>
         </div>
-        <div className="mt-4">
-          <h3 className="font-medium mb-1">Pending</h3>
-          {invites.length === 0 && <div className="text-sm text-zinc-500">No invites yet.</div>}
-          {invites.map((invite) => (
-            <div key={invite.id} className="text-sm">
-              {invite.email || invite.id} - {invite.status || "pending"}
+      </div>
+
+      <div className="card p-4 mb-6">
+        <h2 className="font-semibold mb-2">Members</h2>
+        {members.length === 0 && <div className="text-sm text-zinc-500">No members yet.</div>}
+        {members.map((m) => (
+          <div key={m.id} className="flex items-center justify-between py-1">
+            <div className="text-sm">
+              <div className="font-medium">{m.email || m.id}</div>
+              <div className="text-zinc-500">Role: {m.role || "viewer"}</div>
             </div>
-          ))}
-          <div className="text-sm text-zinc-500">If you don&apos;t see invites here, they may have already been accepted.</div>
+            <button className="button-ghost text-sm" onClick={() => removeMember(m.id)}>
+              Remove
+            </button>
+          </div>
+        ))}
+        <div className="text-xs text-zinc-500 mt-2">
+          Note: removing yourself requires another owner to re-add you.
+        </div>
+      </div>
+
+      <div className="card p-4 mb-6">
+        <h2 className="font-semibold mb-2">Pending invites</h2>
+        {invites.length === 0 && <div className="text-sm text-zinc-500">No invites yet.</div>}
+        {invites.map((invite) => (
+          <div key={invite.id} className="flex items-center justify-between py-1">
+            <div className="text-sm">
+              <div className="font-medium">{invite.email || invite.id}</div>
+              <div className="text-zinc-500">Status: {invite.status || "pending"}</div>
+            </div>
+            <button className="button-ghost text-sm" onClick={() => revokeInvite(invite.id)}>
+              Revoke
+            </button>
+          </div>
+        ))}
+        <div className="text-xs text-zinc-500 mt-2">
+          If an invite is accepted, it moves to Members automatically.
         </div>
       </div>
     </div>
