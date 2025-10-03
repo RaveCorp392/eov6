@@ -12,7 +12,13 @@ import {
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import AckMenu from "@/components/ack/AckMenu";
 
-export default function AgentDetailsPanel({ sessionId, membershipReady = false }: { sessionId: string; membershipReady?: boolean }) {
+type AgentDetailsPanelProps = {
+  sessionId: string;
+  membershipReady?: boolean;
+  ackError?: string | null;
+};
+
+export default function AgentDetailsPanel({ sessionId, membershipReady = false, ackError = null }: AgentDetailsPanelProps) {
   const [caller, setCaller] = useState<any>({});
   const [notes, setNotes] = useState("");
   const [sessionObj, setSessionObj] = useState<any>(null);
@@ -172,20 +178,26 @@ export default function AgentDetailsPanel({ sessionId, membershipReady = false }
 
   return (
     <div className="grid gap-4">
+      {ackError ? (
+        <div className="rounded bg-amber-50 text-amber-900 text-sm p-2">
+          {ackError}
+        </div>
+      ) : null}
+
       <section className="rounded-xl border p-4">
         <h3 className="font-medium mb-2">Caller</h3>
         <div className="text-sm space-y-1">
           <div>
             <span className="opacity-60 mr-1">Name:</span>
-            {caller?.name || "—"}
+            {caller?.name || '--'}
           </div>
           <div>
             <span className="opacity-60 mr-1">Email:</span>
-            {caller?.email || "—"}
+            {caller?.email || '--'}
           </div>
           <div>
             <span className="opacity-60 mr-1">Phone:</span>
-            {caller?.phone || "—"}
+            {caller?.phone || '--'}
           </div>
         </div>
       </section>
@@ -204,6 +216,7 @@ export default function AgentDetailsPanel({ sessionId, membershipReady = false }
         <div className="mt-3">
           <AckMenu code={sessionId} orgId={sessionObj?.orgId} membershipReady={membershipReady} />
         </div>
+
         {sessionObj?.translate?.requested && (
           <div className="mt-2 text-xs rounded-md bg-blue-50 text-blue-900 px-2 py-1">
             Caller requested translation
@@ -268,7 +281,7 @@ export default function AgentDetailsPanel({ sessionId, membershipReady = false }
           <textarea
             className="w-full mt-1 rounded-md border p-2"
             rows={2}
-            placeholder="Type text to translate…"
+            placeholder="Type text to translate..."
             value={previewIn}
             onChange={(e) => setPreviewIn(e.target.value)}
           />
@@ -303,7 +316,7 @@ export default function AgentDetailsPanel({ sessionId, membershipReady = false }
             rows={2}
             readOnly
             value={previewOut}
-            placeholder="Translation will appear here…"
+            placeholder="Translation will appear here..."
           />
         </div>
       </div>
