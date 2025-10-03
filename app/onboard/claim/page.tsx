@@ -1,66 +1,91 @@
-﻿"use client";
+"use client";
 import { useEffect, useState } from "react";
 import "@/lib/firebase";
-import { getAuth, GoogleAuthProvider, signInWithRedirect } from "firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithRedirect,
+  getRedirectResult
+} from "firebase/auth";
 
 export default function ClaimPage() {
   const auth = getAuth();
   const [status, setStatus] = useState<string>("Ready");
+  const url = typeof window !== "undefined" ? new URL(window.location.href) : null;
+  const org = url?.searchParams.get("org") || "";
+  const emailParam = url?.searchParams.get("email") || ""; // optional
 
+  // After Google redirects back, this fires once
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const org = url.searchParams.get("org");
-    if (!org) {
-      setStatus("Missing org");
-      return;
-    }
+    (async () => {
+      try {
+        await getRedirectResult(auth); // resolves silently if no redirect
+      } catch (_) {
+        // ignore
+      }
+    })();
+  }, [auth]);
 
-    let cancelled = false;
-    let done = false;
-
-    const exec = async () => {
-      if (done || !auth.currentUser) return;
-      done = true;
-      setStatus("Claiming...");
-      const token = await auth.currentUser.getIdToken();
-      const response = await fetch("/api/orgs/claim", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ orgId: org }),
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        setStatus(payload?.error || "claim_failed");
+  // When auth state changes, attempt the claim automatically
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) return; // not signed in yet
+      if (!org) {
+        setStatus("Missing org");
         return;
       }
-      if (cancelled) return;
-      try {
-        localStorage.setItem("activeOrgId", org);
-      } catch {
-        // ignore storage errors
-      }
-      window.location.href = "/thanks/setup?org=" + encodeURIComponent(org);
-    };
 
-    exec();
-    const off = auth.onAuthStateChanged(() => exec());
-    return () => {
-      cancelled = true;
-      off();
-    };
-  }, [auth]);
+      try {
+        setStatus("Claiming...");
+        const t = await user.getIdToken();
+        const r = await fetch("/api/orgs/claim", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
+          body: JSON.stringify({ orgId: org }),
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          setStatus(j?.error || "claim_failed");
+          return;
+        }
+
+        // success -> store and bounce to setup
+        localStorage.setItem("activeOrgId", org);
+        window.location.replace(`/thanks/setup?org=${encodeURIComponent(org)}`);
+      } catch (e: any) {
+        setStatus(e?.message || "claim_failed");
+      }
+    });
+    return () => unsub();
+  }, [auth, org]);
 
   return (
     <div className="mx-auto max-w-md px-6 py-10">
       <h1 className="text-2xl font-bold mb-3">Claim invitation</h1>
       <p className="mb-4">{status}</p>
+
       {!auth.currentUser && (
-        <button
-          className="button-primary"
-          onClick={() => signInWithRedirect(auth, new GoogleAuthProvider())}
-        >
-          Sign in to continue
-        </button>
+        <>
+          <button
+            className="button-primary"
+            onClick={() => signInWithRedirect(auth, new GoogleAuthProvider())}
+          >
+            Sign in to continue
+          </button>
+          <div className="text-xs text-zinc-500 mt-2">
+            Not you?{" "}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                auth.signOut().then(() => window.location.reload());
+              }}
+            >
+              Sign in with a different account
+            </a>
+          </div>
+        </>
       )}
     </div>
   );
