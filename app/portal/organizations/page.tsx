@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import "@/lib/firebase";
@@ -349,10 +349,21 @@ export default function PortalOrganizationsPage() {
 
   const pendingInvites = invites.filter((invite) => (invite.status || "pending") === "pending");
   const otherInvites = invites.filter((invite) => (invite.status || "pending") !== "pending");
+  const planLabel = (() => {
+    const p = org?.billing?.plan || "";
+    if (!p) return "--";
+    if (p === "solo") return "Solo";
+    if (p === "team5") return "Team (5-seat bundle)";
+    if (p === "enterprise") return "Enterprise";
+    return p;
+  })();
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-2xl font-bold mb-3">Organization - {org?.name || orgId}</h1>
+      <h1 className="text-2xl font-bold mb-3">
+        Organization - {org?.name || orgId}
+        <span className="ml-2 text-sm text-zinc-500">Plan: {planLabel}</span>
+      </h1>
 
       <div className="text-sm text-zinc-500 mb-4">{loading ? "Loading details..." : null}</div>
 
