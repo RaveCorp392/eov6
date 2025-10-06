@@ -1,15 +1,23 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Session uploads: images or PDFs under 10MB. Reads open for now.
-    match /sessions/{code}/{allPaths=**} {
+    match /uploads/{code}/{filename=**} {
       allow read: if true;
+
       allow write: if
-        request.resource.size < 10 * 1024 * 1024 &&
+        code.matches('^[0-9]{6}$') &&
+        request.resource.size < 20 * 1024 * 1024 && // 20 MB
         (
-          request.resource.contentType.matches('image/.*') ||
-          request.resource.contentType == 'application/pdf'
+          request.resource.contentType.matches('^image/.*$') ||
+          request.resource.contentType == 'application/pdf' ||
+          request.resource.contentType == 'text/plain' ||
+          request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         );
+    }
+
+    match /{path=**} {
+      allow read: if false;
+      allow write: if false;
     }
   }
 }

@@ -238,18 +238,22 @@ export default function PortalOrganizationsPage() {
 
   async function sendInvites() {
     if (!orgId) return;
-    const emails = inviteInput
+    const parsedEmails = inviteInput
       .split(/[\s,;]+/)
-      .map((email) => email.toLowerCase().trim())
+      .map((email) => email.trim())
       .filter(Boolean);
-    if (emails.length === 0) return;
+    if (parsedEmails.length === 0) return;
 
     try {
       const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        alert("Please sign in again to send invites.");
+        return;
+      }
       const response = await fetch("/api/orgs/invite/bulk", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ orgId, emails }),
+        body: JSON.stringify({ orgId, emails: parsedEmails }),
       });
 
       let payload: any = null;
@@ -265,9 +269,31 @@ export default function PortalOrganizationsPage() {
         return;
       }
 
+      if (Array.isArray(payload?.invites)) {
+        const optimistic = (payload.invites as any[])
+          .map((invite) => ({
+            id: String(invite?.id ?? ""),
+            email: typeof invite?.email === "string" ? invite.email : "",
+            status: typeof invite?.status === "string" ? invite.status : "pending",
+          }))
+          .filter((invite) => invite.id.length > 0);
+        if (optimistic.length) {
+          setInvites((prev) => {
+            const existing = new Set(prev.map((invite) => invite.id));
+            const merged = [...prev];
+            for (const invite of optimistic) {
+              if (existing.has(invite.id)) continue;
+              existing.add(invite.id);
+              merged.push(invite);
+            }
+            return merged;
+          });
+        }
+      }
+
       setInviteInput("");
-      await reloadInvites(orgId);
-      const count = typeof payload?.invited === "number" ? payload.invited : emails.length;
+      void reloadInvites(orgId);
+      const count = typeof payload?.invited === "number" ? payload.invited : parsedEmails.length;
       alert(`Invited ${count} recipient(s).`);
     } catch (err) {
       console.error("[portal/org] send invites failed", err);

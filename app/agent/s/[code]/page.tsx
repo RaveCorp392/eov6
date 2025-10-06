@@ -1,7 +1,7 @@
 // app/agent/s/[code]/page.tsx
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { devlog } from '@/lib/devlog';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
@@ -11,7 +11,6 @@ import { db, watchSession } from '@/lib/firebase';
 import ConsentGate from '@/components/ConsentGate';
 import ChatWindow from '@/components/ChatWindow';
 import AgentDetailsPanel from '@/components/AgentDetailsPanel';
-import { useAgentMembership } from '@/lib/agent-membership';
 import TranslateBanner from '@/components/TranslateBanner';
 
 export default function AgentSessionPage({ params }: { params: { code: string } }) {
@@ -21,7 +20,8 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
   const [membershipReady, setMembershipReady] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(() => auth.currentUser);
   const [ackError, setAckError] = useState<string | null>(null);
-  const { orgId: ctxOrgId } = useAgentMembership();
+  const [joinReady, setJoinReady] = useState(false);
+  const lastJoinedOrgRef = useRef<string | null>(null);
 
   const loadAcksForOrg = useCallback(async (orgId: string) => {
     await getDocs(collection(db, 'orgs', orgId, 'ackTemplates'));
@@ -57,11 +57,21 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
   }, [membershipReady, code]);
 
   useEffect(() => {
-    if (!session?.orgId) {
+    const orgId = session?.orgId;
+    if (!orgId) {
       setAckError(null);
+      setJoinReady(false);
+      lastJoinedOrgRef.current = null;
       return;
     }
-    if (!authUser) return;
+    if (!authUser) {
+      setJoinReady(false);
+      return;
+    }
+    if (lastJoinedOrgRef.current === orgId) {
+      setJoinReady(true);
+      return;
+    }
 
     let cancelled = false;
     (async () => {
@@ -73,14 +83,20 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
             'content-type': 'application/json',
             authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ orgId: session.orgId }),
+          body: JSON.stringify({ orgId }),
         });
         if (!res.ok) throw new Error(`join_failed_${res.status}`);
-        await loadAcksForOrg(session.orgId);
-        if (!cancelled) setAckError(null);
+        await loadAcksForOrg(orgId);
+        if (!cancelled) {
+          lastJoinedOrgRef.current = orgId;
+          setAckError(null);
+          setJoinReady(true);
+        }
       } catch (err) {
         if (!cancelled) {
+          lastJoinedOrgRef.current = null;
           setAckError("You don't have access to this org's acknowledgements. Ask an owner to invite you.");
+          setJoinReady(false);
         }
       }
     })();
@@ -111,9 +127,10 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
 
         <div className="grid md:grid-cols-[2fr_1fr] gap-4">
           <ChatWindow code={code} role="agent" showUpload={false} />
-          <AgentDetailsPanel sessionId={code} membershipReady={membershipReady} ackError={ackError} />
+          <AgentDetailsPanel sessionId={code} membershipReady={membershipReady && joinReady} ackError={ackError} />
         </div>
       </div>
     </ConsentGate>
   );
 }
+

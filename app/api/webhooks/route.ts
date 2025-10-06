@@ -30,6 +30,11 @@ export async function POST(req: Request) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
+    const metadata = session.metadata || {};
+    const plan = metadata.plan || "solo";
+    const cycle = metadata.cycle || "monthly";
+    const seats = Math.max(1, Number(metadata.seats || "1") || 1);
+    const translate = metadata.translate === "true" || metadata.translate === "1";
     const payerEmail = (session.customer_details?.email || session.customer_email || "").toLowerCase();
     if (!payerEmail) {
       console.warn("checkout.session.completed missing email", session.id);
@@ -42,6 +47,10 @@ export async function POST(req: Request) {
     const existingOrg = existingEnt.exists ? ((existingEnt.data() as any)?.orgId || null) : null;
 
     let orgId: string | null = (await resolveEntitledOrgId(db, payerEmail)) || existingOrg || null;
+
+    const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id || null;
+    const subscriptionId =
+      typeof session.subscription === "string" ? session.subscription : session.subscription?.id || null;
 
     if (!orgId && ALLOW_AUTOCREATE) {
       const company = (session?.metadata?.company || "").toString().trim().toLowerCase();
@@ -56,9 +65,8 @@ export async function POST(req: Request) {
           createdAt: Date.now(),
           createdFromCheckout: true,
           billing: {
-            customerId: typeof session.customer === "string" ? session.customer : session.customer?.id || null,
-            subscriptionId:
-              typeof session.subscription === "string" ? session.subscription : session.subscription?.id || null,
+            customerId,
+            subscriptionId,
           },
         },
         { merge: true }
@@ -69,6 +77,12 @@ export async function POST(req: Request) {
     await entRef.set(
       {
         orgId: orgId || null,
+        plan,
+        cycle,
+        seats,
+        translate,
+        customerId,
+        subscriptionId,
         updatedAt: Date.now(),
       },
       { merge: true }

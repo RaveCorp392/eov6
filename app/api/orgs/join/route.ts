@@ -33,11 +33,15 @@ export async function POST(req: NextRequest) {
     const mapped = ent.exists ? ((ent.data() as any)?.orgId || null) : null;
     if (mapped !== orgId) return bad("not_entitled", 403);
 
-    // add viewer membership if missing
     const memRef = orgRef.collection("members").doc(uid);
     const memSnap = await memRef.get();
+    const now = Date.now();
     if (!memSnap.exists) {
-      await memRef.set({ role: "viewer", email }, { merge: true });
+      await memRef.set({ role: "viewer", email, createdAt: now, updatedAt: now }, { merge: true });
+      console.log("[api/orgs/join]", { orgId, email, path: "join", status: "created" });
+    } else {
+      await memRef.set({ updatedAt: now }, { merge: true });
+      console.log("[api/orgs/join]", { orgId, email, path: "join", status: "refreshed" });
     }
     return NextResponse.json({ ok: true, orgId });
   } catch (e: any) {

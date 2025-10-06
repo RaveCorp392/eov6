@@ -1,14 +1,16 @@
-﻿export const runtime = "nodejs";
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "@/lib/firebase-admin";
 import nodemailer from "nodemailer";
+import { normEmail } from "@/lib/email-normalize";
 
 type InviteStatus = "pending" | "accepted" | "revoked";
 type InviteDoc = {
   email: string;
+  norm: string;
   status: InviteStatus;
   invitedAt: number;
   invitedBy: string;
@@ -39,10 +41,18 @@ export async function POST(req: NextRequest) {
 
     const body = (await req.json().catch(() => null)) as { orgId?: string; emails?: unknown[] } | null;
     const orgId = typeof body?.orgId === "string" ? body.orgId.trim() : "";
-    const emails = Array.isArray(body?.emails) ? body?.emails : [];
+    const emails = Array.isArray(body?.emails) ? body.emails : [];
 
-    if (!orgId || emails.length === 0) {
+    if (!orgId) {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
+    }
+
+    const rawList = emails
+      .map((value) => String(value ?? "").trim())
+      .filter((value) => value.length > 0);
+
+    if (rawList.length === 0) {
+      return NextResponse.json({ error: "no_recipients" }, { status: 400 });
     }
 
     const db = getFirestore();
@@ -58,13 +68,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
 
-    const clean: string[] = Array.from(
-      new Set(
-        emails
-          .map((value) => String(value || "").toLowerCase().trim())
-          .filter(Boolean)
-      )
-    );
+    const seen = new Set<string>();
+    const clean: string[] = [];
+    for (const raw of rawList) {
+      const normalized = normEmail(raw);
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      clean.push(raw);
+    }
 
     if (clean.length === 0) {
       return NextResponse.json({ error: "no_recipients" }, { status: 400 });
@@ -74,10 +85,11 @@ export async function POST(req: NextRequest) {
     const created: Array<InviteDoc & { id: string }> = [];
     const now = Date.now();
 
-    for (const email of clean) {
+    for (const raw of clean) {
       const ref = orgRef.collection("invites").doc();
       const data: InviteDoc = {
-        email,
+        email: raw,
+        norm: normEmail(raw),
         status: "pending",
         invitedAt: now,
         invitedBy,
@@ -103,6 +115,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    console.log("[api/orgs/invite/bulk]", { orgId, invitedBy, count: created.length });
     return NextResponse.json({ ok: true, invited: created.length, invites: created });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
