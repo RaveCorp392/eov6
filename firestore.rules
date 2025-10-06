@@ -4,11 +4,14 @@ service cloud.firestore {
 
     // ---------------- Helpers ----------------
     function isSignedIn() { return request.auth != null; }
+
     function myEmail() {
-      return isSignedIn() && request.auth.token.email != null ? lower(request.auth.token.email) : "";
+      return isSignedIn() && request.auth.token.email != null
+        ? lower(request.auth.token.email)
+        : "";
     }
 
-    // Staff gate (soft-launch)
+    // Staff gate (soft-launch):
     // - Any @eov6.com address
     // - Specific allowlist (lowercase exact matches)
     function isStaff() {
@@ -77,17 +80,28 @@ service cloud.firestore {
 
       function isManager() { return myRole() in ['owner','admin']; }
 
-      // org doc
+      // Org doc
       allow read: if isMember();
       allow create, update, delete: if isManager();
 
+      // Members
       match /members/{uid} {
         allow read: if isMember();
         allow create, update, delete: if isManager();
       }
 
+      // Acknowledgement templates
       match /ackTemplates/{ackId} {
         allow read: if isMember();
+        allow create, update, delete: if isManager();
+      }
+
+      // Invites (portal)
+      match /invites/{inviteId} {
+        // List/view invites: members only
+        allow read: if isMember();
+
+        // Create/revoke/mark accepted: managers only (owner/admin)
         allow create, update, delete: if isManager();
       }
     }
@@ -98,7 +112,7 @@ service cloud.firestore {
       // Liberal read for demo/onboarding; tighten later to participants only
       allow read: if true;
 
-      // MVP: allow create/update (your UI enforces UI-level constraints)
+      // MVP: allow create/update (UI enforces constraints)
       allow create, update: if true;
       allow delete: if false;
 
@@ -140,7 +154,7 @@ service cloud.firestore {
           request.resource.data.keys().hasOnly(['name','email','phone','notes','updatedAt']) &&
           (!('name'  in request.resource.data) || request.resource.data.name  is string) &&
           (!('email' in request.resource.data) || request.resource.data.email is string) &&
-          (!('phone' in request.resource.data) || request.resource.data.phone is string) &&
+          (!('phone' in request.resource.data) || request.resource.data.phone  is string) &&
           (!('notes' in request.resource.data) || request.resource.data.notes is string);
         allow delete: if false;
       }
