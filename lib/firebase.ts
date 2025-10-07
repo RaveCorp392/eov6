@@ -34,17 +34,18 @@ import { ref, uploadBytesResumable, getDownloadURL, getStorage } from "firebase/
    Config
    ========= */
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyAxK8Uh1l78LyOepNLneV9xyjFNfrRsGz4",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "eov6-4e929.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "eov6-4e929",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "eov6-4e929.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "926090330101",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:926090330101:web:26a2f5f5d67defcd5b2abc",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
 };
 
 export const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+auth.useDeviceLanguage?.();
 export const storage = getStorage(app);
 export default app;
 
@@ -238,4 +239,3 @@ export async function setTranslateConfig(
 export async function bumpTranslatePreviewCount(code: string) {
   await _updateDoc(doc(db, "sessions", code), { translatePreviewCount: _increment(1) });
 }
-

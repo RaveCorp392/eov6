@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
-import "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import {
-  getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithRedirect,
@@ -11,8 +10,6 @@ import {
 } from "firebase/auth";
 
 export default function ClaimPage() {
-  const auth = getAuth();
-
   const url = useMemo(
     () => (typeof window !== "undefined" ? new URL(window.location.href) : null),
     [],
@@ -28,24 +25,28 @@ export default function ClaimPage() {
   const [signedInEmail, setSignedInEmail] = useState<string>("");
 
   useEffect(() => {
-    (async () => {
-      try {
-        await getRedirectResult(auth);
-      } catch {
-        // ignore redirect errors for stability
-      }
-    })();
-  }, [auth]);
+    try {
+      void getRedirectResult(auth).catch(() => {});
+    } catch (err) {
+      console.error("[claim:init] getRedirectResult failed", err);
+    }
+  }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setSignedInEmail(user?.email || "");
-      if (user && token && orgId) {
-        setStatus("Signed in; ready to claim");
-      }
-    });
+    const unsub = onAuthStateChanged(
+      auth,
+      (user) => {
+        setSignedInEmail(user?.email || "");
+        if (user && token && orgId) {
+          setStatus("Signed in; ready to claim");
+        }
+      },
+      (error) => {
+        console.error("[claim:onAuthStateChanged] error", error);
+      },
+    );
     return () => unsub();
-  }, [auth, token, orgId]);
+  }, [token, orgId]);
 
   async function doClaim() {
     if (!token || !orgId) {
@@ -58,7 +59,7 @@ export default function ClaimPage() {
     }
 
     try {
-      setStatus("Claiming…");
+      setStatus("Claiming...");
       const t = await auth.currentUser.getIdToken();
       const r = await fetch("/api/orgs/claim", {
         method: "POST",
@@ -116,6 +117,12 @@ export default function ClaimPage() {
           <button className="button-primary" onClick={signIn}>
             Sign in to continue
           </button>
+          {status === "Ready" && (
+            <div className="text-xs text-zinc-500 mt-2">
+              If you just signed in elsewhere and still see "Ready", allow third-party cookies for
+              accounts.google.com or try a normal (non-incognito) window.
+            </div>
+          )}
           <div className="text-xs text-zinc-500 mt-2">
             Not you?{" "}
             <a href="#" onClick={switchAccount}>
@@ -139,9 +146,9 @@ export default function ClaimPage() {
           <div>
             <b>Debug</b>
           </div>
-          <div>token: {token || "—"}</div>
-          <div>org: {orgId || "—"}</div>
-          <div>signedIn: {signedInEmail || "—"}</div>
+          <div>token: {token || "-"}</div>
+          <div>org: {orgId || "-"}</div>
+          <div>signedIn: {signedInEmail || "-"}</div>
           <div>status: {status}</div>
           <pre className="whitespace-pre-wrap">{JSON.stringify(lastResp, null, 2)}</pre>
         </div>
