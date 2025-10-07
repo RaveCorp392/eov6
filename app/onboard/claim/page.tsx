@@ -119,7 +119,7 @@ export default function ClaimPage() {
           </button>
           {status === "Ready" && (
             <div className="text-xs text-zinc-500 mt-2">
-              If you just signed in elsewhere and still see "Ready", allow third-party cookies for
+              If you just signed in elsewhere and still see &ldquo;Ready&rdquo;, allow third-party cookies for
               accounts.google.com or try a normal (non-incognito) window.
             </div>
           )}
