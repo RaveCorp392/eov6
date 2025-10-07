@@ -1,96 +1,148 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import "@/lib/firebase";
 import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithRedirect,
-  getRedirectResult
+  getRedirectResult,
 } from "firebase/auth";
 
 export default function ClaimPage() {
   const auth = getAuth();
-  const url = typeof window !== "undefined" ? new URL(window.location.href) : null;
-  const org = url?.searchParams.get("org") || "";
-  const token = url?.searchParams.get("token") || "";
-  const [status, setStatus] = useState<string>(() => {
-    if (!token) return "Missing token";
-    if (!org) return "Missing org";
-    return "Ready";
-  });
 
-  // After Google redirects back, this fires once
+  const url = useMemo(
+    () => (typeof window !== "undefined" ? new URL(window.location.href) : null),
+    [],
+  );
+  const token = url?.searchParams.get("token") || "";
+  const orgId = url?.searchParams.get("org") || "";
+  const dbg = url?.searchParams.get("debug") === "1";
+
+  const [status, setStatus] = useState<string>(() =>
+    !token ? "Missing token" : !orgId ? "Missing orgId" : "Ready",
+  );
+  const [lastResp, setLastResp] = useState<any>(null);
+  const [signedInEmail, setSignedInEmail] = useState<string>("");
+
   useEffect(() => {
     (async () => {
       try {
-        await getRedirectResult(auth); // resolves silently if no redirect
-      } catch (_) {
-        // ignore
+        await getRedirectResult(auth);
+      } catch {
+        // ignore redirect errors for stability
       }
     })();
   }, [auth]);
 
-  // When auth state changes, attempt the claim automatically
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) return; // not signed in yet
-      if (!org || !token) {
-        setStatus(!org ? "Missing org" : "Missing token");
-        return;
-      }
-
-      try {
-        setStatus("Claiming...");
-        const t = await user.getIdToken();
-        const r = await fetch("/api/orgs/claim", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
-          body: JSON.stringify({ orgId: org, token }),
-        });
-        const j = await r.json();
-        if (!r.ok) {
-          setStatus(j?.error || "claim_failed");
-          return;
-        }
-
-        // success -> store and bounce to setup
-        const activeOrgId = (j?.orgId as string) || org;
-        localStorage.setItem("activeOrgId", activeOrgId);
-        window.location.replace(`/thanks/setup?org=${encodeURIComponent(activeOrgId)}`);
-      } catch (e: any) {
-        setStatus(e?.message || "claim_failed");
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setSignedInEmail(user?.email || "");
+      if (user) {
+        setStatus((prev) => (prev === "Ready" ? "Signed in; ready to claim" : prev));
       }
     });
     return () => unsub();
-  }, [auth, org, token]);
+  }, [auth]);
+
+  async function doClaim() {
+    if (!token || !orgId) {
+      setStatus("Missing token or orgId");
+      return;
+    }
+    if (!auth.currentUser) {
+      setStatus("Please sign in first");
+      return;
+    }
+
+    try {
+      setStatus("Claiming...");
+      const t = await auth.currentUser.getIdToken();
+      const r = await fetch("/api/orgs/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
+        body: JSON.stringify({ token, orgId }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setLastResp({ ok: r.ok, body: j });
+
+      if (!r.ok || !j?.ok) {
+        setStatus(j?.error || r.statusText || "claim_failed");
+        return;
+      }
+
+      const targetOrg = (j?.orgId as string) || orgId;
+      localStorage.setItem("activeOrgId", targetOrg);
+      window.location.replace(`/thanks/setup?org=${encodeURIComponent(targetOrg)}`);
+    } catch (e: any) {
+      setStatus(e?.message || "claim_failed");
+    }
+  }
+
+  function signIn() {
+    try {
+      signInWithRedirect(auth, new GoogleAuthProvider());
+    } catch (e: any) {
+      setStatus(e?.message || "auth_failed");
+    }
+  }
+
+  function switchAccount(e: MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    auth.signOut().then(() => window.location.reload());
+  }
 
   return (
     <div className="mx-auto max-w-md px-6 py-10">
       <h1 className="text-2xl font-bold mb-3">Claim invitation</h1>
+      <div className="text-sm text-zinc-700 mb-4">
+        <div>
+          Token: <b>{token || "-"}</b>
+        </div>
+        <div>
+          Org: <b>{orgId || "-"}</b>
+        </div>
+        <div>
+          Signed in as: <b>{signedInEmail || "-"}</b>
+        </div>
+      </div>
+
       <p className="mb-4">{status}</p>
 
-      {!auth.currentUser && (
+      {!auth.currentUser ? (
         <>
-          <button
-            className="button-primary"
-            onClick={() => signInWithRedirect(auth, new GoogleAuthProvider())}
-          >
+          <button className="button-primary" onClick={signIn}>
             Sign in to continue
           </button>
           <div className="text-xs text-zinc-500 mt-2">
             Not you?{" "}
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                auth.signOut().then(() => window.location.reload());
-              }}
-            >
+            <a href="#" onClick={switchAccount}>
               Sign in with a different account
             </a>
           </div>
         </>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button className="button-primary" onClick={doClaim}>
+            Claim now
+          </button>
+          <button className="button-ghost" onClick={(e) => switchAccount(e)}>
+            Switch account
+          </button>
+        </div>
+      )}
+
+      {dbg && (
+        <div className="mt-6 rounded border bg-zinc-50 p-3 text-xs text-zinc-700">
+          <div>
+            <b>Debug</b>
+          </div>
+          <div>status: {status}</div>
+          <div>lastResp:</div>
+          <pre className="whitespace-pre-wrap">{JSON.stringify(lastResp, null, 2)}</pre>
+        </div>
       )}
     </div>
   );
