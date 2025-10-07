@@ -89,9 +89,18 @@ export default function ClaimPage() {
     }
   }
 
+  function signOutAndReload() {
+    auth.signOut().then(() => window.location.reload());
+  }
+
   function switchAccount(e: MouseEvent<HTMLAnchorElement>) {
     e.preventDefault();
-    auth.signOut().then(() => window.location.reload());
+    signOutAndReload();
+  }
+
+  function switchAccountFromButton(e: MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    signOutAndReload();
   }
 
   return (
@@ -128,7 +137,7 @@ export default function ClaimPage() {
           <button className="button-primary" onClick={doClaim}>
             Claim now
           </button>
-          <button className="button-ghost" onClick={(e) => switchAccount(e)}>
+          <button className="button-ghost" onClick={switchAccountFromButton}>
             Switch account
           </button>
         </div>
