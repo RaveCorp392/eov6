@@ -40,12 +40,12 @@ export default function ClaimPage() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setSignedInEmail(user?.email || "");
-      if (user) {
-        setStatus((prev) => (prev === "Ready" ? "Signed in; ready to claim" : prev));
+      if (user && token && orgId) {
+        setStatus("Signed in; ready to claim");
       }
     });
     return () => unsub();
-  }, [auth]);
+  }, [auth, token, orgId]);
 
   async function doClaim() {
     if (!token || !orgId) {
@@ -58,7 +58,7 @@ export default function ClaimPage() {
     }
 
     try {
-      setStatus("Claiming...");
+      setStatus("Claiming…");
       const t = await auth.currentUser.getIdToken();
       const r = await fetch("/api/orgs/claim", {
         method: "POST",
@@ -89,18 +89,9 @@ export default function ClaimPage() {
     }
   }
 
-  function signOutAndReload() {
+  function switchAccount(e: MouseEvent<HTMLButtonElement | HTMLAnchorElement>) {
+    e.preventDefault();
     auth.signOut().then(() => window.location.reload());
-  }
-
-  function switchAccount(e: MouseEvent<HTMLAnchorElement>) {
-    e.preventDefault();
-    signOutAndReload();
-  }
-
-  function switchAccountFromButton(e: MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    signOutAndReload();
   }
 
   return (
@@ -137,7 +128,7 @@ export default function ClaimPage() {
           <button className="button-primary" onClick={doClaim}>
             Claim now
           </button>
-          <button className="button-ghost" onClick={switchAccountFromButton}>
+          <button className="button-ghost" onClick={switchAccount}>
             Switch account
           </button>
         </div>
@@ -148,8 +139,10 @@ export default function ClaimPage() {
           <div>
             <b>Debug</b>
           </div>
+          <div>token: {token || "—"}</div>
+          <div>org: {orgId || "—"}</div>
+          <div>signedIn: {signedInEmail || "—"}</div>
           <div>status: {status}</div>
-          <div>lastResp:</div>
           <pre className="whitespace-pre-wrap">{JSON.stringify(lastResp, null, 2)}</pre>
         </div>
       )}
