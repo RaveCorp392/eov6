@@ -21,9 +21,10 @@ export async function POST(req: NextRequest) {
     const email = (decoded.email || "").toLowerCase().trim();
     if (!uid || !email) return json({ error: "no_email" }, { status: 400 });
 
-    const body = (await req.json().catch(() => null)) as { orgId?: string } | null;
+    const body = (await req.json().catch(() => null)) as { orgId?: string; token?: string } | null;
     const orgId = typeof body?.orgId === "string" ? body.orgId.trim() : "";
-    if (!orgId) return json({ error: "missing_orgId" }, { status: 400 });
+    const token = typeof body?.token === "string" ? body.token.trim() : "";
+    if (!orgId || !token) return json({ error: "missing_token_or_orgId" }, { status: 400 });
 
     const db = getFirestore();
     const orgRef = db.collection("orgs").doc(orgId);
@@ -54,23 +55,28 @@ export async function POST(req: NextRequest) {
         tx.set(orgRef, { ownerEmail: email, pendingOwnerEmail: null, updatedAt: now }, { merge: true });
         tx.set(memberRef, { role: "owner", email, createdAt: now, updatedAt: now }, { merge: true });
         tx.set(entRef, { orgId, claimedAt: now, updatedAt: now }, { merge: true });
-        logPayload = { orgId, email, path: "claim", status: "owner" };
+        const inviteRef = orgRef.collection("invites").doc(token);
+        const inviteSnap = await tx.get(inviteRef);
+        if (inviteSnap.exists) {
+          tx.set(inviteRef, { status: "accepted", acceptedAt: now, updatedAt: now }, { merge: true });
+        }
+        logPayload = { orgId, email, path: "claim", status: "owner", inviteId: token };
         return;
       }
 
-      const invitesSnap = await tx.get(orgRef.collection("invites").where("status", "==", "pending"));
-      const inviteDoc = invitesSnap.docs.find((docSnap) => {
-        const data = docSnap.data() as any;
-        const storedNorm = typeof data?.norm === "string" && data.norm ? data.norm : null;
-        const candidate = storedNorm || normEmail(String(data?.email || ""));
-        return candidate === targetNorm;
-      });
-      if (!inviteDoc) throw new Error("no_pending_invite");
+      const inviteRef = orgRef.collection("invites").doc(token);
+      const inviteSnap = await tx.get(inviteRef);
+      if (!inviteSnap.exists) throw new Error("invalid_invite");
+      const inviteData = inviteSnap.data() as any;
+      if (inviteData.orgId && inviteData.orgId !== orgId) throw new Error("invite_org_mismatch");
+      if (inviteData.status && inviteData.status !== "pending") throw new Error("invite_not_pending");
+      const storedNorm = typeof inviteData?.norm === "string" && inviteData.norm ? inviteData.norm : normEmail(String(inviteData?.email || ""));
+      if (storedNorm !== targetNorm) throw new Error("invite_email_mismatch");
 
-      tx.set(inviteDoc.ref, { status: "accepted", acceptedAt: now, updatedAt: now }, { merge: true });
+      tx.set(inviteRef, { status: "accepted", acceptedAt: now, updatedAt: now }, { merge: true });
       tx.set(memberRef, { role: "viewer", email, createdAt: now, updatedAt: now }, { merge: true });
       tx.set(entRef, { orgId, claimedAt: now, updatedAt: now }, { merge: true });
-      logPayload = { orgId, email, path: "claim", status: "viewer", inviteId: inviteDoc.id };
+      logPayload = { orgId, email, path: "claim", status: "viewer", inviteId: token };
     });
 
     console.log("[api/orgs/claim]", logPayload ?? { orgId, email, path: "claim" });
@@ -78,7 +84,10 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     const message = String(err?.message || err);
     if (message === "org_not_found") return json({ error: "org_not_found" }, { status: 404 });
-    if (message === "no_pending_invite") return json({ error: "no_pending_invite" }, { status: 403 });
+    if (message === "invalid_invite") return json({ error: "invalid_invite" }, { status: 404 });
+    if (message === "invite_not_pending") return json({ error: "invite_not_pending" }, { status: 403 });
+    if (message === "invite_email_mismatch") return json({ error: "invite_email_mismatch" }, { status: 403 });
+    if (message === "invite_org_mismatch") return json({ error: "invite_org_mismatch" }, { status: 400 });
     return json({ error: message }, { status: 400 });
   }
 }

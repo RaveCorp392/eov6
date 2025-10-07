@@ -11,10 +11,14 @@ import {
 
 export default function ClaimPage() {
   const auth = getAuth();
-  const [status, setStatus] = useState<string>("Ready");
   const url = typeof window !== "undefined" ? new URL(window.location.href) : null;
   const org = url?.searchParams.get("org") || "";
-  const emailParam = url?.searchParams.get("email") || ""; // optional
+  const token = url?.searchParams.get("token") || "";
+  const [status, setStatus] = useState<string>(() => {
+    if (!token) return "Missing token";
+    if (!org) return "Missing org";
+    return "Ready";
+  });
 
   // After Google redirects back, this fires once
   useEffect(() => {
@@ -31,8 +35,8 @@ export default function ClaimPage() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) return; // not signed in yet
-      if (!org) {
-        setStatus("Missing org");
+      if (!org || !token) {
+        setStatus(!org ? "Missing org" : "Missing token");
         return;
       }
 
@@ -42,7 +46,7 @@ export default function ClaimPage() {
         const r = await fetch("/api/orgs/claim", {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
-          body: JSON.stringify({ orgId: org }),
+          body: JSON.stringify({ orgId: org, token }),
         });
         const j = await r.json();
         if (!r.ok) {
@@ -51,14 +55,15 @@ export default function ClaimPage() {
         }
 
         // success -> store and bounce to setup
-        localStorage.setItem("activeOrgId", org);
-        window.location.replace(`/thanks/setup?org=${encodeURIComponent(org)}`);
+        const activeOrgId = (j?.orgId as string) || org;
+        localStorage.setItem("activeOrgId", activeOrgId);
+        window.location.replace(`/thanks/setup?org=${encodeURIComponent(activeOrgId)}`);
       } catch (e: any) {
         setStatus(e?.message || "claim_failed");
       }
     });
     return () => unsub();
-  }, [auth, org]);
+  }, [auth, org, token]);
 
   return (
     <div className="mx-auto max-w-md px-6 py-10">

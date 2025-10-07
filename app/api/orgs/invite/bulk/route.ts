@@ -3,12 +3,14 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
+import { randomUUID } from "crypto";
 import { getFirestore } from "@/lib/firebase-admin";
 import nodemailer from "nodemailer";
 import { normEmail } from "@/lib/email-normalize";
 
 type InviteStatus = "pending" | "accepted" | "revoked";
 type InviteDoc = {
+  orgId: string;
   email: string;
   norm: string;
   status: InviteStatus;
@@ -86,8 +88,10 @@ export async function POST(req: NextRequest) {
     const now = Date.now();
 
     for (const raw of clean) {
-      const ref = orgRef.collection("invites").doc();
+      const token = randomUUID();
+      const ref = orgRef.collection("invites").doc(token);
       const data: InviteDoc = {
+        orgId,
         email: raw,
         norm: normEmail(raw),
         status: "pending",
@@ -95,7 +99,7 @@ export async function POST(req: NextRequest) {
         invitedBy,
       };
       batch.set(ref, data, { merge: true });
-      created.push({ id: ref.id, ...data });
+      created.push({ id: token, ...data });
     }
 
     await batch.commit();
@@ -106,7 +110,7 @@ export async function POST(req: NextRequest) {
     const orgName = ((orgSnap.data() as any)?.name || orgId) as string;
 
     for (const invite of created) {
-      const link = `${base}/onboard/claim?org=${encodeURIComponent(orgId)}&email=${encodeURIComponent(invite.email)}`;
+      const link = `${base}/onboard/claim?token=${encodeURIComponent(invite.id)}&org=${encodeURIComponent(orgId)}`;
       await transporter.sendMail({
         from,
         to: invite.email,
