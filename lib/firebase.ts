@@ -45,16 +45,25 @@ const firebaseConfig = {
 export const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+setPersistence(auth, browserLocalPersistence).catch((e) => {
+  console.warn("[auth:persistence] failed", e);
+});
+
 auth.useDeviceLanguage?.();
+
+if (typeof window !== "undefined") {
+  console.log("[auth:init]", {
+    origin: window.location.origin,
+    authDomain: (auth.config as any)?.authDomain,
+  });
+}
 export const storage = getStorage(app);
 export default app;
 
 export const googleProvider = new GoogleAuthProvider();
 export { onAuthStateChanged, signInWithPopup, signOut };
 export type { User };
-
-// Ensure durable sign-in on this origin; ignore failures (e.g., unsupported env)
-try { void setPersistence(auth, browserLocalPersistence); } catch {}
 
 /* =========
    Types
