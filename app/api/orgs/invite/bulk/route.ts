@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { randomUUID } from "crypto";
 import { getFirestore } from "@/lib/firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import nodemailer from "nodemailer";
 import { normEmail } from "@/lib/email-normalize";
 
@@ -83,17 +84,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "no_recipients" }, { status: 400 });
     }
 
+    const domainsToAdd = new Set<string>();
+    for (const raw of clean) {
+      const normalized = normEmail(raw);
+      const at = normalized.indexOf("@");
+      if (at > 0) {
+        const dom = normalized.slice(at + 1).toLowerCase().trim();
+        if (dom) domainsToAdd.add(dom);
+      }
+    }
+
     const batch = db.batch();
     const created: Array<InviteDoc & { id: string }> = [];
     const now = Date.now();
 
     for (const raw of clean) {
       const token = randomUUID();
+      const normalized = normEmail(raw);
       const ref = orgRef.collection("invites").doc(token);
       const data: InviteDoc = {
         orgId,
         email: raw,
-        norm: normEmail(raw),
+        norm: normalized,
         status: "pending",
         invitedAt: now,
         invitedBy,
@@ -103,6 +115,15 @@ export async function POST(req: NextRequest) {
     }
 
     await batch.commit();
+
+    if (domainsToAdd.size > 0) {
+      const domainsArray = Array.from(domainsToAdd);
+      try {
+        await orgRef.update({ domains: FieldValue.arrayUnion(...domainsArray) });
+      } catch {
+        await orgRef.set({ domains: domainsArray }, { merge: true });
+      }
+    }
 
     const transporter = mailer();
     const base = process.env.NEXT_PUBLIC_SITE_URL || "https://www.eov6.com";

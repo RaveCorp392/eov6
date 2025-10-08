@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getFirestore } from "@/lib/firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { normEmail } from "@/lib/email-normalize";
 import { getAuth } from "firebase-admin/auth";
 
@@ -30,54 +31,56 @@ export async function POST(req: NextRequest) {
     const orgRef = db.collection("orgs").doc(orgId);
     const memberRef = orgRef.collection("members").doc(uid);
     const entRef = db.collection("entitlements").doc(email);
+    const inviteRef = orgRef.collection("invites").doc(token);
     const targetNorm = normEmail(email);
+    const emailDomain = (() => {
+      const at = targetNorm.indexOf("@");
+      if (at > 0) {
+        const dom = targetNorm.slice(at + 1).toLowerCase().trim();
+        return dom || null;
+      }
+      return null;
+    })();
     let logPayload: Record<string, any> | null = null;
 
     await db.runTransaction(async (tx) => {
       const orgSnap = await tx.get(orgRef);
       if (!orgSnap.exists) throw new Error("org_not_found");
 
-      const orgData = orgSnap.data() as any;
-      const ownerEmail = String(orgData?.ownerEmail || "").toLowerCase().trim();
-      const pendingOwnerEmail = String(orgData?.pendingOwnerEmail || "").toLowerCase().trim();
+      const inviteSnap = await tx.get(inviteRef);
+      if (!inviteSnap.exists) throw new Error("invalid_invite");
+
+      const inviteData = inviteSnap.data() as any;
+      const inviteOrgId = typeof inviteData?.orgId === "string" && inviteData.orgId ? inviteData.orgId : orgId;
+      if (inviteOrgId !== orgId) throw new Error("invite_org_mismatch");
+
+      const inviteStatus = typeof inviteData?.status === "string" ? inviteData.status : "pending";
+      if (inviteStatus !== "pending") throw new Error("invite_not_pending");
+
+      const storedNorm = typeof inviteData?.norm === "string" && inviteData.norm
+        ? inviteData.norm
+        : normEmail(String(inviteData?.email || ""));
+      if (storedNorm !== targetNorm) throw new Error("invite_email_mismatch");
 
       const memberSnap = await tx.get(memberRef);
       const now = Date.now();
+      const existingCreated = memberSnap.exists ? (memberSnap.data() as any)?.createdAt : undefined;
+      const createdAt = typeof existingCreated === "number" ? existingCreated : now;
 
-      if (memberSnap.exists) {
-        tx.set(memberRef, { email, updatedAt: now }, { merge: true });
-        tx.set(entRef, { orgId, updatedAt: now }, { merge: true });
-        logPayload = { orgId, email, path: "claim", status: "existing-member" };
-        return;
-      }
-
-      if (!ownerEmail || (pendingOwnerEmail && pendingOwnerEmail === email)) {
-        tx.set(orgRef, { ownerEmail: email, pendingOwnerEmail: null, updatedAt: now }, { merge: true });
-        tx.set(memberRef, { role: "owner", email, createdAt: now, updatedAt: now }, { merge: true });
-        tx.set(entRef, { orgId, claimedAt: now, updatedAt: now }, { merge: true });
-        const inviteRef = orgRef.collection("invites").doc(token);
-        const inviteSnap = await tx.get(inviteRef);
-        if (inviteSnap.exists) {
-          tx.set(inviteRef, { status: "accepted", acceptedAt: now, updatedAt: now }, { merge: true });
-        }
-        logPayload = { orgId, email, path: "claim", status: "owner", inviteId: token };
-        return;
-      }
-
-      const inviteRef = orgRef.collection("invites").doc(token);
-      const inviteSnap = await tx.get(inviteRef);
-      if (!inviteSnap.exists) throw new Error("invalid_invite");
-      const inviteData = inviteSnap.data() as any;
-      if (inviteData.orgId && inviteData.orgId !== orgId) throw new Error("invite_org_mismatch");
-      if (inviteData.status && inviteData.status !== "pending") throw new Error("invite_not_pending");
-      const storedNorm = typeof inviteData?.norm === "string" && inviteData.norm ? inviteData.norm : normEmail(String(inviteData?.email || ""));
-      if (storedNorm !== targetNorm) throw new Error("invite_email_mismatch");
-
+      tx.set(memberRef, { role: "viewer", email, createdAt, updatedAt: now }, { merge: true });
       tx.set(inviteRef, { status: "accepted", acceptedAt: now, updatedAt: now }, { merge: true });
-      tx.set(memberRef, { role: "viewer", email, createdAt: now, updatedAt: now }, { merge: true });
       tx.set(entRef, { orgId, claimedAt: now, updatedAt: now }, { merge: true });
+
       logPayload = { orgId, email, path: "claim", status: "viewer", inviteId: token };
     });
+
+    if (emailDomain) {
+      try {
+        await orgRef.update({ domains: FieldValue.arrayUnion(emailDomain) });
+      } catch {
+        await orgRef.set({ domains: [emailDomain] }, { merge: true });
+      }
+    }
 
     console.log("[api/orgs/claim]", logPayload ?? { orgId, email, path: "claim" });
     return json({ ok: true, orgId });
