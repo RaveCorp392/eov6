@@ -5,7 +5,6 @@ import { auth } from "@/lib/firebase";
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithRedirect,
   signInWithPopup,
   getRedirectResult,
 } from "firebase/auth";
@@ -22,8 +21,8 @@ export default function ClaimPage() {
   const [status, setStatus] = useState<string>(() =>
     !token ? "Missing token" : !orgId ? "Missing orgId" : "Ready",
   );
-  const [lastResp, setLastResp] = useState<any>(null);
   const [signedInEmail, setSignedInEmail] = useState<string>("");
+  const [lastResp, setLastResp] = useState<any>(null);
 
   useEffect(() => {
     (async () => {
@@ -48,9 +47,7 @@ export default function ClaimPage() {
           setStatus("Signed in; ready to claim");
         }
       },
-      (error) => {
-        console.error("[claim:onAuthStateChanged] error", error);
-      },
+      (err) => console.error("[claim:onAuthStateChanged] error", err),
     );
     return () => unsub();
   }, [token, orgId]);
@@ -66,7 +63,7 @@ export default function ClaimPage() {
     }
 
     try {
-      setStatus("Claiming\u2026");
+      setStatus("Claiming...");
       const t = await auth.currentUser.getIdToken();
       const r = await fetch("/api/orgs/claim", {
         method: "POST",
@@ -81,28 +78,17 @@ export default function ClaimPage() {
         return;
       }
 
-      const targetOrg = (j?.orgId as string) || orgId;
-      localStorage.setItem("activeOrgId", targetOrg);
-      window.location.replace(`/thanks/setup?org=${encodeURIComponent(targetOrg)}`);
+      localStorage.setItem("activeOrgId", j.orgId || orgId);
+      window.location.replace(`/thanks/setup?org=${encodeURIComponent(j.orgId || orgId)}`);
     } catch (e: any) {
       setStatus(e?.message || "claim_failed");
       console.error("[claim:claim] error", e);
     }
   }
 
-  function signIn() {
-    try {
-      setStatus("Opening redirect\u2026");
-      signInWithRedirect(auth, new GoogleAuthProvider());
-    } catch (e: any) {
-      setStatus(e?.message || "auth_failed");
-      console.error("[claim:redirect] error", e);
-    }
-  }
-
   async function signInWithPopupFallback() {
     try {
-      setStatus("Opening popup\u2026");
+      setStatus("Opening popup...");
       await signInWithPopup(auth, new GoogleAuthProvider());
       setStatus("Signed in; ready to claim");
     } catch (e: any) {
@@ -111,63 +97,43 @@ export default function ClaimPage() {
     }
   }
 
-  function signOutAndReload() {
+  function switchAccount(e: MouseEvent<HTMLButtonElement | HTMLAnchorElement>) {
+    e.preventDefault();
     auth.signOut().then(() => window.location.reload());
-  }
-
-  function switchAccountLink(e: MouseEvent<HTMLAnchorElement>) {
-    e.preventDefault();
-    signOutAndReload();
-  }
-
-  function switchAccountButton(e: MouseEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    signOutAndReload();
   }
 
   return (
     <div className="mx-auto max-w-md px-6 py-10">
-      <h1 className="text-2xl font-bold mb-3">Claim invitation</h1>
+      <h1 className="text-2xl font-bold mb-3">You&rsquo;re invited &mdash; let&rsquo;s get you set up</h1>
+
       <div className="text-sm text-zinc-700 mb-4">
-        <div>Token: <b>{token || "\u2014"}</b></div>
-        <div>Org: <b>{orgId || "\u2014"}</b></div>
-        <div>Signed in as: <b>{signedInEmail || "\u2014"}</b></div>
+        <div>Token: <b>{token || "-"}</b></div>
+        <div>Org: <b>{orgId || "-"}</b></div>
+        <div>Signed in as: <b>{signedInEmail || "-"}</b></div>
       </div>
 
       <p className="mb-2">{status}</p>
 
       {!auth.currentUser ? (
         <>
-          <div>
-            <button className="button-primary" onClick={signIn}>Sign in to continue</button>
-            <button className="button-ghost ml-2" onClick={signInWithPopupFallback}>Try popup sign-in</button>
-          </div>
+          <button className="button-primary" onClick={signInWithPopupFallback}>Sign in with Google</button>
           <div className="text-xs text-zinc-500 mt-2">
-            If you just signed in and still see &ldquo;Ready&rdquo;, allow third-party cookies for accounts.google.com in Incognito, or try a normal window.
-          </div>
-          <div className="text-xs text-zinc-500">
-            Not you? <a href="#" onClick={switchAccountLink}>Sign in with a different account</a>
+            If the popup is blocked, allow popups for this site.
           </div>
         </>
       ) : (
         <div className="flex items-center gap-2">
-          <button className="button-primary" onClick={doClaim}>
-            Claim now
-          </button>
-          <button className="button-ghost" onClick={switchAccountButton}>
-            Switch account
-          </button>
+          <button className="button-primary" onClick={doClaim}>Get started</button>
+          <button className="button-ghost" onClick={switchAccount}>Switch account</button>
         </div>
       )}
 
       {dbg && (
         <div className="mt-6 rounded border bg-zinc-50 p-3 text-xs text-zinc-700">
-          <div>
-            <b>Debug</b>
-          </div>
-          <div>token: {token || "\u2014"}</div>
-          <div>org: {orgId || "\u2014"}</div>
-          <div>signedIn: {signedInEmail || "\u2014"}</div>
+          <div><b>Debug</b></div>
+          <div>token: {token || "-"}</div>
+          <div>org: {orgId || "-"}</div>
+          <div>signedIn: {signedInEmail || "-"}</div>
           <div>status: {status}</div>
           <pre className="whitespace-pre-wrap">{JSON.stringify(lastResp, null, 2)}</pre>
         </div>
@@ -175,3 +141,4 @@ export default function ClaimPage() {
     </div>
   );
 }
+
