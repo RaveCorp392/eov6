@@ -1,47 +1,61 @@
-import { App, applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
-import { getFirestore as _getFirestore } from "firebase-admin/firestore";
-import { getStorage as _getStorage } from "firebase-admin/storage";
+import { getApps, initializeApp, cert, App } from "firebase-admin/app";
+import { getFirestore, Firestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
-function resolveCredential() {
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (serviceAccount) {
-    return cert(JSON.parse(serviceAccount));
+type ServiceAccount = {
+  project_id: string;
+  client_email: string;
+  private_key: string;
+};
+
+let _app: App | undefined;
+
+/** Lazy init so build-time imports don’t explode. */
+function initApp(): App {
+  if (_app) return _app;
+
+  let projectId = process.env.FIREBASE_PROJECT_ID || "";
+  let clientEmail = process.env.FIREBASE_CLIENT_EMAIL || "";
+  let privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+
+  const sa = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if ((!projectId || !clientEmail || !privateKey) && sa) {
+    try {
+      const j = JSON.parse(sa) as ServiceAccount;
+      projectId ||= j.project_id;
+      clientEmail ||= j.client_email;
+      privateKey ||= j.private_key;
+    } catch {
+      // ignore JSON parse; triplet may still be present
+    }
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY || "";
-  const privateKey = privateKeyRaw.includes("\\n") ? privateKeyRaw.replace(/\\n/g, "\n") : privateKeyRaw;
-
-  if (projectId && clientEmail && privateKey) {
-    return cert({ projectId, clientEmail, privateKey });
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error(
+      "Firebase Admin credentials missing. Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY."
+    );
   }
 
-  return applicationDefault();
+  const storageBucket = (process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`).trim();
+
+  if (!getApps().length) {
+    _app = initializeApp({
+      credential: cert({ projectId, clientEmail, privateKey }),
+      storageBucket,
+    });
+  } else {
+    _app = getApps()[0]!;
+  }
+  return _app!;
 }
 
-let app: App;
-
-if (!getApps().length) {
-  app = initializeApp({
-    credential: resolveCredential(),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  });
-} else {
-  app = getApps()[0]!;
+export function getAdminApp(): App {
+  return initApp();
 }
 
-const firestore = _getFirestore(app);
-const storage = _getStorage(app);
+export const db: Firestore = getFirestore(getAdminApp());
+export const bucket = getStorage(getAdminApp()).bucket();
 
-export const db = firestore;
-export const bucket = storage.bucket();
-
-export function getFirestore() {
-  return db;
-}
-
-export function getStorage() {
-  return storage;
-}
-
+/** Back-compat aliases (old code imported these). */
+export const adminDb: Firestore = db;
+export const adminBucket = bucket;
