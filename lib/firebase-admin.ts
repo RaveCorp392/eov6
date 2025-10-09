@@ -1,27 +1,47 @@
-import { getApps, initializeApp, applicationDefault, cert } from "firebase-admin/app";
+import { App, applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore as _getFirestore } from "firebase-admin/firestore";
 import { getStorage as _getStorage } from "firebase-admin/storage";
 
-function fromTriplet() {
+function resolveCredential() {
+  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (serviceAccount) {
+    return cert(JSON.parse(serviceAccount));
+  }
+
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  if (privateKey?.includes("\\n")) privateKey = privateKey.replace(/\\n/g, "\n");
+  const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY || "";
+  const privateKey = privateKeyRaw.includes("\\n") ? privateKeyRaw.replace(/\\n/g, "\n") : privateKeyRaw;
+
   if (projectId && clientEmail && privateKey) {
     return cert({ projectId, clientEmail, privateKey });
   }
-  return null;
+
+  return applicationDefault();
 }
 
-const credential =
-  (process.env.FIREBASE_SERVICE_ACCOUNT && cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))) ||
-  fromTriplet() ||
-  applicationDefault();
+let app: App;
 
-const app = getApps()[0] ?? initializeApp({
-  credential,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-});
+if (!getApps().length) {
+  app = initializeApp({
+    credential: resolveCredential(),
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  });
+} else {
+  app = getApps()[0]!;
+}
 
-export function getFirestore() { return _getFirestore(app); }
-export function getStorage() { return _getStorage(app); }
+const firestore = _getFirestore(app);
+const storage = _getStorage(app);
+
+export const db = firestore;
+export const bucket = storage.bucket();
+
+export function getFirestore() {
+  return db;
+}
+
+export function getStorage() {
+  return storage;
+}
+

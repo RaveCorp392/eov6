@@ -1,6 +1,9 @@
 {
   "crons": [
-    { "path": "/api/jobs/cleanup", "schedule": "0 3 * * *" }
+    {
+      "path": "/api/jobs/cleanup?key=%CRON_SECRET%",
+      "schedule": "0 5 * * *"
+    }
   ]
 }
 
