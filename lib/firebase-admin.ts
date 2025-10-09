@@ -23,14 +23,12 @@ export function getAdminApp(): App {
       clientEmail ||= j.client_email;
       privateKey ||= j.private_key;
     } catch {
-      /* ignore parse errors; triplet may still be present */
+      /* ignore parse errors */
     }
   }
 
   if (!projectId || !clientEmail || !privateKey) {
-    throw new Error(
-      "Firebase Admin credentials missing. Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY."
-    );
+    throw new Error("Firebase Admin credentials missing. Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY.");
   }
 
   // Always provide a bucket so bucket() never throws at build time.
@@ -44,7 +42,7 @@ export function getAdminApp(): App {
   return _app!;
 }
 
-/** Wrapper so callers can still do getFirestore(getAdminApp()) if they want. */
+/** Wrapper so callers can still do getFirestore(getAdminApp()). */
 export function getFirestore(app?: App): Firestore {
   return _getFirestore(app ?? getAdminApp());
 }

@@ -1,6 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "firebase-admin/firestore";
-import { getAdminApp } from "@/lib/firebase-admin";
+import { adminDb as db } from "@/lib/firebase-admin";
 
 // WARNING: test-only helper. Remove or lock before launch.
 export const dynamic = "force-dynamic";
@@ -33,4 +32,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: e?.message || "seed-error" }, { status: 500 });
   }
 }
-
