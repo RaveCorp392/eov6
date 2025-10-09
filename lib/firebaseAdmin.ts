@@ -1,59 +1,46 @@
-// lib/firebaseAdmin.ts
-import { cert, getApp, getApps, initializeApp, type App } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
+// lib/firebase-admin.ts
+import { App, cert, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 
-let adminApp: App | null = null;
+type SA = { project_id: string; client_email: string; private_key: string };
 
-function initFromServiceAccountKey() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
+let app: App;
+
+if (!getApps().length) {
+  // Support either FIREBASE_SERVICE_ACCOUNT (JSON) or the triplet envs
+  let projectId = process.env.FIREBASE_PROJECT_ID || "";
+  let clientEmail = process.env.FIREBASE_CLIENT_EMAIL || "";
+  let privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+
+  const saJson = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if ((!projectId || !clientEmail || !privateKey) && saJson) {
     try {
-      const decoded = Buffer.from(raw, "base64").toString("utf8");
-      return JSON.parse(decoded);
+      const sa = JSON.parse(saJson) as SA;
+      projectId ||= sa.project_id;
+      clientEmail ||= sa.client_email;
+      privateKey ||= sa.private_key;
     } catch {
-      return null;
+      // ignore parse errors; triplet may still be present
     }
   }
+
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error(
+      "Firebase Admin credentials missing. Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY."
+    );
+  }
+
+  // ✅ Always provide a valid bucket at init time
+  const storageBucket = (process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`).trim();
+
+  app = initializeApp({
+    credential: cert({ projectId, clientEmail, privateKey }),
+    storageBucket,
+  });
+} else {
+  app = getApps()[0]!;
 }
 
-export function getAdminApp(): App {
-  if (adminApp) return adminApp;
-  if (getApps().length) {
-    adminApp = getApp();
-    return adminApp;
-  }
-
-  // Prefer trio envs if provided, else fall back to FIREBASE_SERVICE_ACCOUNT_KEY
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-  let credentialInput: any = null;
-  if (projectId && clientEmail && privateKey) {
-    privateKey = privateKey.replace(/\\n/g, "\n");
-    credentialInput = { projectId, clientEmail, privateKey };
-  } else {
-    credentialInput = initFromServiceAccountKey();
-  }
-
-  if (!credentialInput) {
-    throw new Error("Missing Admin SDK env: set FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY or FIREBASE_SERVICE_ACCOUNT_KEY");
-  }
-
-  adminApp = initializeApp({ credential: cert(credentialInput) });
-  return adminApp;
-}
-
-// Export a conventional `db` for server/Admin usage, and keep `adminDb` for existing imports.
-export const db = getFirestoreAdmin(getAdminApp());
-export const adminDb = db;
-
-export const getFirestore = () => getFirestoreAdmin(getAdminApp());
-
-// New helpers if you prefer call-style usage
-export const adminAuth = () => getAuth(getAdminApp());
-export const adminDbFn = () => getFirestoreAdmin(getAdminApp());
+export const db = getFirestore(app);
+export const bucket = getStorage(app).bucket(); // safe: bucket name guaranteed above
