@@ -1,17 +1,16 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
-import "@/lib/firebase";
-import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
+import { GoogleAuthProvider, signInWithRedirect, signOut, onAuthStateChanged } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 export default function AuthBar() {
   const [email, setEmail] = useState<string | null>(null);
-  const auth = getAuth();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setEmail(u?.email || null));
     return () => unsub();
-  }, [auth]);
+  }, []);
 
   async function doSignIn() {
     await signInWithRedirect(auth, new GoogleAuthProvider());

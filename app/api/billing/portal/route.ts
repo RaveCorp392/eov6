@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { adminDb } from "@/lib/firebase-admin";
 
+export const runtime = "nodejs";
 
-export async function POST(req: Request){
+export async function POST(req: Request) {
   try {
     const { orgId } = await req.json();
     if (!process.env.STRIPE_SECRET_KEY) {
@@ -26,4 +27,3 @@ export async function POST(req: Request){
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });
   }
 }
-

@@ -1,10 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
-import "@/lib/firebase";
-import { getAuth } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
 import {
-  getFirestore,
   doc,
   getDoc,
   collection,
@@ -37,9 +35,6 @@ type MemberRecord = {
 };
 
 export default function PortalOrganizationsPage() {
-  const auth = getAuth();
-  const db = getFirestore();
-
   const [orgId, setOrgId] = useState<string | null>(null);
   const [org, setOrg] = useState<PartialOrg | null>(null);
   const [acks, setAcks] = useState<AckTemplate[]>([]);
@@ -91,7 +86,7 @@ export default function PortalOrganizationsPage() {
         // ignore storage issues
       }
     }
-  }, [auth, db]);
+  }, []);
 
   const reloadOrg = useCallback(
     async (id: string) => {
@@ -105,7 +100,7 @@ export default function PortalOrganizationsPage() {
         setPrivacyDraft("");
       }
     },
-    [db]
+    []
   );
 
   const reloadAcks = useCallback(
@@ -116,7 +111,7 @@ export default function PortalOrganizationsPage() {
         .sort((a, b) => Number(a?.order || 0) - Number(b?.order || 0));
       setAcks(rows);
     },
-    [db]
+    []
   );
 
   const reloadInvites = useCallback(
@@ -124,7 +119,7 @@ export default function PortalOrganizationsPage() {
       const snap = await getDocs(collection(db, "orgs", id, "invites"));
       setInvites(snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) })));
     },
-    [db]
+    []
   );
 
   const reloadMembers = useCallback(
@@ -132,7 +127,7 @@ export default function PortalOrganizationsPage() {
       const snap = await getDocs(collection(db, "orgs", id, "members"));
       setMembers(snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as any) })));
     },
-    [db]
+    []
   );
 
   useEffect(() => {
@@ -141,7 +136,7 @@ export default function PortalOrganizationsPage() {
       void applyOrgId();
     });
     return () => unsubscribe();
-  }, [auth, applyOrgId]);
+  }, [applyOrgId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -541,3 +536,4 @@ export default function PortalOrganizationsPage() {
     </div>
   );
 }
+

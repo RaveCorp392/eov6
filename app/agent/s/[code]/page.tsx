@@ -1,13 +1,13 @@
-// app/agent/s/[code]/page.tsx
+﻿// app/agent/s/[code]/page.tsx
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { devlog } from '@/lib/devlog';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { collection, getDocs } from 'firebase/firestore';
 import { ensureMembership } from '@/lib/membership';
-import { db, watchSession } from '@/lib/firebase';
+import { auth, db, watchSession } from '@/lib/firebase';
 import ConsentGate from '@/components/ConsentGate';
 import ChatWindow from '@/components/ChatWindow';
 import AgentDetailsPanel from '@/components/AgentDetailsPanel';
@@ -15,7 +15,6 @@ import TranslateBanner from '@/components/TranslateBanner';
 
 export default function AgentSessionPage({ params }: { params: { code: string } }) {
   const code = params.code;
-  const auth = getAuth();
   const [session, setSession] = useState<any>(null);
   const [membershipReady, setMembershipReady] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(() => auth.currentUser);
@@ -25,7 +24,7 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
 
   const loadAcksForOrg = useCallback(async (orgId: string) => {
     await getDocs(collection(db, 'orgs', orgId, 'ackTemplates'));
-  }, [db]);
+  }, []);
 
   // Ensure membership so org reads don't 403 under rules
   useEffect(() => {
@@ -38,7 +37,7 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
       } catch {}
     });
     return () => off();
-  }, [auth]);
+  }, []);
 
   useEffect(() => {
     const off = onAuthStateChanged(auth, async (u) => {
@@ -49,7 +48,7 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
       setMembershipReady(boot.ok);
     });
     return () => off();
-  }, [auth]);
+  }, []);
 
   useEffect(() => {
     if (!membershipReady) return;
@@ -133,4 +132,5 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
     </ConsentGate>
   );
 }
+
 

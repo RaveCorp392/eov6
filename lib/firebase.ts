@@ -1,4 +1,4 @@
-﻿// lib/firebase.ts
+// lib/firebase.ts
 "use client";
 
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
@@ -17,6 +17,7 @@ import {
   updateDoc as _updateDoc,
   deleteField as _deleteField,
   increment as _increment,
+  type Firestore,
 } from "firebase/firestore";
 import {
   getAuth,
@@ -27,39 +28,62 @@ import {
   setPersistence,
   browserLocalPersistence,
   type User,
+  type Auth,
 } from "firebase/auth";
-import { ref, uploadBytesResumable, getDownloadURL, getStorage } from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL, getStorage, type FirebaseStorage } from "firebase/storage";
 
-/* =========
-   Config
-   ========= */
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID!,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
 };
 
-export const app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const auth = getAuth(app);
+const isClient = typeof window !== "undefined";
+const hasFirebaseConfig = Object.values(firebaseConfig).every(Boolean);
 
-setPersistence(auth, browserLocalPersistence).catch((e) => {
-  console.warn("[auth:persistence] failed", e);
-});
+const appInstance = isClient && hasFirebaseConfig
+  ? (getApps().length ? getApp() : initializeApp(firebaseConfig))
+  : undefined;
 
-auth.useDeviceLanguage?.();
+const noop = () => {
+  throw new Error("Firebase client not initialized. Check NEXT_PUBLIC_FIREBASE_* env vars.");
+};
 
-if (typeof window !== "undefined") {
-  console.log("[auth:init]", {
-    origin: window.location.origin,
-    authDomain: (auth.config as any)?.authDomain,
-  });
-}
-export const storage = getStorage(app);
+const stubFirestore = new Proxy({}, { get: () => noop }) as Firestore;
+const stubAuth = new Proxy(
+  { currentUser: null },
+  {
+    get(target, prop) {
+      if (prop in target) return (target as any)[prop];
+      return noop;
+    },
+  }
+) as Auth;
+const stubStorage = new Proxy({}, { get: () => noop }) as FirebaseStorage;
+
+export const app: FirebaseApp = (appInstance || ({} as FirebaseApp));
+export const db: Firestore = appInstance ? getFirestore(appInstance) : stubFirestore;
+export const auth: Auth = appInstance ? getAuth(appInstance) : stubAuth;
+export const storage: FirebaseStorage = appInstance ? getStorage(appInstance) : stubStorage;
 export default app;
+
+if (appInstance) {
+  setPersistence(auth, browserLocalPersistence).catch((e) => {
+    console.warn("[auth:persistence] failed", e);
+  });
+
+  auth.useDeviceLanguage?.();
+
+  if (typeof window !== "undefined") {
+    console.log("[auth:init]", {
+      origin: window.location.origin,
+      authDomain: (auth.config as any)?.authDomain,
+    });
+  }
+}
 
 export const googleProvider = new GoogleAuthProvider();
 export { onAuthStateChanged, signInWithPopup, signOut };

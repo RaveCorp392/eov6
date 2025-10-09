@@ -2,6 +2,7 @@
 import { adminDb as db } from "@/lib/firebase-admin";
 
 // WARNING: test-only helper. Remove or lock before launch.
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DISABLED = process.env.NODE_ENV === "production" || process.env.ALLOW_DEV_SEED !== "true";

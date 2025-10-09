@@ -1,14 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import AgentLandingInfo from "@/components/AgentLandingInfo";
-import "@/lib/firebase";
-import { getAuth } from "firebase/auth";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 export default function AgentConsole() {
-  const auth = getAuth();
-  const db = getFirestore();
 
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string>("-");
@@ -68,7 +65,7 @@ export default function AgentConsole() {
         setTranslateUnlimited(null);
       }
     })();
-  }, [activeOrgId, db]);
+  }, [activeOrgId]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") {
@@ -156,4 +153,5 @@ export default function AgentConsole() {
     </div>
   );
 }
+
 

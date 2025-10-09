@@ -1,8 +1,8 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { Timestamp } from "firebase-admin/firestore";
 import { sendWithZohoFallback } from "@/lib/mail";
 import { roiEmailHtml } from "@/lib/email";
-import { getAdminApp } from "@/lib/firebase-admin";
+import { adminDb as db } from "@/lib/firebase-admin";
 
 function seatBucket(agents: number): string {
   if (agents >= 10000) return "10k+";
@@ -23,10 +23,10 @@ function esc(s: string) {
   );
 }
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-
   let salesSent = false;
   let leadSent = false;
 
@@ -117,4 +117,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: err?.message || "lead-error" }, { status: 500 });
   }
 }
-

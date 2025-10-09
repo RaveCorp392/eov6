@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { adminDb, getAdminApp } from "@/lib/firebase-admin";
 import { requireAdmin } from "@/lib/admin-auth";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
@@ -18,4 +19,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: msg }, { status });
   }
 }
-

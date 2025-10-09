@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import OrgTabs, { OrgTabKey } from "@/components/admin/org/OrgTabs";
@@ -7,15 +7,13 @@ import OrgStaff from "@/components/admin/org/OrgStaff";
 import OrgFeatures from "@/components/admin/org/OrgFeatures";
 import OrgBilling from "@/components/admin/org/OrgBilling";
 import OrgUsage from "@/components/admin/org/OrgUsage";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, getFirestore } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 import { resolveOrgIdFromEmail } from "@/lib/org-resolver";
 import { OrgDoc } from "@/lib/org-types";
 
 export default function AdminOrgPage() {
-  const auth = getAuth();
-  const db = getFirestore();
-
   const [tab, setTab] = useState<OrgTabKey>("general");
   const [org, setOrg] = useState<Partial<OrgDoc> | null>(null);
   const [orgId, setOrgId] = useState<string>("");
@@ -91,7 +89,7 @@ export default function AdminOrgPage() {
     });
 
     return () => unsubscribe();
-  }, [auth]);
+  }, []);
 
   useEffect(() => {
     if (!orgId) return;
@@ -115,7 +113,7 @@ export default function AdminOrgPage() {
     return () => {
       cancelled = true;
     };
-  }, [orgId, db]);
+  }, [orgId]);
 
   const myEmail = (currentEmail || "").toLowerCase();
   const ownerEmail = (org?.ownerEmail || "").toLowerCase();
@@ -172,3 +170,4 @@ export default function AdminOrgPage() {
     </div>
   );
 }
+

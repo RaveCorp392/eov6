@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import "@/lib/firebase";
-import { getAuth } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import AuthBar from "@/components/AuthBar";
 import { isInternalAdminClient } from "@/lib/is-internal";
 
@@ -24,8 +23,6 @@ export default function AdminTicketsPage() {
   const [loading, setLoading] = useState(true);
   const [isStaff, setIsStaff] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
-
-  const auth = getAuth();
 
   async function load() {
     setLoading(true);
