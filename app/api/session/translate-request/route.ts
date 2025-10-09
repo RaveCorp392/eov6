@@ -1,7 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import "@/lib/firebaseAdmin";
+import "@/lib/firebase-admin";
 
 export async function POST(req: Request) {
   try {

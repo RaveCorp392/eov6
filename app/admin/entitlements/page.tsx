@@ -1,6 +1,6 @@
 // /app/admin/entitlements/page.tsx
 import { redirect } from 'next/navigation';
-import { adminDb } from '@/lib/firebaseAdmin';
+import { adminDb } from '@/lib/firebase-admin';
 import { requireOwner } from '@/lib/authz';
 import { upsertEntitlement, deactivateEntitlement } from '@/lib/entitlements';
 

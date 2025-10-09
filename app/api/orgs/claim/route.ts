@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { normEmail } from "@/lib/email-normalize";
 import { getAuth } from "firebase-admin/auth";
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const token = typeof body?.token === "string" ? body.token.trim() : "";
     if (!orgId || !token) return json({ error: "missing_token_or_orgId" }, { status: 400 });
 
-    const db = getFirestore();
+    const db = adminDb;
     const orgRef = db.collection("orgs").doc(orgId);
     const memberRef = orgRef.collection("members").doc(uid);
     const entRef = db.collection("entitlements").doc(email);

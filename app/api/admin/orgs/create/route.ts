@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { getAuth } from "firebase-admin/auth";
 
 export async function POST(req: NextRequest) {
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     } = b || {};
     if (!orgId || !name || !adminEmail) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
-    const db = getFirestore();
+    const db = adminDb;
     const ref = db.collection("orgs").doc(String(orgId).toLowerCase());
     if ((await ref.get()).exists) return NextResponse.json({ error: "org_exists" }, { status: 409 });
 

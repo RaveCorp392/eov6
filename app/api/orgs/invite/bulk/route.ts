@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { randomUUID } from "crypto";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import nodemailer from "nodemailer";
 import { normEmail } from "@/lib/email-normalize";
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "no_recipients" }, { status: 400 });
     }
 
-    const db = getFirestore();
+    const db = adminDb;
     const orgRef = db.collection("orgs").doc(orgId);
     const orgSnap = await orgRef.get();
     if (!orgSnap.exists) {

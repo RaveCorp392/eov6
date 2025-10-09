@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getFirestore, getAdminApp } from "@/lib/firebaseAdmin";
+import { adminDb, getAdminApp } from "@/lib/firebase-admin";
 import { getAuth } from "firebase-admin/auth";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     const email = (decoded?.email || "").toLowerCase();
     if (!uid || !email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const db = getFirestore();
+    const db = adminDb;
     const entSnap = await db.collection("entitlements").doc(email).get();
     const orgId = entSnap.exists ? (entSnap.data() as any)?.orgId || null : null;
 

@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 
 function bad(error: string, status = 400) {
   return NextResponse.json({ ok: false, error }, { status });
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const { orgId } = (await req.json()) as { orgId?: string };
     if (!orgId) return bad("missing_orgId");
 
-    const db = getFirestore();
+    const db = adminDb;
     const orgRef = db.collection("orgs").doc(orgId);
     const orgSnap = await orgRef.get();
     if (!orgSnap.exists) return bad("org_not_found", 404);

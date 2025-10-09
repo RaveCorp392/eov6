@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore, getStorage } from "@/lib/firebase-admin";
+import { adminDb, adminBucket } from "@/lib/firebase-admin";
 
 function isAllowed(req: Request, email?: string) {
   const secret = process.env.CRON_SECRET || "";
@@ -25,10 +25,8 @@ export async function GET(req: NextRequest) {
     }
     if (!isAllowed(req, email)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-    const db = getFirestore();
-    const storage = getStorage();
-    const projectId = (db as any).app?.options?.projectId || process.env.GOOGLE_CLOUD_PROJECT || null;
-    const bucketName = storage.bucket().name || null;
+    const projectId = (adminDb as any).app?.options?.projectId || process.env.GOOGLE_CLOUD_PROJECT || null;
+    const bucketName = adminBucket.name || null;
     return NextResponse.json({ ok: true, projectId, bucketName });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });

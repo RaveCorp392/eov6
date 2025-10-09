@@ -1,5 +1,5 @@
 // app/portal/orgs/page.tsx
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb } from "@/lib/firebase-admin";
 
 export const metadata = { title: "Organizations • EOV6" };
 

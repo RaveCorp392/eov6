@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { getAuth } from "firebase-admin/auth";
 
 export async function POST(req: NextRequest) {
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const decoded = await adminAuth.verifyIdToken(idToken);
     const uid = decoded.uid;
 
-    const db = getFirestore();
+    const db = adminDb;
     const orgRef = db.collection("orgs").doc(orgId);
     const me = await orgRef.collection("members").doc(uid).get();
     if (!me.exists || me.data()?.role !== "owner") {

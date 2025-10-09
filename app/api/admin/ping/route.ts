@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
-import { getAdminApp } from "@/lib/firebaseAdmin";
+import { getAdminApp } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 

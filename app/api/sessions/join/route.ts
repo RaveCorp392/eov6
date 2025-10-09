@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
 export async function POST(req: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "missing_code" }, { status: 400 });
     }
 
-    const db = getFirestore();
+    const db = adminDb;
     const ref = db.collection("sessions").doc(sessionCode);
 
     await db.runTransaction(async (tx) => {

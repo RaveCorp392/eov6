@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { isServerStaff } from "@/lib/server-staff";
 
 export async function GET(req: NextRequest) {
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
 
-    const db = getFirestore();
+    const db = adminDb;
     const snap = await db
       .collection("tickets")
       .where("status", "==", "open")

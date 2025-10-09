@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { sendWithZohoFallback } from "@/lib/mail";
 
 type DeliveryLog = {
@@ -24,7 +24,7 @@ function ticketCode() {
 }
 
 export async function POST(req: NextRequest) {
-  const db = getFirestore();
+  const db = adminDb;
   const startedAt = Date.now();
 
   try {

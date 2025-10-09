@@ -1,6 +1,6 @@
 'use server';
 
-import { adminDb } from '@/lib/firebaseAdmin';
+import { adminDb } from '@/lib/firebase-admin';
 import { redirect } from 'next/navigation';
 
 export async function submitContact(formData: FormData) {

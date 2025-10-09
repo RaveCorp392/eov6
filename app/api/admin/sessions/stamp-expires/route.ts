@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 
 /**
  * POST { hoursAgo?: number, limit?: number }
@@ -11,7 +11,7 @@ import { getFirestore } from "@/lib/firebase-admin";
  */
 export async function POST(req: NextRequest) {
   try {
-    const db = getFirestore();
+    const db = adminDb;
     const cronSecret = process.env.CRON_SECRET || "";
     const incomingSecret = req.headers.get("x-cron-secret") || "";
     const isCron = !!incomingSecret && incomingSecret === cronSecret;

@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { getAuth } from "firebase-admin/auth";
 
 type CreateOrgPayload = {
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const orgId = slugify(body.orgId);
     if (!orgId) return NextResponse.json({ error: "invalid_org_id" }, { status: 400 });
 
-    const db = getFirestore();
+    const db = adminDb;
     const ref = db.collection("orgs").doc(orgId);
     const existing = await ref.get();
     if (existing.exists) return NextResponse.json({ error: "org_exists" }, { status: 409 });

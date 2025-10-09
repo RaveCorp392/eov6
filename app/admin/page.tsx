@@ -1,6 +1,6 @@
 // /app/admin/page.tsx
 import { redirect } from 'next/navigation';
-import { adminDb } from '@/lib/firebaseAdmin';
+import { adminDb } from '@/lib/firebase-admin';
 import { requireOwner } from '@/lib/authz';
 
 async function getMetrics() {

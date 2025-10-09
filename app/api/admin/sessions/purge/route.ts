@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { getStorage } from "firebase-admin/storage";
 
 /**
@@ -14,7 +14,7 @@ import { getStorage } from "firebase-admin/storage";
  */
 export async function POST(req: NextRequest) {
   try {
-    const db = getFirestore();
+    const db = adminDb;
     const storage = getStorage();
 
     const cronSecret = process.env.CRON_SECRET || "";

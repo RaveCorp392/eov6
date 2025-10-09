@@ -1,6 +1,6 @@
 // Firestore helpers for writing/clearing a user's entitlement.
 
-import { adminDb } from '@/lib/firebaseAdmin';
+import { adminDb } from '@/lib/firebase-admin';
 import type { Plan } from '@/lib/billing';
 
 export type EntitlementDoc = {

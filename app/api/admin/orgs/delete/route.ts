@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { getAuth } from "firebase-admin/auth";
 
 export async function POST(req: NextRequest) {
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
     if (!isInternal) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-    const db = getFirestore();
+    const db = adminDb;
     const orgRef = db.collection("orgs").doc(orgId);
     const orgSnap = await orgRef.get();
     if (!orgSnap.exists) return NextResponse.json({ error: "org_missing" }, { status: 404 });

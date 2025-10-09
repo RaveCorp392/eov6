@@ -2,7 +2,7 @@
 import Stripe from "stripe";
 import { headers } from "next/headers";
 import { resolveEntitledOrgId } from "@/lib/org-resolver";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       return new Response("ok", { status: 200 });
     }
 
-    const db = getFirestore();
+    const db = adminDb;
     const entRef = db.collection("entitlements").doc(payerEmail);
     const existingEnt = await entRef.get();
     const existingOrg = existingEnt.exists ? ((existingEnt.data() as any)?.orgId || null) : null;

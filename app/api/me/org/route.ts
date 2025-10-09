@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { getAuth } from "firebase-admin/auth";
 
 export async function GET(req: NextRequest) {
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const uid = decoded.uid;
     const email = (decoded.email || "").toLowerCase();
 
-    const db = getFirestore();
+    const db = adminDb;
     let orgId: string | undefined;
 
     if (email) {

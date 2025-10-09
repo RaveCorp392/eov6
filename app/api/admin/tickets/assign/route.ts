@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { isServerStaff } from "@/lib/server-staff";
 
 export async function POST(req: NextRequest) {
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "bad_request" }, { status: 400 });
     }
 
-    const db = getFirestore();
+    const db = adminDb;
     await db
       .collection("tickets")
       .doc(id)

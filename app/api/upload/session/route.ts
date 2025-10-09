@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getFirestore } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { getStorage } from "firebase-admin/storage";
 
 function bad(msg: string, status = 400) {
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     const code = req.nextUrl.searchParams.get("code") || "";
     if (!validCode(code)) return bad("invalid_code");
 
-    const db = getFirestore();
+    const db = adminDb;
     const snap = await db.collection("sessions").doc(code).get();
     if (!snap.exists) return bad("session_not_found", 404);
 

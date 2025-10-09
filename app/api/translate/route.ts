@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 import "server-only";
 
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebaseAdmin";
+import { adminDb } from "@/lib/firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 const LIMIT = Number(process.env.NEXT_PUBLIC_TRANSLATE_FREE_PREVIEWS ?? 5) || 5;

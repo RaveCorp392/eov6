@@ -1,5 +1,5 @@
 // lib/orgsAdmin.ts  (server-only; OK to use Admin SDK)
-import { adminDb } from '@/lib/firebaseAdmin';
+import { adminDb } from '@/lib/firebase-admin';
 import type { Org, OrgMember } from '@/lib/types';
 
 export async function createOrg(
