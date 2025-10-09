@@ -10,10 +10,11 @@ type ServiceAccount = {
 
 let _app: App | undefined;
 
-/** Lazy init so build-time imports don’t explode. */
+/** Lazy, idempotent Admin init. Safe at build & runtime. */
 function initApp(): App {
   if (_app) return _app;
 
+  // Support either FIREBASE_SERVICE_ACCOUNT (JSON) or the triplet envs
   let projectId = process.env.FIREBASE_PROJECT_ID || "";
   let clientEmail = process.env.FIREBASE_CLIENT_EMAIL || "";
   let privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
@@ -26,7 +27,7 @@ function initApp(): App {
       clientEmail ||= j.client_email;
       privateKey ||= j.private_key;
     } catch {
-      // ignore JSON parse; triplet may still be present
+      /* ignore JSON parse errors; triplet may still be present */
     }
   }
 
@@ -36,6 +37,7 @@ function initApp(): App {
     );
   }
 
+  // Always provide a bucket so bucket() never throws at build time.
   const storageBucket = (process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`).trim();
 
   if (!getApps().length) {
@@ -49,13 +51,13 @@ function initApp(): App {
   return _app!;
 }
 
+/** Preferred accessors */
 export function getAdminApp(): App {
   return initApp();
 }
-
 export const db: Firestore = getFirestore(getAdminApp());
 export const bucket = getStorage(getAdminApp()).bucket();
 
-/** Back-compat aliases (old code imported these). */
+/** Back-compat aliases used around the codebase */
 export const adminDb: Firestore = db;
 export const adminBucket = bucket;
