@@ -5,12 +5,19 @@ import { getStorage } from "firebase-admin/storage";
 type ServiceAccount = { project_id: string; client_email: string; private_key: string };
 
 let _app: App | undefined;
+let _projectId: string | undefined;
 
-/** Lazy, idempotent Admin init. Safe at build & runtime. */
-export function getAdminApp(): App {
-  if (_app) return _app;
+function resolveBucketName(projectId: string): string {
+  const fromEnv = (
+    process.env.FIREBASE_STORAGE_BUCKET ||
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+    ""
+  ).trim();
+  if (fromEnv) return fromEnv;
+  return `${projectId}.firebasestorage.app`;
+}
 
-  // Support FIREBASE_SERVICE_ACCOUNT JSON OR the triplet envs
+function resolveProjectCredentials(): { projectId: string; clientEmail: string; privateKey: string } {
   let projectId = process.env.FIREBASE_PROJECT_ID || "";
   let clientEmail = process.env.FIREBASE_CLIENT_EMAIL || "";
   let privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
@@ -18,21 +25,45 @@ export function getAdminApp(): App {
   const sa = process.env.FIREBASE_SERVICE_ACCOUNT;
   if ((!projectId || !clientEmail || !privateKey) && sa) {
     try {
-      const j = JSON.parse(sa) as ServiceAccount;
-      projectId ||= j.project_id;
-      clientEmail ||= j.client_email;
-      privateKey ||= j.private_key;
+      const parsed = JSON.parse(sa) as ServiceAccount;
+      projectId ||= parsed.project_id;
+      clientEmail ||= parsed.client_email;
+      privateKey ||= parsed.private_key;
     } catch {
-      /* ignore parse errors */
+      // ignore
     }
   }
 
   if (!projectId || !clientEmail || !privateKey) {
-    throw new Error("Firebase Admin credentials missing. Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY.");
+    throw new Error("Firebase Admin credentials missing.");
   }
 
-  // Always provide a bucket so bucket() never throws at build time.
-  const storageBucket = (process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`).trim();
+  return { projectId, clientEmail, privateKey };
+}
+
+function getKnownProjectId(): string {
+  if (_projectId) return _projectId;
+  const raw = process.env.FIREBASE_PROJECT_ID || "";
+  if (raw) return raw;
+  const sa = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (sa) {
+    try {
+      const parsed = JSON.parse(sa) as ServiceAccount;
+      if (parsed.project_id) return parsed.project_id;
+    } catch {
+      // ignore
+    }
+  }
+  return "unknown-project";
+}
+
+/** Lazy, idempotent Admin init. Safe at build & runtime. */
+export function getAdminApp(): App {
+  if (_app) return _app;
+
+  const { projectId, clientEmail, privateKey } = resolveProjectCredentials();
+  _projectId = projectId;
+  const storageBucket = resolveBucketName(projectId);
 
   if (!getApps().length) {
     _app = initializeApp({ credential: cert({ projectId, clientEmail, privateKey }), storageBucket });
@@ -47,9 +78,18 @@ export function getFirestore(app?: App): Firestore {
   return _getFirestore(app ?? getAdminApp());
 }
 
+function currentBucketName(): string {
+  const projectId = _projectId || getKnownProjectId();
+  return resolveBucketName(projectId);
+}
+
 /** Ready-to-use handles */
 export const db: Firestore = getFirestore();
-export const bucket = getStorage(getAdminApp()).bucket();
+export const bucket = getStorage(getAdminApp()).bucket(currentBucketName());
+
+export function getBucketName(): string {
+  return currentBucketName();
+}
 
 /** Back-compat aliases used around the codebase */
 export const adminDb: Firestore = db;
