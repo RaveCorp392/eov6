@@ -1,4 +1,4 @@
-﻿export const runtime = "nodejs";
+export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
@@ -227,25 +227,37 @@ function toMillis(v: any): number | null {
 
 async function listAllStorageCodes(roots: string[], cap: number): Promise<string[]> {
   const set = new Set<string>();
+
   for (const root of roots) {
-    let pageToken: string | undefined;
     const clean = root.replace(/\/+$/, "");
+    let pageToken: string | undefined = undefined;
+
     while (set.size < cap) {
-      const args: any = { prefix: `${clean}/`, delimiter: "/", autoPaginate: false, maxResults: Math.min(1000, cap - set.size) };
-      if (pageToken) args.pageToken = pageToken;
-      const res: any[] = await (bucket as any).getFiles(args);
-      const api: any = res[2] ?? res[1];
-      const prefixes: string[] = (api?.prefixes as string[]) ?? [];
-      if (!prefixes.length) break;
-      for (const p of prefixes) {
-        const m = new RegExp(`^${clean}/(\d{6})/`).exec(p);
-        if (m) set.add(m[1]);
-        if (set.size >= cap) break;
+      const opts: any = {
+        prefix: `${clean}/`,
+        autoPaginate: false,
+        maxResults: Math.min(1000, cap - set.size),
+      };
+      if (pageToken) opts.pageToken = pageToken;
+
+      const res: any[] = await (bucket as any).getFiles(opts);
+      const files: Array<{ name: string }> = (res[0] as any[]) ?? [];
+      const nextQuery: any = res[1];
+      const apiResp: any = res[2];
+
+      for (const f of files) {
+        const m = new RegExp(`^${clean}/(\d{6})/`).exec(f.name);
+        if (m) {
+          set.add(m[1]);
+          if (set.size >= cap) break;
+        }
       }
-      pageToken = api?.nextPageToken;
+
+      pageToken = (nextQuery && nextQuery.pageToken) || (apiResp && apiResp.nextPageToken);
       if (!pageToken) break;
     }
   }
+
   return Array.from(set);
 }
 
