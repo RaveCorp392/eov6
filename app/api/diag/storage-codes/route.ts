@@ -1,6 +1,9 @@
 export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import { bucket } from "@/lib/firebase-admin";
+
+const diagEnabled = process.env.DIAG_ENABLE === "1";
 
 function regexFor(root: string) {
   const clean = root.replace(/\/+$/, "");
@@ -8,6 +11,8 @@ function regexFor(root: string) {
 }
 
 export async function GET() {
+  if (!diagEnabled) return new Response(null, { status: 404 });
+
   const roots = ["uploads", "sessions"];
   const out: Record<string, string[]> = {};
   try {

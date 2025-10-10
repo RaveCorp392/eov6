@@ -3,7 +3,11 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 
+const diagEnabled = process.env.DIAG_ENABLE === "1";
+
 export async function GET(req: Request) {
+  if (!diagEnabled) return new Response(null, { status: 404 });
+
   const url = new URL(req.url);
   const sent = (url.searchParams.get("key") || "").trim();
   const envKey = (process.env.CRON_SECRET || "").trim();

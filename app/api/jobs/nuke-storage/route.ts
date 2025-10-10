@@ -4,7 +4,15 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { bucket } from "@/lib/firebase-admin";
 
+function nukesAllowed() {
+  return process.env.NUKE_ENABLE === "1";
+}
+
 export async function GET(req: Request) {
+  if (!nukesAllowed()) {
+    return NextResponse.json({ ok: false, error: "disabled", note: "Set NUKE_ENABLE=1 to allow nuke-storage." }, { status: 403 });
+  }
+
   const url = new URL(req.url);
   const key = (url.searchParams.get("key") || "").trim();
   const envKey = (process.env.CRON_SECRET || "").trim();
@@ -22,8 +30,8 @@ export async function GET(req: Request) {
       const clean = root.replace(/\/+$/, "");
       const prefix = `${clean}/`;
 
-      let pageToken: string | undefined = undefined;
       let found = 0;
+      let pageToken: string | undefined;
       while (true) {
         const opts: any = { prefix, autoPaginate: false, maxResults: 1000 };
         if (pageToken) opts.pageToken = pageToken;
@@ -37,7 +45,6 @@ export async function GET(req: Request) {
       }
 
       const row: any = { prefix, found };
-
       if (!dryRun && found > 0) {
         try {
           await bucket.deleteFiles({ prefix, force: true });
@@ -46,16 +53,10 @@ export async function GET(req: Request) {
           row.error = String(e?.message || e);
         }
       }
-
       report.push(row);
     }
 
-    return NextResponse.json({
-      ok: true,
-      dryRun,
-      report,
-      note: dryRun ? "Dry-run only: no deletes performed." : "Delete requested: best-effort; counts are pre-delete."
-    });
+    return NextResponse.json({ ok: true, dryRun, report });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: "internal", reason: String(e?.message || e) }, { status: 500 });
   }
