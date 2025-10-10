@@ -31,7 +31,7 @@ type PerCode = {
 const BATCH_LIMIT = 250;
 const PAGE_SIZE = 500;
 const SESSION_CAP = Number(process.env.CLEANUP_MAX_SESSIONS || 5000);
-const ORPHAN_CAP = Number(process.env.CLEANUP_ORPHAN_CAP || 1000);
+const ORPHAN_CAP = Number(process.env.CLEANUP_ORPHAN_CAP || 2000);
 const DEFAULT_STORAGE_PREFIXES = ["uploads", "sessions"];
 
 export async function GET(req: Request) {
@@ -42,9 +42,9 @@ export async function GET(req: Request) {
   const dryRun = url.searchParams.get("dryRun") === "1";
   const olderThanH = numOrNull(url.searchParams.get("olderThanHours"));
   const sweepOrphans = url.searchParams.get("sweepOrphans") === "1";
+  const sweepStorageAll = url.searchParams.get("sweepStorageAll") === "1";
   const skipStorage = url.searchParams.get("skipStorage") === "1";
   const skipDb = url.searchParams.get("skipDb") === "1";
-  const scanAll = url.searchParams.get("scanAll") === "1" || olderThanH != null;
   const storagePrefixes = parsePrefixes(url.searchParams.get("storagePrefixes")) ?? DEFAULT_STORAGE_PREFIXES;
 
   const codesParam = (url.searchParams.get("codes") || "").trim();
@@ -57,67 +57,57 @@ export async function GET(req: Request) {
   try {
     const now = Timestamp.now();
     const cutoff = olderThanH != null ? Timestamp.fromMillis(now.toMillis() - olderThanH * 3600_000) : null;
-    const cutoffMs = cutoff ? cutoff.toMillis() : null;
 
-    const codes = new Set<string>();
-    codesList.forEach((c) => codes.add(c));
+    let candidateCodes: string[] = [];
 
-    if (cutoff) {
-      try {
-        const snap = await db.collection("sessions").where("expiresAt", "<=", cutoff).limit(SESSION_CAP).get();
-        snap.docs.forEach((d) => codes.add(d.id));
-      } catch {}
-      try {
-        const snap = await db.collection("sessions").where("closedAt", "<=", cutoff).orderBy("closedAt", "asc").limit(SESSION_CAP).get();
-        snap.docs.forEach((d) => codes.add(d.id));
-      } catch {}
-      try {
-        const snap = await db.collection("sessions").where("createdAt", "<=", cutoff).orderBy("createdAt", "asc").limit(SESSION_CAP).get();
-        snap.docs.forEach((d) => codes.add(d.id));
-      } catch {}
-    }
+    if (sweepStorageAll) {
+      candidateCodes = await listAllStorageCodes(storagePrefixes, SESSION_CAP);
+    } else {
+      const codes = new Set<string>();
+      codesList.forEach((c) => codes.add(c));
 
-    if (cutoffMs != null && scanAll) {
-      const fp = FieldPath.documentId();
-      let lastId: string | null = null;
-      let scanned = 0;
+      if (cutoff) {
+        try {
+          const snap = await db.collection("sessions").where("expiresAt", "<=", cutoff).limit(SESSION_CAP).get();
+          snap.docs.forEach((d) => codes.add(d.id));
+        } catch {}
+        try {
+          const snap = await db.collection("sessions").where("closedAt", "<=", cutoff).orderBy("closedAt", "asc").limit(SESSION_CAP).get();
+          snap.docs.forEach((d) => codes.add(d.id));
+        } catch {}
+        try {
+          const snap = await db.collection("sessions").where("createdAt", "<=", cutoff).orderBy("createdAt", "asc").limit(SESSION_CAP).get();
+          snap.docs.forEach((d) => codes.add(d.id));
+        } catch {}
 
-      while (scanned < SESSION_CAP) {
-        let q = db.collection("sessions").orderBy(fp).limit(PAGE_SIZE);
-        if (lastId) q = q.startAfter(lastId);
-        const page = await q.get();
-        if (page.empty) break;
-
-        for (const snap of page.docs) {
-          const data = snap.data() || {};
-          const msList = [
-            toMillis(data.expiresAt),
-            toMillis(data.closedAt),
-            toMillis(data.createdAt),
-            toMillis((snap as any).createTime as Timestamp | undefined),
-          ].filter((n): n is number => typeof n === "number");
-
-          const earliest = msList.length ? Math.min(...msList) : null;
-          if (earliest != null && earliest <= cutoffMs) {
-            codes.add(snap.id);
+        const fp = FieldPath.documentId();
+        let lastId: string | null = null;
+        let scanned = 0;
+        while (scanned < SESSION_CAP) {
+          let q = db.collection("sessions").orderBy(fp).limit(PAGE_SIZE);
+          if (lastId) q = q.startAfter(lastId);
+          const page = await q.get();
+          if (page.empty) break;
+          for (const snap of page.docs) {
+            const data = snap.data() || {};
+            const ms = [
+              toMillis(data.expiresAt),
+              toMillis(data.closedAt),
+              toMillis(data.createdAt),
+              toMillis((snap as any).createTime),
+            ].filter((n): n is number => typeof n === "number");
+            if (ms.length && Math.min(...ms) <= cutoff.toMillis()) codes.add(snap.id);
           }
+          scanned += page.size;
+          lastId = page.docs[page.docs.length - 1].id;
+          if (page.size < PAGE_SIZE) break;
         }
-
-        scanned += page.size;
-        lastId = page.docs[page.docs.length - 1].id;
-        if (page.size < PAGE_SIZE) break;
       }
+
+      candidateCodes = Array.from(codes).slice(0, SESSION_CAP);
     }
 
-    const candidateCodes = Array.from(codes).slice(0, SESSION_CAP);
-
-    const counts: Counts = {
-      sessions: 0,
-      subcollections: 0,
-      storageObjects: 0,
-      orphanPrefixesScanned: 0,
-      orphanPrefixesDeleted: 0,
-    };
+    const counts: Counts = { sessions: 0, subcollections: 0, storageObjects: 0, orphanPrefixesScanned: 0, orphanPrefixesDeleted: 0 };
     const perCode: PerCode[] = [];
 
     for (const code of candidateCodes) {
@@ -132,14 +122,13 @@ export async function GET(req: Request) {
       }
 
       if (!dryRun) {
-        if (!skipDb) {
+        if (!skipDb && !sweepStorageAll) {
           try {
             entry.deleted.subcollections = await deleteAllSubcollections(db, db.collection("sessions").doc(code));
             counts.subcollections += entry.deleted.subcollections;
           } catch (e: any) {
             entry.errors.push(`subcollections: ${msg(e)}`);
           }
-
           try {
             await db.collection("sessions").doc(code).delete();
             entry.deleted.doc = true;
@@ -148,7 +137,6 @@ export async function GET(req: Request) {
             entry.errors.push(`doc: ${msg(e)}`);
           }
         }
-
         if (!skipStorage) {
           try {
             const removed = await deleteStoragePrefixesForCode(code, storagePrefixes, true);
@@ -173,7 +161,7 @@ export async function GET(req: Request) {
       }
     }
 
-    if (!dryRun) {
+    if (!dryRun && !sweepStorageAll) {
       await db.collection("jobs").doc().set({
         type: "cleanup",
         ranAt: FieldValue.serverTimestamp(),
@@ -189,7 +177,7 @@ export async function GET(req: Request) {
       candidates: candidateCodes.length,
       counts,
       perCode,
-      params: { olderThanHours: olderThanH, sweepOrphans, skipDb, skipStorage, storagePrefixes },
+      params: { olderThanHours: olderThanH, sweepOrphans, skipDb, skipStorage, sweepStorageAll, storagePrefixes },
     });
   } catch (e: any) {
     return j({ ok: false, error: "internal", reason: msg(e) }, 500);
@@ -220,9 +208,7 @@ function safeEqual(a: string, b: string) {
 }
 function toMillis(v: any): number | null {
   if (v == null) return null;
-  if (typeof v === "number") {
-    return v < 1e12 ? Math.round(v * 1000) : Math.round(v);
-  }
+  if (typeof v === "number") return v < 1e12 ? Math.round(v * 1000) : Math.round(v);
   if (typeof v === "string") {
     const n = Number(v);
     if (Number.isFinite(n)) return n < 1e12 ? Math.round(n * 1000) : Math.round(n);
@@ -238,6 +224,31 @@ function toMillis(v: any): number | null {
   }
   return null;
 }
+
+async function listAllStorageCodes(roots: string[], cap: number): Promise<string[]> {
+  const set = new Set<string>();
+  for (const root of roots) {
+    let pageToken: string | undefined;
+    const clean = root.replace(/\/+$/, "");
+    while (set.size < cap) {
+      const args: any = { prefix: `${clean}/`, delimiter: "/", autoPaginate: false, maxResults: Math.min(1000, cap - set.size) };
+      if (pageToken) args.pageToken = pageToken;
+      const res: any[] = await (bucket as any).getFiles(args);
+      const api: any = res[2] ?? res[1];
+      const prefixes: string[] = (api?.prefixes as string[]) ?? [];
+      if (!prefixes.length) break;
+      for (const p of prefixes) {
+        const m = new RegExp(`^${clean}/(\d{6})/`).exec(p);
+        if (m) set.add(m[1]);
+        if (set.size >= cap) break;
+      }
+      pageToken = api?.nextPageToken;
+      if (!pageToken) break;
+    }
+  }
+  return Array.from(set);
+}
+
 async function countStorageForCode(code: string, roots: string[]): Promise<FoundByRoot> {
   const out: FoundByRoot = {};
   for (const root of roots) {
@@ -247,11 +258,12 @@ async function countStorageForCode(code: string, roots: string[]): Promise<Found
   }
   return out;
 }
+
 async function deleteStoragePrefixesForCode(code: string, roots: string[], deletePlaceholder: boolean): Promise<number> {
   let total = 0;
   for (const root of roots) {
-    const cleanRoot = root.replace(/\/+$/, "");
-    const prefix = `${cleanRoot}/${code}/`;
+    const clean = root.replace(/\/+$/, "");
+    const prefix = `${clean}/${code}/`;
     const [files] = await bucket.getFiles({ prefix });
     for (let i = 0; i < files.length; i += BATCH_LIMIT) {
       const chunk = files.slice(i, i + BATCH_LIMIT);
@@ -266,12 +278,13 @@ async function deleteStoragePrefixesForCode(code: string, roots: string[], delet
     }
     if (deletePlaceholder) {
       try {
-        await bucket.file(`${cleanRoot}/${code}/`).delete({ ignoreNotFound: true } as any);
+        await bucket.file(`${clean}/${code}/`).delete({ ignoreNotFound: true } as any);
       } catch {}
     }
   }
   return total;
 }
+
 async function deleteAllSubcollections(db: Firestore, docRef: DocumentReference): Promise<number> {
   const cols = await docRef.listCollections();
   let total = 0;
@@ -290,6 +303,7 @@ async function deleteSubcollection(db: Firestore, path: string): Promise<number>
   }
   return deleted;
 }
+
 async function sweepOrphanUploads(params: { db: Firestore; cutoff: Timestamp | null; dryRun: boolean; cap: number; roots: string[] }) {
   const { db, cutoff, dryRun, cap, roots } = params;
   let scanned = 0;
@@ -297,50 +311,26 @@ async function sweepOrphanUploads(params: { db: Firestore; cutoff: Timestamp | n
 
   for (const root of roots) {
     let pageToken: string | undefined;
+    const clean = root.replace(/\/+$/, "");
     while (scanned < cap) {
-      const args: any = {
-        prefix: `${root.replace(/\/+$/, "")}/`,
-        delimiter: "/",
-        autoPaginate: false,
-        maxResults: Math.min(1000, cap - scanned),
-      };
+      const args: any = { prefix: `${clean}/`, delimiter: "/", autoPaginate: false, maxResults: Math.min(1000, cap - scanned) };
       if (pageToken) args.pageToken = pageToken;
 
       const res: any[] = await (bucket as any).getFiles(args);
-      const apiResp: any = res[2] ?? res[1];
-      const prefixes: string[] = (apiResp?.prefixes as string[]) ?? [];
+      const api: any = res[2] ?? res[1];
+      const prefixes: string[] = (api?.prefixes as string[]) ?? [];
       if (!prefixes.length) break;
 
       for (const p of prefixes) {
         if (scanned >= cap) break;
-        const m = new RegExp(`^${root.replace(/\/+$/, "")}/(\d{6})/`).exec(p);
+        const m = new RegExp(`^${clean}/(\d{6})/`).exec(p);
         if (!m) continue;
         const code = m[1];
         scanned++;
-
-        const snap = await db.collection("sessions").doc(code).get();
-        let should = false;
-        if (!snap.exists) {
-          should = true;
-        } else if (cutoff) {
-          const data = snap.data() || {};
-          const createdAt = toMillis(data.createdAt);
-          const closedAt = toMillis(data.closedAt);
-          const metaCreate = toMillis((snap as any).createTime as Timestamp | undefined);
-          if (
-            (closedAt && closedAt <= cutoff.toMillis()) ||
-            (createdAt && createdAt <= cutoff.toMillis()) ||
-            (metaCreate && metaCreate <= cutoff.toMillis())
-          ) {
-            should = true;
-          }
-        }
-        if (should && !dryRun) {
-          deleted += await deleteStoragePrefixesForCode(code, [root], true);
-        }
+        if (!dryRun) deleted += await deleteStoragePrefixesForCode(code, [root], true);
       }
 
-      pageToken = apiResp?.nextPageToken;
+      pageToken = api?.nextPageToken;
       if (!pageToken) break;
     }
   }
