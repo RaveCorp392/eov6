@@ -1,33 +1,41 @@
-// /app/admin/page.tsx
-import { redirect } from 'next/navigation';
-import { adminDb } from '@/lib/firebase-admin';
-import { requireOwner } from '@/lib/authz';
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import JobsCard from "@/components/admin/JobsCard";
+import { requireOwner } from "@/lib/authz";
 
-async function getMetrics() {
-  const snap = await adminDb.collection('entitlements').get();
-  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-
-  const active = docs.filter(d => d.active);
-  const planCounts = active.reduce<Record<string, number>>((acc, d) => {
-    acc[d.plan] = (acc[d.plan] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  // crude MRR-ish based on price map you already keep in /lib/billing
-  const priceMap: Record<string, number> = {
-    solo_month: 500,
-    team_month: 2500,
-    solo_year: Math.round(4800 / 12),
-    team_year: Math.round(24000 / 12),
-  };
-  const mrr = active.reduce((sum, d) => sum + (priceMap[d.plan] ?? 0), 0);
-
-  const contactsSnap = await adminDb.collection('contacts').orderBy('createdAt', 'desc').limit(10).get();
-  const contacts = contactsSnap.docs.map(d => d.data());
-
-  return { planCounts, mrr, contacts };
-}
+const quickLinks = [
+  { href: "/admin/organizations", label: "Manage organizations" },
+  { href: "/admin/entitlements", label: "Entitlements" },
+  { href: "/admin/usage", label: "Usage" },
+];
 
 export default async function AdminHome() {
-  redirect('/admin/organizations');
+  const { ok } = await requireOwner();
+  if (!ok) redirect("/");
+
+  return (
+    <main className="min-h-[100svh] bg-slate-50">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 space-y-6">
+        <JobsCard />
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+          <h2 className="text-base font-semibold text-slate-900">Admin panels</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Jump into the detailed admin views to manage organizations, entitlements, and usage.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            {quickLinks.map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
+        </section>
+      </div>
+    </main>
+  );
 }
