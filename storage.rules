@@ -1,23 +1,39 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /uploads/{code}/{filename=**} {
-      allow read: if true;
 
-      allow write: if
-        code.matches('^[0-9]{6}$') &&
-        request.resource.size < 20 * 1024 * 1024 && // 20 MB
-        (
-          request.resource.contentType.matches('^image/.*$') ||
-          request.resource.contentType == 'application/pdf' ||
-          request.resource.contentType == 'text/plain' ||
-          request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        );
+    function isAgent() {
+      return request.auth != null &&
+             (request.auth.token.role in ['agent','admin','owner']);
+    }
+    function isCallerFor(code) { return request.auth != null && request.auth.token.sessionCode == code; }
+    function isParticipant(code) { return isAgent() || isCallerFor(code); }
+    function sessionActive(code) {
+      let doc = firestore.get(/databases/(default)/documents/sessions/$(code));
+      let data = doc != null ? doc.data : null;
+      return data != null &&
+             data.closed != true &&
+             (!(data.expiresAt is timestamp) || data.expiresAt > request.time);
+    }
+    function validContent() {
+      return request.resource.contentType.matches('image/.*') ||
+             request.resource.contentType == 'application/pdf';
+    }
+    function validSize() { return request.resource.size <= 10 * 1024 * 1024; }
+
+    match /{path=**} { allow list: if false; }
+
+    match /uploads/{code}/{fileId} {
+      allow read: if isParticipant(code) && sessionActive(code);
+      allow write: if isParticipant(code) && sessionActive(code) && validContent() && validSize();
+      allow delete: if false;
+    }
+    match /sessions/{code}/{filePath=**} {
+      allow read: if isParticipant(code) && sessionActive(code);
+      allow write: if isParticipant(code) && sessionActive(code) && validContent() && validSize();
+      allow delete: if false;
     }
 
-    match /{path=**} {
-      allow read: if false;
-      allow write: if false;
-    }
+    match /{all=**} { allow read, write: if false; }
   }
 }
