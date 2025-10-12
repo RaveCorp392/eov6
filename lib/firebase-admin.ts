@@ -71,7 +71,7 @@ export function getFirestore(app?: App): Firestore {
   return _getFirestore(app ?? getAdminApp());
 }
 
-export function getAdminDb(app?: App): Firestore {
+function getAdminDb(app?: App): Firestore {
   return getFirestore(app);
 }
 
@@ -84,3 +84,4 @@ export const bucket = getStorage(getAdminApp()).bucket(getBucketName());
 
 export const adminDb: Firestore = db;
 export const adminBucket = bucket;
+
