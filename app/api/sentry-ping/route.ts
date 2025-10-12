@@ -5,14 +5,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const hub = Sentry.getCurrentHub();
-  if (!hub.getClient()) {
-    // Fallback init in case instrumentation didn’t run in prod
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN || "",
-      tracesSampleRate: 0.0,
-    });
+  // Re-init is safe; keeps this self-contained even if instrumentation didn't run.
+  if (process.env.SENTRY_DSN) {
+    Sentry.init({ dsn: process.env.SENTRY_DSN, tracesSampleRate: 0 });
+    Sentry.captureMessage("SERVER_PING");
   }
-  Sentry.captureMessage("SERVER_PING");
-  return NextResponse.json({ ok: true, sent: "SERVER_PING" });
+  return NextResponse.json({ ok: true, sent: !!process.env.SENTRY_DSN });
 }
