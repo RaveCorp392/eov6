@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { requireUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const db = getAdminDb();
+    const db = adminDb;
     const orgRef = db.collection("orgs").doc(org);
     const inviteRef = orgRef.collection("invites").doc(token);
     const memberRef = orgRef.collection("members").doc(uid);
