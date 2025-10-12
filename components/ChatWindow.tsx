@@ -10,7 +10,7 @@ import {
 } from "@/lib/firebase";
 import AckLine from "@/components/chat/AckLine";
 import SystemLine from "@/components/chat/SystemLine";
-import { LinkifiedText } from "@/lib/linkify";
+import { LinkifiedText, type LinkVariant } from "@/lib/linkify";
 
 
 type Props = {
@@ -124,15 +124,19 @@ export default function ChatWindow({
     return msg.text ?? "";
   }
 
-  function renderContent(msg: ChatMsg) {
+  function renderContent(msg: ChatMsg, variant: LinkVariant) {
     if (msg?.type === "file" && msg?.url) {
       const label = msg?.text || "file";
+      const linkClass =
+        variant === "on-dark"
+          ? "chat-file inline-flex px-3 py-1.5 rounded-2xl break-words text-white underline underline-offset-2 decoration-white/90 hover:decoration-white focus-visible:ring-2 focus-visible:ring-white/70"
+          : "chat-file inline-flex px-3 py-1.5 rounded-2xl break-words text-cyan-700 underline underline-offset-2 decoration-cyan-700/80 hover:decoration-cyan-700 focus-visible:ring-2 focus-visible:ring-cyan-600/30";
       return (
         <a
           href={msg.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="chat-file inline-flex px-3 py-1.5 rounded-2xl break-words"
+          className={linkClass}
         >
           {label}
         </a>
@@ -141,13 +145,14 @@ export default function ChatWindow({
     const primary = displayTextFor(msg);
     return (
       <div className="whitespace-pre-wrap break-words">
-        <LinkifiedText text={primary} />
+        <LinkifiedText text={primary} variant={variant} />
       </div>
     );
   }
 
   function bubbleFor(msg: ChatMsg) {
     const mine = msg.role === role;
+    const variant: LinkVariant = mine ? "on-dark" : "on-light";
     const isFile = msg.type === "file" && !!msg.url;
     const align = mine ? "justify-end" : "justify-start";
     let innerClass = "max-w-[70%]";
@@ -158,7 +163,7 @@ export default function ChatWindow({
     }
     return (
       <div key={msg.id} className={`flex ${align} my-1`}>
-        <div className={innerClass}>{renderContent(msg)}</div>
+        <div className={innerClass}>{renderContent(msg, variant)}</div>
       </div>
     );
   }

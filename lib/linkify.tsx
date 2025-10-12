@@ -1,55 +1,58 @@
 ﻿import React from "react";
 
 /**
- * Convert plain text into a React fragment where any URLs are rendered
- * as <a target="_blank" rel="noopener noreferrer nofollow"> links.
- * - Supports https://, http://, and www.* patterns.
- * - Preserves spacing and punctuation; no dangerouslySetInnerHTML.
+ * Render text with URLs as <a target="_blank" ...> links.
+ * - No innerHTML
+ * - Supports http(s) and www.*
+ * - Variant-aware classes for contrast on dark/light bubbles
  */
-export function linkifyText(text: string): React.ReactNode[] {
+export type LinkVariant = "on-dark" | "on-light";
+
+export function linkifyText(text: string, variant: LinkVariant = "on-light"): React.ReactNode[] {
   if (!text) return [];
   const urlRe = /(https?:\/\/[^\s<>()\[\]]+|www\.[^\s<>()\[\]]+)/gi;
 
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+  const aClass =
+    variant === "on-dark"
+      ? "text-white underline underline-offset-2 decoration-white/90 hover:decoration-white focus-visible:ring-2 focus-visible:ring-white/70"
+      : "text-cyan-700 underline underline-offset-2 decoration-cyan-700/80 hover:decoration-cyan-700 focus-visible:ring-2 focus-visible:ring-cyan-600/30";
 
-  while ((match = urlRe.exec(text)) !== null) {
-    const start = match.index;
-    const end = start + match[0].length;
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
 
-    // preceding text
-    if (lastIndex < start) parts.push(text.slice(lastIndex, start));
+  while ((m = urlRe.exec(text)) !== null) {
+    const start = m.index;
+    const end = start + m[0].length;
 
-    const raw = match[0];
+    if (last < start) out.push(text.slice(last, start));
 
-    // trim trailing punctuation commonly attached to URLs in prose
+    const raw = m[0];
     const trailingMatch = raw.match(/[),.;!?]+$/);
     const trailing = trailingMatch ? trailingMatch[0] : "";
     const core = trailing ? raw.slice(0, raw.length - trailing.length) : raw;
 
     const href = core.startsWith("http") ? core : `https://${core}`;
 
-    parts.push(
+    out.push(
       <a
         key={`${start}-${end}-${core}`}
         href={href}
         target="_blank"
         rel="noopener noreferrer nofollow"
-        className="text-cyan-600 underline break-words hover:opacity-90"
+        className={`${aClass} break-words`}
       >
         {core}
       </a>
     );
+    if (trailing) out.push(trailing);
 
-    if (trailing) parts.push(trailing);
-    lastIndex = end;
+    last = end;
   }
-
-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
-  return parts;
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
-export function LinkifiedText({ text }: { text: string }) {
-  return <>{linkifyText(text)}</>;
+export function LinkifiedText({ text, variant = "on-light" }: { text: string; variant?: LinkVariant }) {
+  return <>{linkifyText(text, variant)}</>;
 }
