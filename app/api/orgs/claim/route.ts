@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { requireUser } from "@/lib/auth";
 
@@ -96,3 +96,4 @@ export async function POST(req: Request) {
     );
   }
 }
+
