@@ -57,7 +57,15 @@ service cloud.firestore {
       }
     }
 
-    match /orgs/{orgId}         { allow read: if isSignedIn(); allow write: if false; }
+    match /orgs/{orgId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /policies/{docId}       { allow read: if isSignedIn(); allow write: if false; }
+      match /policy/{docId}         { allow read: if isSignedIn(); allow write: if false; }
+      match /acks/{docId}           { allow read: if isSignedIn(); allow write: if false; }
+      match /ackTemplates/{docId}   { allow read: if isSignedIn(); allow write: if false; }
+    }
     match /entitlements/{id}    { allow read: if isSignedIn(); allow write: if false; }
     match /memberships/{id}     { allow read: if isSignedIn(); allow write: if false; }
     match /orgResolver/{id}     { allow read: if isSignedIn(); allow write: if false; }
