@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // helpers
+    // ---- helpers ----
     function isSignedIn() { return request.auth != null; }
     function isAgent() {
       return isSignedIn() && (request.auth.token.role in ['agent','admin','owner']);
@@ -13,8 +13,15 @@ service cloud.firestore {
     function sessionDoc(code) {
       return get(/databases/$(database)/documents/sessions/$(code));
     }
+    // Be tolerant to creator field name variants
     function isSessionOwner(code) {
-      return isSignedIn() && sessionDoc(code).data.ownerUid == request.auth.uid;
+      return isSignedIn() && (
+        sessionDoc(code).data.ownerUid     == request.auth.uid ||
+        sessionDoc(code).data.agentUid     == request.auth.uid ||
+        sessionDoc(code).data.createdByUid == request.auth.uid ||
+        sessionDoc(code).data.creatorUid   == request.auth.uid ||
+        sessionDoc(code).data.createdBy    == request.auth.uid
+      );
     }
     function isParticipant(code) { return isAgent() || isCallerFor(code) || isSessionOwner(code); }
     function isActive(code) {
@@ -27,49 +34,39 @@ service cloud.firestore {
     // default deny
     match /{document=**} { allow read, write: if false; }
 
-    // -------- sessions root (unchanged) --------
+    // ---------- Sessions subtree ----------
     match /sessions/{code} {
       allow read: if isParticipant(code);
       allow create: if isAgent() || isSessionOwner(code);
       allow update: if isParticipant(code) && isActive(code);
       allow delete: if false;
 
-      // Known subcollections (keep as-is; explicit » implicit)
       match /messages/{id} {
-        allow read:   if isParticipant(code);
+        allow read:   if isSignedIn();
         allow create: if isParticipant(code) && isActive(code)
           && request.resource.data.keys().hasAll(['role','type','createdAt'])
           && (request.resource.data.type in ['text','file','details','system'])
           && request.resource.data.size() <= 4096;
         allow update, delete: if false;
       }
-      match /fields/{id}   { allow read: if isParticipant(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
-      match /details/{id}  { allow read: if isParticipant(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
-      match /profile/{id}  { allow read: if isParticipant(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
-      match /events/{id}   { allow read: if isParticipant(code); allow create: if isParticipant(code) && isActive(code); allow update, delete: if false; }
-      match /acks/{id}     { allow read: if isParticipant(code); allow create: if isParticipant(code) && isActive(code); allow update, delete: if false; }
 
-      // NEW: catch-all for any other subcollections under a session
       match /{sub=**}/{doc} {
-        allow read:   if isParticipant(code);
+        allow read: if isSignedIn();
         allow create: if isParticipant(code) && isActive(code);
         allow update, delete: if false;
       }
     }
 
-    // Agent header reads (read-only for signed-in)
     match /orgs/{orgId}         { allow read: if isSignedIn(); allow write: if false; }
     match /entitlements/{id}    { allow read: if isSignedIn(); allow write: if false; }
     match /memberships/{id}     { allow read: if isSignedIn(); allow write: if false; }
     match /orgResolver/{id}     { allow read: if isSignedIn(); allow write: if false; }
 
-    // Policy / ack templates (public read)
     match /policies/{id}        { allow read: if true; allow write: if false; }
     match /policy/{id}          { allow read: if true; allow write: if false; }
     match /acks/{id}            { allow read: if true; allow write: if false; }
     match /ackTemplates/{id}    { allow read: if true; allow write: if false; }
 
-    // Admin logs
     match /jobs/{doc=**}        { allow read, write: if false; }
   }
 }
