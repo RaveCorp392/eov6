@@ -59,6 +59,21 @@ service cloud.firestore {
       }
     }
 
+    match /orgs/{orgId} {
+      allow read: if isAgent();
+      allow write: if false;
+    }
+
+    match /entitlements/{docId} {
+      allow read: if isAgent();
+      allow write: if false;
+    }
+
+    match /policies/{docId}     { allow read: if true; allow write: if false; }
+    match /policy/{docId}       { allow read: if true; allow write: if false; }
+    match /acks/{docId}         { allow read: if true; allow write: if false; }
+    match /ackTemplates/{docId} { allow read: if true; allow write: if false; }
+
     match /jobs/{doc=**} { allow read, write: if false; }
   }
 }
