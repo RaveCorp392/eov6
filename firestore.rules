@@ -2,70 +2,89 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // -------- helpers (unchanged) --------
+    // Helpers
     function isSignedIn() { return request.auth != null; }
     function isAgent() {
-      return isSignedIn() &&
-             (request.auth.token.role in ['agent','admin','owner']);
+      return isSignedIn() && (request.auth.token.role in ['agent','admin','owner']);
     }
     function isCallerFor(code) {
       return isSignedIn() && request.auth.token.sessionCode == code;
     }
-    function isParticipant(code) { return isAgent() || isCallerFor(code); }
-    function sessionDoc(code) { return get(/databases/$(database)/documents/sessions/$(code)); }
-    function sessionData(code) {
-      let doc = sessionDoc(code);
-      return doc != null ? doc.data : null;
+    function sessionDoc(code) {
+      return get(/databases/$(database)/documents/sessions/$(code));
     }
-    function isActiveData(data) {
-      return data != null &&
-             data.closed != true &&
-             (!(data.expiresAt is timestamp) || data.expiresAt > request.time);
+    function isSessionOwner(code) {
+      return isSignedIn() && sessionDoc(code).data.ownerUid == request.auth.uid;
     }
-    function isActive(code) { return isActiveData(sessionData(code)); }
+    function isParticipant(code) { return isAgent() || isCallerFor(code) || isSessionOwner(code); }
+
+    function isActive(code) {
+      let d = sessionDoc(code);
+      let closed = (d.data.closed == true);
+      let notExpired = !(d.data.expiresAt is timestamp) || (d.data.expiresAt > request.time);
+      return !closed && notExpired;
+    }
 
     // Default deny
     match /{document=**} { allow read, write: if false; }
 
-    // -------- sessions subtree (unchanged) --------
+    // ---------- Sessions subtree (owner + participant) ----------
     match /sessions/{code} {
-      allow read: if isParticipant(code) && isActiveData(resource.data);
-      allow create: if isAgent() && isActiveData(request.resource.data);
+      // Read session metadata
+      allow read: if isParticipant(code);
+
+      // Create session (agent or owner via backend)
+      allow create: if isAgent() || isSessionOwner(code);
+
+      // Update metadata (e.g., flags) while active
       allow update: if isParticipant(code) && isActive(code);
+
+      // Client deletes disabled (cleanup uses Admin SDK)
       allow delete: if false;
 
+      // Messages: append-only while active
       match /messages/{id} {
-        allow read: if isParticipant(code) && isActive(code);
+        allow read:   if isParticipant(code);
         allow create: if isParticipant(code) && isActive(code)
           && request.resource.data.keys().hasAll(['role','type','createdAt'])
-          && request.resource.data.role in ['caller','agent','system']
-          && request.resource.data.type in ['text','file','details','system']
-          && request.resource.data.createdAt is timestamp
-          && request.resource.data.createdAt <= request.time
-          && (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 4096));
+          && (request.resource.data.type in ['text','file','details','system'])
+          && request.resource.data.size() <= 4096;
         allow update, delete: if false;
       }
-      match /fields/{field}     { allow read: if isParticipant(code) && isActive(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
-      match /details/{docId}    { allow read: if isParticipant(code) && isActive(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
-      match /profile/{docId}    { allow read: if isParticipant(code) && isActive(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
+
+      // Quick fields / details / profile — writable while active
+      match /fields/{field}   { allow read: if isParticipant(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
+      match /details/{id}     { allow read: if isParticipant(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
+      match /profile/{id}     { allow read: if isParticipant(code); allow create, update: if isParticipant(code) && isActive(code); allow delete: if false; }
+
+      // NEW: events stream used by the UI (append-only)
+      match /events/{id} {
+        allow read:   if isParticipant(code);
+        allow create: if isParticipant(code) && isActive(code);
+        allow update, delete: if false;
+      }
+
+      // NEW: acknowledgement documents (privacy/policy accepts)
+      match /acks/{id} {
+        allow read:   if isParticipant(code);
+        allow create: if isParticipant(code) && isActive(code);
+        allow update, delete: if false;
+      }
     }
 
-    // -------- NEW: agent console reads --------
-    // Org/plan panels in the agent header
-    match /orgs/{orgId}             { allow read: if isSignedIn(); allow write: if false; }
-    match /entitlements/{docId}     { allow read: if isSignedIn(); allow write: if false; }
+    // Agent console header reads (read-only)
+    match /orgs/{orgId}         { allow read: if isSignedIn(); allow write: if false; }
+    match /entitlements/{id}    { allow read: if isSignedIn(); allow write: if false; }
+    match /memberships/{id}     { allow read: if isSignedIn(); allow write: if false; }
+    match /orgResolver/{id}     { allow read: if isSignedIn(); allow write: if false; }
 
-    // If your code reads membership records or org lookups, unblock read-only:
-    match /memberships/{docId}      { allow read: if isSignedIn(); allow write: if false; }
-    match /orgResolver/{docId}      { allow read: if isSignedIn(); allow write: if false; } // optional: e.g. org-resolver cache
+    // Policy / ack templates displayed to both sides (read-only public)
+    match /policies/{id}        { allow read: if true; allow write: if false; }
+    match /policy/{id}          { allow read: if true; allow write: if false; }
+    match /acks/{id}            { allow read: if true; allow write: if false; }
+    match /ackTemplates/{id}    { allow read: if true; allow write: if false; }
 
-    // Privacy / policy / ack text the app displays to callers & agents
-    match /policies/{docId}         { allow read: if true;  allow write: if false; }
-    match /policy/{docId}           { allow read: if true;  allow write: if false; }
-    match /acks/{docId}             { allow read: if true;  allow write: if false; }
-    match /ackTemplates/{docId}     { allow read: if true;  allow write: if false; }
-
-    // Admin/cron logs stay server-only
-    match /jobs/{doc=**}            { allow read, write: if false; }
+    // Admin-only logs
+    match /jobs/{doc=**}        { allow read, write: if false; }
   }
 }
