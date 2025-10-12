@@ -65,6 +65,11 @@ service cloud.firestore {
 
     // ---------- agent header + org-scoped template reads (read-only) ----------
     match /orgs/{orgId}                         { allow read: if isSignedIn(); allow write: if false; }
+    // NEW: org-scoped invites - READ ONLY (claim UI needs to see it)
+    match /orgs/{orgId}/invites/{inviteId} {
+      allow read: if isSignedIn();
+      allow write: if false;   // consumption happens via Admin SDK server route
+    }
     match /orgs/{orgId}/policies/{docId}        { allow read: if isSignedIn(); allow write: if false; }
     match /orgs/{orgId}/policy/{docId}          { allow read: if isSignedIn(); allow write: if false; }
     match /orgs/{orgId}/acks/{docId}            { allow read: if isSignedIn(); allow write: if false; }
