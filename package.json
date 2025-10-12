@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint --no-cache --dir app --dir components --dir lib",
+    "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "preflight": "npm run typecheck && npm run lint",
     "check:utf8": "node tools/check-utf8.mjs",
