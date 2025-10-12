@@ -1,32 +1,41 @@
-﻿rules_version = '2';
+rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function signedIn() { return request.auth != null; }
-    function session(code) { return firestore.get(/databases/(default)/documents/sessions/$(code)); }
+    function session(code) {
+      return firestore.get(/databases/(default)/documents/sessions/$(code));
+    }
     function active(code) {
       let d = session(code);
-      return d.data.closed != true && (!(d.data.expiresAt is timestamp) || d.data.expiresAt > request.time);
+      return d.data.closed != true &&
+        ( !(d.data.expiresAt is timestamp) || d.data.expiresAt > request.time );
     }
     function validContent() {
-      return request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf';
+      return request.resource.contentType.matches('image/.*') ||
+             request.resource.contentType == 'application/pdf';
     }
-    function validSize() { return request.resource.size < 10 * 1024 * 1024; }
+    function validSize() { return request.resource.size < 10 * 1024 * 1024; } // 10MB
 
+    // No bucket listing
     match /{path=**} { allow list: if false; }
 
+    // Primary path
     match /uploads/{code}/{fileId} {
-      allow read: if signedIn();
-      allow write: if signedIn() && active(code) && validContent() && validSize();
-      allow delete: if false;
+      // MVP: PUBLIC READ (keep if your UI needs caller-side previews)
+      allow read: if true;
+      // MVP: PUBLIC WRITE but only to ACTIVE sessions and only image/PDF <= 10MB
+      allow write: if active(code) && validContent() && validSize();
+      allow delete: if false; // cleanup via Admin SDK
     }
 
+    // Secondary session path (some flows write here)
     match /sessions/{code}/{filePath=**} {
-      allow read: if signedIn();
-      allow write: if signedIn() && active(code) && validContent() && validSize();
+      allow read: if true;
+      allow write: if active(code) && validContent() && validSize();
       allow delete: if false;
     }
 
+    // Everything else denied
     match /{all=**} { allow read, write: if false; }
   }
 }
