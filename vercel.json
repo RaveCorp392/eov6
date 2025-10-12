@@ -1,8 +1,5 @@
-{
-  "crons": [
-    {
-      "path": "/api/jobs/cleanup?key=%CRON_SECRET%&olderThanHours=24&sweepOrphans=1",
-      "schedule": "0 5 * * *"
-    }
-  ]
+﻿{
+  "buildCommand": null,
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "nextjs"
 }
