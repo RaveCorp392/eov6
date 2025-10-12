@@ -10,6 +10,8 @@ import {
 } from "@/lib/firebase";
 import AckLine from "@/components/chat/AckLine";
 import SystemLine from "@/components/chat/SystemLine";
+import { LinkifiedText } from "@/lib/linkify";
+
 
 type Props = {
   code: string;
@@ -137,7 +139,11 @@ export default function ChatWindow({
       );
     }
     const primary = displayTextFor(msg);
-    return <div className="whitespace-pre-wrap break-words">{primary}</div>;
+    return (
+      <div className="whitespace-pre-wrap break-words">
+        <LinkifiedText text={primary} />
+      </div>
+    );
   }
 
   function bubbleFor(msg: ChatMsg) {
