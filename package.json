@@ -1,47 +1,47 @@
-{
-  "name": "eov6",
-  "version": "0.3.9",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint --no-cache --dir app --dir components --dir lib",
-    "typecheck": "tsc --noEmit",
-    "preflight": "npm run typecheck && npm run lint",
-    "check:utf8": "node tools/check-utf8.mjs",
-    "smoke:translate": "curl -s -X POST http://localhost:3000/api/translate -H \"content-type: application/json\" -d '{\"code\":\"123456\",\"text\":\"hello\",\"target\":\"fr\",\"commit\":false}' || true",
-    "rules:deploy": "firebase use eov6-4e929 && firebase deploy --only firestore:rules,storage"
-  },
-  "dependencies": {
-    "@mdx-js/react": "^3.1.0",
-    "@sentry/nextjs": "^10.19.0",
-    "clsx": "2.1.1",
-    "firebase": "^10.12.4",
-    "firebase-admin": "12.7.0",
-    "lucide-react": "^0.542.0",
-    "mailerlite": "^0.4.0",
-    "next": "14.2.5",
-    "next-sitemap": "^4.2.3",
-    "nodemailer": "^6.9.11",
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "stripe": "^18.5.0",
-    "zod": "^4.1.5"
-  },
-  "devDependencies": {
-    "@mdx-js/loader": "^3.1.0",
-    "@next/mdx": "^15.5.0",
-    "@tailwindcss/typography": "^0.5.19",
-    "@types/node": "22.18.0",
-    "@types/nodemailer": "^7.0.1",
-    "@types/react": "18.2.66",
-    "autoprefixer": "^10.4.21",
-    "eslint": " ^8.57.0 ",
-    "eslint-config-next": " ^14.2.5 ",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.17",
-    "typescript": "5.5.3"
-  },
-  "packageManager": "pnpm@10.17.0"
+﻿{
+    "name":  "eov6",
+    "version":  "0.3.9",
+    "private":  true,
+    "scripts":  {
+                    "dev":  "next dev",
+                    "build":  "next build",
+                    "start":  "next start",
+                    "lint":  "next lint --no-cache --dir app --dir components --dir lib",
+                    "typecheck":  "tsc --noEmit",
+                    "preflight":  "npm run typecheck \u0026\u0026 npm run lint",
+                    "check:utf8":  "node tools/check-utf8.mjs",
+                    "smoke:translate":  "curl -s -X POST http://localhost:3000/api/translate -H \"content-type: application/json\" -d \u0027{\"code\":\"123456\",\"text\":\"hello\",\"target\":\"fr\",\"commit\":false}\u0027 || true",
+                    "rules:deploy":  "firebase use eov6-4e929 \u0026\u0026 firebase deploy --only firestore:rules,storage"
+                },
+    "dependencies":  {
+                         "@mdx-js/react":  "^3.1.0",
+                         "@sentry/nextjs":  "^10.19.0",
+                         "clsx":  "2.1.1",
+                         "firebase":  "^10.12.4",
+                         "firebase-admin":  "12.7.0",
+                         "lucide-react":  "^0.542.0",
+                         "mailerlite":  "^0.4.0",
+                         "next":  "14.2.5",
+                         "next-sitemap":  "^4.2.3",
+                         "nodemailer":  "^6.9.11",
+                         "react":  "18.2.0",
+                         "react-dom":  "18.2.0",
+                         "stripe":  "^18.5.0",
+                         "zod":  "^4.1.5"
+                     },
+    "devDependencies":  {
+                            "@mdx-js/loader":  "^3.1.0",
+                            "@next/mdx":  "^15.5.0",
+                            "@tailwindcss/typography":  "^0.5.19",
+                            "@types/node":  "22.18.0",
+                            "@types/nodemailer":  "^7.0.1",
+                            "@types/react":  "18.2.66",
+                            "autoprefixer":  "^10.4.21",
+                            "eslint":  " ^8.57.0 ",
+                            "eslint-config-next":  " ^14.2.5 ",
+                            "postcss":  "^8.5.6",
+                            "tailwindcss":  "^3.4.17",
+                            "typescript":  "5.5.3"
+                        },
+    "packageManager":  "npm@10.1.0"
 }
