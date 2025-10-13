@@ -267,7 +267,7 @@ function CreateOrgStep({ onCreated }: CreateOrgStepProps) {
       if (onCreated) {
         onCreated(createdSlug);
       }
-      router.push(`/portal/organizations/${createdSlug}`);
+      router.push(`/portal/organizations?org=${createdSlug}`);
     } catch (error) {
       setErr("network_error");
     } finally {
