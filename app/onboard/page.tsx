@@ -50,8 +50,7 @@ export default function OnboardPage() {
         const me = await fetch("/api/me/org", { headers: { authorization: `Bearer ${t}` } }).then((r) => r.json());
         if (me?.orgId) {
           setOrgId(me.orgId);
-          setStep(2);
-        } // org exists ? jump to invites
+        }
       } catch (e: any) {
         setErr(String(e?.message || e));
       }
