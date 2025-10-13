@@ -225,7 +225,7 @@ type CreateOrgStepProps = {
   onCreated?: (slug: string) => void;
 };
 
-export function CreateOrgStep({ onCreated }: CreateOrgStepProps) {
+function CreateOrgStep({ onCreated }: CreateOrgStepProps) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
