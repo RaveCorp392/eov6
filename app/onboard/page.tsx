@@ -1,7 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import "@/lib/firebase";
 import { getAuth } from "firebase/auth";
+import { slugifyName } from "@/lib/slugify";
 
 type Summary = { plan?: string; cycle?: string; seats?: number; translate?: boolean };
 
@@ -13,18 +15,9 @@ export default function OnboardPage() {
   const [err, setErr] = useState<string | null>(null);
 
   // Form state
-  const [orgSlug, setOrgSlug] = useState("");
-  const [orgName, setOrgName] = useState("");
-  const [domainsCsv, setDomainsCsv] = useState("");
   const [allowUploads, setAllowUploads] = useState(false);
   const [translateUnlimited, setTranslateUnlimited] = useState(false);
   const [privacy, setPrivacy] = useState("");
-  const [ack1t, setAck1t] = useState("");
-  const [ack1b, setAck1b] = useState("");
-  const [ack1r, setAck1r] = useState(false);
-  const [ack2t, setAck2t] = useState("");
-  const [ack2b, setAck2b] = useState("");
-  const [ack2r, setAck2r] = useState(false);
   const [invites, setInvites] = useState<string>("");
 
   const seats = summary.seats ?? 1;
@@ -73,41 +66,8 @@ export default function OnboardPage() {
         return;
       }
 
-      if (step === 1) {
-        // Create org (server route) + claim owner
-        const res = await fetch("/api/portal/orgs/create", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
-          body: JSON.stringify({
-            orgId: orgSlug,
-            name: orgName,
-            domains: domainsCsv.split(",").map((s) => s.trim()).filter(Boolean),
-            features: { allowUploads, translateUnlimited: translateLocked ? true : translateUnlimited },
-            privacyStatement: privacy,
-            ack1: { title: ack1t, body: ack1b, required: !!ack1r },
-            ack2: { title: ack2t, body: ack2b, required: !!ack2r }
-          })
-        });
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          throw new Error(j?.error || res.statusText);
-        }
-        const j = await res.json();
-        if (j?.orgId) {
-          try {
-            window.localStorage.setItem("lastCreatedOrgId", j.orgId);
-            window.localStorage.setItem("activeOrgId", j.orgId);
-          } catch {
-            // ignore storage failures (private mode, etc.)
-          }
-        }
-        setOrgId(j.orgId);
-
-        // idempotent claim
-        await fetch("/api/orgs/claim", { method: "POST", headers: { authorization: `Bearer ${t}` } });
-
-        setStep(2);
-      } else if (step === 2) {
+      if (step === 2) {
+        if (!orgId) throw new Error("org_missing");
         // Store invites (no email send yet). Accepts comma/space newline separated emails.
         const emails = invites
           .split(/[\s,;]+/)
@@ -125,7 +85,8 @@ export default function OnboardPage() {
           }
         }
         setStep(3);
-      } else {
+      } else if (step === 3) {
+        if (!orgId) throw new Error("org_missing");
         // Save Compliance/settings updates
         const r = await fetch("/api/orgs/settings", {
           method: "POST",
@@ -133,11 +94,7 @@ export default function OnboardPage() {
           body: JSON.stringify({
             orgId,
             features: { allowUploads, translateUnlimited: translateLocked ? true : translateUnlimited },
-            texts: { privacyStatement: privacy },
-            ack: [
-              { id: "slot1", title: ack1t, body: ack1b, required: !!ack1r, order: 1 },
-              { id: "slot2", title: ack2t, body: ack2b, required: !!ack2r, order: 2 }
-            ]
+            texts: { privacyStatement: privacy }
           })
         });
         if (!r.ok) {
@@ -154,7 +111,7 @@ export default function OnboardPage() {
   }
 
   function canNext() {
-    if (step === 1) return Boolean(orgSlug.trim() && orgName.trim());
+    if (step === 1) return false;
     if (step === 2) return true; // invites optional
     return true;
   }
@@ -179,71 +136,13 @@ export default function OnboardPage() {
       {err && <div className="mb-4 rounded bg-rose-100 text-rose-900 p-3">{err}</div>}
 
       {step === 1 && (
-        <section className="rounded-2xl border p-6 space-y-4">
-          <h2 className="text-lg font-semibold">1) Create your organization</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium">Org ID (slug)</label>
-              <input className="w-full rounded border px-3 py-2" value={orgSlug} onChange={(e) => setOrgSlug(e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Name</label>
-              <input className="w-full rounded border px-3 py-2" value={orgName} onChange={(e) => setOrgName(e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Owner email</label>
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Domains (csv)</label>
-              <input className="w-full rounded border px-3 py-2" value={domainsCsv} onChange={(e) => setDomainsCsv(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="flex gap-6">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={allowUploads} onChange={(e) => setAllowUploads(e.target.checked)} /> Allow Uploads
-            </label>
-            <label className={`flex items-center gap-2 ${translateLocked ? "opacity-60 pointer-events-none" : ""}`}>
-              <input
-                type="checkbox"
-                checked={translateUnlimited}
-                onChange={(e) => setTranslateUnlimited(e.target.checked)}
-                disabled={translateLocked}
-              />
-              <span>Translate Unlimited {perSeatNote}</span>
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium">Privacy Statement</label>
-            <textarea className="w-full rounded border px-3 py-2" rows={6} value={privacy} onChange={(e) => setPrivacy(e.target.value)} />
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium">Slot 1 Title</label>
-              <input className="w-full rounded border px-3 py-2" value={ack1t} onChange={(e) => setAck1t(e.target.value)} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Slot 2 Title</label>
-              <input className="w-full rounded border px-3 py-2" value={ack2t} onChange={(e) => setAck2t(e.target.value)} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium">Slot 1 Body</label>
-              <textarea className="w-full rounded border px-3 py-2" rows={4} value={ack1b} onChange={(e) => setAck1b(e.target.value)} />
-              <label className="flex items-center gap-2 mt-2">
-                <input type="checkbox" checked={ack1r} onChange={(e) => setAck1r(e.target.checked)} /> Required
-              </label>
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium">Slot 2 Body</label>
-              <textarea className="w-full rounded border px-3 py-2" rows={4} value={ack2b} onChange={(e) => setAck2b(e.target.value)} />
-              <label className="flex items-center gap-2 mt-2">
-                <input type="checkbox" checked={ack2r} onChange={(e) => setAck2r(e.target.checked)} /> Required
-              </label>
-            </div>
-          </div>
-        </section>
+        <CreateOrgStep
+          onCreated={(slug) => {
+            setOrgId(slug);
+            setStep(2);
+            setErr(null);
+          }}
+        />
       )}
 
       {step === 2 && (
@@ -287,23 +186,137 @@ export default function OnboardPage() {
         </section>
       )}
 
-      <div className="flex items-center gap-3 mt-6">
-        <button
-          disabled={step === 1 || busy}
-          className="rounded-xl border px-4 py-2"
-          onClick={() => setStep((s) => (s > 1 ? ((s - 1) as any) : s))}
-        >
-          Back
-        </button>
-        <button
-          disabled={!canNext() || busy}
-          className="rounded-xl bg-blue-600 text-white px-4 py-2"
-          onClick={next}
-        >
-          {busy ? "Working\u2026" : step < 3 ? "Next" : "Finish"}
-        </button>
-      </div>
+      {step > 1 && (
+        <div className="flex items-center gap-3 mt-6">
+          <button
+            disabled={step === 1 || busy}
+            className="rounded-xl border px-4 py-2"
+            onClick={() => setStep((s) => (s > 1 ? ((s - 1) as any) : s))}
+          >
+            Back
+          </button>
+          <button
+            disabled={!canNext() || busy}
+            className="rounded-xl bg-blue-600 text-white px-4 py-2"
+            onClick={next}
+          >
+            {busy ? "Working\u2026" : step < 3 ? "Next" : "Finish"}
+          </button>
+        </div>
+      )}
     </main>
+  );
+}
+
+function clsx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
+
+function Spinner() {
+  return (
+    <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  );
+}
+
+type CreateOrgStepProps = {
+  onCreated?: (slug: string) => void;
+};
+
+export function CreateOrgStep({ onCreated }: CreateOrgStepProps) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const router = useRouter();
+
+  const auto = slugifyName(name) || "org";
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr(null);
+    if (!name.trim()) {
+      setErr("Please enter an organization name.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const token = await getAuth().currentUser?.getIdToken();
+      if (!token) {
+        setErr("Please sign in first.");
+        return;
+      }
+      const res = await fetch("/api/orgs/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: name.trim() })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setErr(data?.code ?? data?.error ?? "server_error");
+        return;
+      }
+      const createdSlug: string = data.slug ?? data.orgId ?? auto;
+      try {
+        window.localStorage.setItem("lastCreatedOrgId", createdSlug);
+        window.localStorage.setItem("activeOrgId", createdSlug);
+      } catch {
+        // ignore storage failures
+      }
+      if (onCreated) {
+        onCreated(createdSlug);
+      }
+      router.push(`/portal/organizations/${createdSlug}`);
+    } catch (error) {
+      setErr("network_error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border p-6 space-y-4">
+      <h2 className="text-lg font-semibold">1) Create your organization</h2>
+      <form onSubmit={onSubmit} className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-slate-700">Organization name</label>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Acme Pty Ltd"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-slate-700">Org ID (slug)</label>
+            <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              {auto} <span className="ml-2 text-slate-400">(auto-generated)</span>
+            </div>
+          </div>
+        </div>
+
+        {err && (
+          <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            Error: {err}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={busy || !name.trim()}
+          className={clsx(
+            "inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-white",
+            (busy || !name.trim()) && "opacity-60 cursor-not-allowed"
+          )}
+        >
+          {busy ? <Spinner /> : null}
+          Create organization
+        </button>
+      </form>
+    </section>
   );
 }
 
