@@ -1,14 +1,22 @@
 "use client";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import "@/lib/firebase";
 import { getAuth } from "firebase/auth";
+import { collection, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { slugifyName } from "@/lib/slugify";
 
 type Summary = { plan?: string; cycle?: string; seats?: number; translate?: boolean };
 
+type AckTemplate = {
+  id: string;
+  title?: string;
+  body?: string;
+  required?: boolean;
+  order?: number;
+};
+
 export default function OnboardPage() {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [busy, setBusy] = useState(false);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary>({});
@@ -59,15 +67,19 @@ export default function OnboardPage() {
     setErr(null);
     try {
       setBusy(true);
-      const t = await getAuth().currentUser?.getIdToken();
-      if (!t) {
-        alert("Please sign in first.");
-        setBusy(false);
-        return;
+      let token: string | null = null;
+      if (step === 2 || step === 3) {
+        token = (await getAuth().currentUser?.getIdToken()) ?? null;
+        if (!token) {
+          alert("Please sign in first.");
+          setBusy(false);
+          return;
+        }
       }
 
       if (step === 2) {
         if (!orgId) throw new Error("org_missing");
+        const authToken = token!;
         // Store invites (no email send yet). Accepts comma/space newline separated emails.
         const emails = invites
           .split(/[\s,;]+/)
@@ -76,7 +88,7 @@ export default function OnboardPage() {
         if (emails.length) {
           const r = await fetch("/api/orgs/invite/bulk", {
             method: "POST",
-            headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
+            headers: { "content-type": "application/json", authorization: `Bearer ${authToken}` },
             body: JSON.stringify({ orgId, emails })
           });
           if (!r.ok) {
@@ -87,10 +99,11 @@ export default function OnboardPage() {
         setStep(3);
       } else if (step === 3) {
         if (!orgId) throw new Error("org_missing");
+        const authToken = token!;
         // Save Compliance/settings updates
         const r = await fetch("/api/orgs/settings", {
           method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
+          headers: { "content-type": "application/json", authorization: `Bearer ${authToken}` },
           body: JSON.stringify({
             orgId,
             features: { allowUploads, translateUnlimited: translateLocked ? true : translateUnlimited },
@@ -101,6 +114,11 @@ export default function OnboardPage() {
           const j = await r.json().catch(() => ({}));
           throw new Error(j?.error || r.statusText);
         }
+        setStep(4);
+      } else if (step === 4) {
+        setStep(5);
+      } else if (step === 5) {
+        if (!orgId) throw new Error("org_missing");
         window.location.href = `/thanks/setup?org=${encodeURIComponent(orgId || "")}`;
       }
     } catch (e: any) {
@@ -112,18 +130,18 @@ export default function OnboardPage() {
 
   function canNext() {
     if (step === 1) return false;
-    if (step === 2) return true; // invites optional
+    if (step === 5 && !orgId) return false;
     return true;
   }
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
       <h1 className="text-2xl font-bold mb-2">{"Welcome \u2014 Let\u2019s get you set up"}</h1>
-      <p className="text-zinc-600 mb-6">{"3 quick steps. You\u2019ll be up and running in minutes."}</p>
+      <p className="text-zinc-600 mb-6">{"5 quick steps. You\u2019ll be up and running in minutes."}</p>
 
       {/* Stepper */}
       <div className="flex items-center gap-3 mb-6 text-sm">
-        {[1, 2, 3].map((n) => (
+        {[1, 2, 3, 4, 5].map((n) => (
           <span
             key={n}
             className={`px-2 py-1 rounded ${step === n ? "bg-zinc-900 text-white" : "border"}`}
@@ -186,6 +204,47 @@ export default function OnboardPage() {
         </section>
       )}
 
+      {step === 4 && <AcknowledgementsStep orgId={orgId} />}
+
+      {step === 5 && (
+        <section className="rounded-2xl border p-6 space-y-4">
+          <h2 className="text-lg font-semibold">5) Review &amp; finish</h2>
+          <p className="text-sm text-zinc-600">
+            Everything is configured. Double-check the highlights below and select <strong>Finish</strong> to wrap up onboarding.
+          </p>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 space-y-2">
+            <div className="flex items-center justify-between gap-4">
+              <span className="font-medium text-slate-600">Organization ID</span>
+              <span className="font-mono text-slate-800">{orgId || "Pending..."}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="font-medium text-slate-600">Plan</span>
+              <span>{summary.plan ? `${summary.plan} (${summary.cycle || "monthly"})` : "Starter (default)"}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="font-medium text-slate-600">Seats</span>
+              <span>{summary.seats ?? 1}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="font-medium text-slate-600">Translate Unlimited</span>
+              <span>{translateUnlimited || translateLocked ? "Enabled" : "Disabled"}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <span className="font-medium text-slate-600">Privacy statement</span>
+              <span
+                className="max-w-sm truncate text-slate-700"
+                title={privacy.trim() ? privacy.trim() : undefined}
+              >
+                {privacy.trim() ? privacy.trim() : "No statement added yet"}
+              </span>
+            </div>
+          </div>
+          <p className="text-sm text-zinc-600">
+            Need to tweak something later? You can revisit these settings and acknowledgements in the Portal.
+          </p>
+        </section>
+      )}
+
       {step > 1 && (
         <div className="flex items-center gap-3 mt-6">
           <button
@@ -200,11 +259,138 @@ export default function OnboardPage() {
             className="rounded-xl bg-blue-600 text-white px-4 py-2"
             onClick={next}
           >
-            {busy ? "Working\u2026" : step < 3 ? "Next" : "Finish"}
+            {busy ? "Working\u2026" : step < 5 ? "Next" : "Finish"}
           </button>
         </div>
       )}
     </main>
+  );
+}
+
+/*********************
+ * Acknowledgements *
+ *********************/
+
+function useOrgAcknowledgements(orgId: string | null) {
+  const [templates, setTemplates] = useState<AckTemplate[]>([]);
+
+  useEffect(() => {
+    if (!orgId) {
+      setTemplates([]);
+      return;
+    }
+
+    let isMounted = true;
+    let unsubscribe: (() => void) | undefined;
+
+    try {
+      const colRef = collection(db, "orgs", orgId, "ackTemplates");
+      unsubscribe = onSnapshot(
+        colRef,
+        (snapshot) => {
+          if (!isMounted) return;
+          const rows = snapshot.docs
+            .map(
+              (docSnap) =>
+                ({
+                  id: docSnap.id,
+                  ...(docSnap.data() as Partial<AckTemplate>),
+                } as AckTemplate)
+            )
+            .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
+          setTemplates(rows);
+        },
+        (error) => {
+          console.error("[onboard] failed to load acknowledgements", error);
+          if (isMounted) setTemplates([]);
+        }
+      );
+    } catch (error) {
+      console.error("[onboard] setup acknowledgements listener failed", error);
+      setTemplates([]);
+    }
+
+    return () => {
+      isMounted = false;
+      unsubscribe?.();
+    };
+  }, [orgId]);
+
+  return templates;
+}
+
+type AcknowledgementsStepProps = {
+  orgId: string | null;
+};
+
+function AcknowledgementsStep({ orgId }: AcknowledgementsStepProps) {
+  const templates = useOrgAcknowledgements(orgId);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openId) return;
+    if (!templates.some((ack) => ack.id === openId)) {
+      setOpenId(null);
+    }
+  }, [templates, openId]);
+
+  return (
+    <section className="rounded-2xl border p-6 space-y-4">
+      <h2 className="text-lg font-semibold">4) Review acknowledgements</h2>
+      <p className="text-sm text-zinc-600">
+        Acknowledgements are short policies callers accept before connecting. Manage them anytime in the Portal.
+      </p>
+
+      {!orgId && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Create your organization to load acknowledgements.
+        </div>
+      )}
+
+      {orgId && (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white divide-y divide-slate-200">
+          {templates.length === 0 ? (
+            <div className="p-4 text-sm text-slate-500">No acknowledgements yet. Add them later from the Portal.</div>
+          ) : (
+            templates.map((ack) => {
+              const isOpen = openId === ack.id;
+              const label = ack.title?.trim() || ack.id;
+              const body = ack.body ?? (ack as any)?.text ?? "";
+              return (
+                <div key={ack.id} className="p-4">
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(isOpen ? null : ack.id)}
+                    className="flex w-full items-center justify-between gap-3 text-left"
+                  >
+                    <span className="font-medium text-slate-800">{label}</span>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          ack.required ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {ack.required ? "Required" : "Optional"}
+                      </span>
+                      <span className="text-xs text-slate-500">{isOpen ? "Hide" : "Show"}</span>
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{body?.trim() || "(No content provided yet)."}</div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {orgId && templates.length > 0 && (
+        <p className="text-xs text-slate-500">
+          These acknowledgements appear before each caller session. Update the list from Portal &gt; Organizations.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -229,7 +415,6 @@ function CreateOrgStep({ onCreated }: CreateOrgStepProps) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const router = useRouter();
 
   const auto = slugifyName(name) || "org";
 
@@ -267,7 +452,6 @@ function CreateOrgStep({ onCreated }: CreateOrgStepProps) {
       if (onCreated) {
         onCreated(createdSlug);
       }
-      router.push(`/portal/organizations?org=${createdSlug}`);
     } catch (error) {
       setErr("network_error");
     } finally {
