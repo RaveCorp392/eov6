@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
+import { useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import {
   GoogleAuthProvider,
@@ -12,13 +13,10 @@ import {
 } from "firebase/auth";
 
 export default function ClaimPage() {
-  const url = useMemo(
-    () => (typeof window !== "undefined" ? new URL(window.location.href) : null),
-    [],
-  );
-  const token = url?.searchParams.get("token") || "";
-  const orgId = url?.searchParams.get("org") || "";
-  const dbg = url?.searchParams.get("debug") === "1";
+  const searchParams = useSearchParams();
+  const token = searchParams?.get("token") ?? "";
+  const orgId = searchParams?.get("org") ?? "";
+  const dbg = searchParams?.get("debug") === "1";
 
   const [status, setStatus] = useState<string>(() =>
     !token ? "Missing token" : !orgId ? "Missing orgId" : "Ready",
@@ -66,25 +64,37 @@ export default function ClaimPage() {
 
     try {
       setStatus("Claiming...");
-      const t = await auth.currentUser.getIdToken();
-      const r = await fetch("/api/orgs/claim", {
+      const idToken = await auth.currentUser.getIdToken(true);
+      const response = await fetch("/api/orgs/claim", {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${t}` },
-        body: JSON.stringify({ token, orgId }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ token, org: orgId }),
       });
-      const j = await r.json().catch(() => ({}));
-      setLastResp({ ok: r.ok, body: j });
+      const data = await response.json().catch(() => ({}));
+      setLastResp({ ok: response.ok, body: data });
 
-      if (!r.ok || !j?.ok) {
-        setStatus(j?.error || r.statusText || "claim_failed");
+      if (!response.ok || !data?.ok) {
+        const reason = data?.code || data?.error || response.statusText || "claim_failed";
+        setStatus(reason);
+        alert(`Claim failed: ${reason}`);
         return;
       }
 
-      localStorage.setItem("activeOrgId", j.orgId || orgId);
-      window.location.replace(`/thanks/setup?org=${encodeURIComponent(j.orgId || orgId)}`);
+      const resolvedOrg = data?.orgId || orgId;
+      try {
+        localStorage.setItem("activeOrgId", resolvedOrg);
+      } catch {
+        // ignore storage write failures
+      }
+      setStatus("Claim successful — redirecting...");
+      window.location.replace(`/thanks/setup?org=${encodeURIComponent(resolvedOrg)}`);
     } catch (e: any) {
       setStatus(e?.message || "claim_failed");
       console.error("[claim:claim] error", e);
+      alert("Claim failed: network_error");
     }
   }
 
