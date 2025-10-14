@@ -11,6 +11,7 @@ import {
   onAuthStateChanged,
   signInWithPopup,
 } from "firebase/auth";
+import { normalizeSlug } from "@/lib/slugify";
 
 export default function ClientClaim() {
   const searchParams = useSearchParams();
@@ -84,15 +85,22 @@ export default function ClientClaim() {
       }
 
       const resolvedOrg = data?.orgId || orgId;
+      const normalizedOrg = normalizeSlug(resolvedOrg);
+      if (!normalizedOrg) {
+        setStatus("invalid_org");
+        alert("Claim failed: invalid_org");
+        return;
+      }
       try {
-        localStorage.setItem("activeOrgId", resolvedOrg);
+        localStorage.setItem("activeOrgId", normalizedOrg);
+        localStorage.setItem("active_org", normalizedOrg);
       } catch {
         // ignore storage write failures
       }
       try {
         const joinToken = await auth.currentUser?.getIdToken(true);
         if (joinToken) {
-          await fetch(`/api/orgs/join?org=${encodeURIComponent(resolvedOrg)}`, {
+          await fetch(`/api/orgs/join?org=${encodeURIComponent(normalizedOrg)}`, {
             method: "POST",
             headers: { Authorization: `Bearer ${joinToken}` },
           });
@@ -101,7 +109,7 @@ export default function ClientClaim() {
         console.warn("[claim] join hook failed", joinError);
       }
       setStatus("Claim successful - redirecting...");
-      window.location.replace(`/thanks/setup?org=${encodeURIComponent(resolvedOrg)}`);
+      window.location.replace(`/thanks/setup?org=${encodeURIComponent(normalizedOrg)}`);
     } catch (e: any) {
       setStatus(e?.message || "claim_failed");
       console.error("[claim:claim] error", e);

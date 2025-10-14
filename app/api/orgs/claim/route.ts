@@ -2,6 +2,7 @@
 import { adminDb, getAdminApp } from "@/lib/firebase-admin";
 import { requireUser } from "@/lib/auth";
 import { getAuth } from "firebase-admin/auth";
+import { normalizeSlug } from "@/lib/slugify";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,13 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
     const url = new URL(req.url);
     const token = String(body["token"] ?? url.searchParams.get("token") ?? "");
-    const org = String(body["org"] ?? url.searchParams.get("org") ?? "");
+    const rawOrg =
+      body["org"] ??
+      body["orgId"] ??
+      url.searchParams.get("org") ??
+      url.searchParams.get("orgId") ??
+      "";
+    const org = normalizeSlug(typeof rawOrg === "string" ? rawOrg : String(rawOrg ?? ""));
 
     if (!token || !org) {
       return NextResponse.json({ ok: false, code: "missing_params" }, { status: 400 });
@@ -101,6 +108,14 @@ export async function POST(req: Request) {
 
       tx.delete(inviteRef);
     });
+
+    const now = Date.now();
+    if (email) {
+      await adminDb
+        .collection("entitlements")
+        .doc(email.toLowerCase())
+        .set({ orgId: org, updatedAt: now, claimedAt: now }, { merge: true });
+    }
 
     return NextResponse.json({ ok: true, orgId: org });
   } catch (e) {

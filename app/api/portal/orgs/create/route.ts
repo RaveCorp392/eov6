@@ -83,10 +83,12 @@ export async function POST(req: NextRequest) {
     if (uid) {
       await ref.collection("members").doc(uid).set(
         {
+          uid,
           role: "owner",
           email: creatorEmail,
           createdAt: now,
           updatedAt: now,
+          joinedAt: now,
         },
         { merge: true }
       );

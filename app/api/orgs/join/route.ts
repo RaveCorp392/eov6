@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
 import { adminDb, getAdminApp } from "@/lib/firebaseAdmin";
+import { normalizeSlug } from "@/lib/slugify";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,13 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const url = new URL(req.url);
-    const org = String(body.org ?? url.searchParams.get("org") ?? "").trim();
+    const rawOrgInput =
+      (body && (body as Record<string, unknown>).org) ??
+      (body && (body as Record<string, unknown>).orgId) ??
+      url.searchParams.get("org") ??
+      url.searchParams.get("orgId") ??
+      "";
+    const org = normalizeSlug(typeof rawOrgInput === "string" ? rawOrgInput : String(rawOrgInput ?? "")).trim();
 
     if (!org) {
       return NextResponse.json({ ok: false, code: "missing_org" }, { status: 400 });
@@ -34,22 +41,68 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, code: "unauthorized" }, { status: 401 });
     }
 
-    const memberRef = adminDb.collection("orgs").doc(org).collection("members").doc(user.uid);
-    const memberSnap = await memberRef.get();
-    if (!memberSnap.exists) {
-      return NextResponse.json({ ok: false, code: "not_a_member" }, { status: 403 });
+    const orgRef = adminDb.collection("orgs").doc(org);
+    const orgSnap = await orgRef.get();
+    if (!orgSnap.exists) {
+      return NextResponse.json({ ok: false, code: "org_not_found" }, { status: 404 });
     }
 
-    const orgRef = adminDb.collection("orgs").doc(org);
-    const [orgSnap, entitlementSnap] = await Promise.all([
-      orgRef.get(),
-      user.email ? adminDb.collection("entitlements").doc(user.email.toLowerCase()).get() : null,
-    ]);
+    const memberRef = orgRef.collection("members").doc(user.uid);
+    let memberSnap = await memberRef.get();
+
+    const normalizedEmail = user.email?.toLowerCase() ?? null;
+    let entitlementData: Record<string, unknown> | null = null;
+    if (normalizedEmail) {
+      try {
+        const entitlementSnap = await adminDb.collection("entitlements").doc(normalizedEmail).get();
+        entitlementData = entitlementSnap.exists ? (entitlementSnap.data() as Record<string, unknown>) : null;
+      } catch (entitlementError) {
+        console.warn("[orgs/join] entitlement lookup failed", entitlementError);
+      }
+    }
+
+    if (!memberSnap.exists) {
+      const orgData = orgSnap.data() ?? {};
+      const ownerEmail =
+        typeof orgData.ownerEmail === "string" ? orgData.ownerEmail.toLowerCase() : null;
+      const entOrgId =
+        entitlementData && typeof (entitlementData as { orgId?: unknown }).orgId === "string"
+          ? String((entitlementData as { orgId: string }).orgId)
+          : null;
+      const isOwner = Boolean(normalizedEmail && ownerEmail && normalizedEmail === ownerEmail);
+      const isEntitled = Boolean(entOrgId && entOrgId === org);
+
+      if (isOwner || isEntitled) {
+        const now = Date.now();
+        await memberRef.set(
+          {
+            uid: user.uid,
+            email: user.email ?? null,
+            role: isOwner ? "owner" : "member",
+            joinedAt: now,
+            updatedAt: now,
+          },
+          { merge: true },
+        );
+        memberSnap = await memberRef.get();
+      } else {
+        return NextResponse.json({ ok: false, code: "not_a_member" }, { status: 403 });
+      }
+    }
+
+    if (normalizedEmail) {
+      const entitlementUpdatedAt = Date.now();
+      await adminDb
+        .collection("entitlements")
+        .doc(normalizedEmail)
+        .set({ ...(entitlementData ?? {}), orgId: org, updatedAt: entitlementUpdatedAt }, { merge: true });
+      entitlementData = { ...(entitlementData ?? {}), orgId: org, updatedAt: entitlementUpdatedAt };
+    }
 
     const res = NextResponse.json({
       ok: true,
       org: { id: org, ...(orgSnap.data() ?? {}) },
-      entitlement: entitlementSnap && entitlementSnap.exists ? entitlementSnap.data() : null,
+      entitlement: entitlementData,
     });
 
     const secureCookie = process.env.NODE_ENV === "production";

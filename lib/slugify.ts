@@ -11,3 +11,8 @@ export function slugifyName(name: string): string {
     .replace(/^-+|-+$/g, "")
     .replace(/-{2,}/g, "-");
 }
+
+export function normalizeSlug(input: string | null | undefined): string {
+  if (!input) return "";
+  return slugifyName(String(input));
+}

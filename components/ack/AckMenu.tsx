@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { doc, onSnapshot, updateDoc, serverTimestamp, collection, getDocs } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
 import { orgIdFromEmail } from "@/lib/org";
 import { devlog } from "@/lib/devlog";
 import { useAgentMembership } from "@/lib/agent-membership";
+import { normalizeSlug } from "@/lib/slugify";
 
 type AckId = "privacy" | "slot1" | "slot2";
 type AckTemplate = {
@@ -28,6 +29,25 @@ async function sendAckRequest(code: string, item: { id: AckId; title: string; bo
       requestedBy: "agent",
     },
   });
+}
+
+async function fetchAckTemplatesFromApi(orgId: string): Promise<any[]> {
+  const slug = normalizeSlug(orgId);
+  if (!slug) return [];
+  const currentUser = auth.currentUser;
+  const idToken = await currentUser?.getIdToken?.();
+  if (!idToken) return [];
+  const response = await fetch(`/api/orgs/${encodeURIComponent(slug)}/ackTemplates/list`, {
+    method: "GET",
+    headers: { authorization: `Bearer ${idToken}` },
+    cache: "no-store",
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.ok) {
+    const code = typeof payload?.code === "string" ? payload.code : `ack_list_failed_${response.status}`;
+    throw new Error(code);
+  }
+  return Array.isArray(payload.items) ? payload.items : [];
 }
 
 export default function AckMenu({ code, orgId: propOrgId, membershipReady = true }: { code: string; orgId?: string; membershipReady?: boolean }) {
@@ -79,8 +99,7 @@ export default function AckMenu({ code, orgId: propOrgId, membershipReady = true
       let rawSlots: any[] = Array.isArray(data?.acks?.slots) ? data.acks.slots : [];
       if (!rawSlots.length) {
         try {
-          const qs = await getDocs(collection(db, "orgs", id, "ackTemplates"));
-          rawSlots = qs.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+          rawSlots = await fetchAckTemplatesFromApi(id);
         } catch (err) {
           console.error("[ack] load slots", err);
         }

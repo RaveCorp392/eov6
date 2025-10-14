@@ -6,6 +6,7 @@ import AgentLandingInfo from "@/components/AgentLandingInfo";
 import { auth, db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { normalizeSlug } from "@/lib/slugify";
 
 export default function AgentConsole() {
 
@@ -20,8 +21,9 @@ export default function AgentConsole() {
 
   const joinOrg = useCallback(
     async (slug: string, { silent }: { silent?: boolean } = {}) => {
-      if (!slug) return false;
-      if (silent && lastJoinedOrgRef.current === slug) {
+      const normalized = normalizeSlug(slug);
+      if (!normalized) return false;
+      if (silent && lastJoinedOrgRef.current === normalized) {
         return true;
       }
       if (typeof window === "undefined") {
@@ -51,7 +53,7 @@ export default function AgentConsole() {
           return false;
         }
         const idToken = await currentUser.getIdToken(true);
-        const response = await fetch(`/api/orgs/join?org=${encodeURIComponent(slug)}`, {
+        const response = await fetch(`/api/orgs/join?org=${encodeURIComponent(normalized)}`, {
           method: "POST",
           headers: { Authorization: `Bearer ${idToken}` },
         });
@@ -71,11 +73,12 @@ export default function AgentConsole() {
           setTranslateUnlimited(Boolean(payload.org.features.translateUnlimited));
         }
         try {
-          localStorage.setItem("activeOrgId", slug);
+          localStorage.setItem("activeOrgId", normalized);
+          localStorage.setItem("active_org", normalized);
         } catch {
           // ignore storage issues
         }
-        lastJoinedOrgRef.current = slug;
+        lastJoinedOrgRef.current = normalized;
         return true;
       } catch (error) {
         console.warn("[agent] join error", error);
@@ -90,24 +93,26 @@ export default function AgentConsole() {
 
   const commitOrg = useCallback(
     (nextId: string, options: { silent?: boolean } = {}) => {
-      const trimmed = nextId.trim();
-      if (!trimmed) {
+      const normalized = normalizeSlug(nextId.trim());
+      if (!normalized) {
         setActiveOrgId(null);
         try {
           localStorage.removeItem("activeOrgId");
+          localStorage.removeItem("active_org");
         } catch {
           // ignore storage issues
         }
         lastJoinedOrgRef.current = null;
         return;
       }
-      setActiveOrgId(trimmed);
+      setActiveOrgId(normalized);
       try {
-        localStorage.setItem("activeOrgId", trimmed);
+        localStorage.setItem("activeOrgId", normalized);
+        localStorage.setItem("active_org", normalized);
       } catch {
         // ignore storage issues
       }
-      void joinOrg(trimmed, options);
+      void joinOrg(normalized, options);
     },
     [joinOrg],
   );
@@ -121,22 +126,57 @@ export default function AgentConsole() {
         return;
       }
 
-      const stored = localStorage.getItem("activeOrgId");
+      const stored =
+        localStorage.getItem("activeOrgId") ?? localStorage.getItem("active_org");
       if (stored) {
         commitOrg(stored, { silent: true });
         return;
       }
 
-      const email = auth.currentUser?.email?.toLowerCase() || "";
-      if (!email) return;
-      const entitlement = await getDoc(doc(db, "entitlements", email));
-      const mapped = entitlement.exists() ? ((entitlement.data() as any)?.orgId || null) : null;
+      let mapped: string | null = null;
+
+      try {
+        const response = await fetch("/api/me/entitlement");
+        if (response.ok) {
+          const data = await response.json().catch(() => ({}));
+          if (typeof data?.entitlement?.orgId === "string") {
+            const normalized = normalizeSlug(data.entitlement.orgId);
+            if (normalized) {
+              mapped = normalized;
+            }
+          }
+        }
+      } catch (entitlementError) {
+        console.warn("[agent] entitlement endpoint failed", entitlementError);
+      }
+
+      if (!mapped) {
+        const email = auth.currentUser?.email?.toLowerCase() || "";
+        if (email) {
+          try {
+            const entitlementSnap = await getDoc(doc(db, "entitlements", email));
+            if (entitlementSnap.exists()) {
+              const docData = entitlementSnap.data() as { orgId?: unknown };
+              if (typeof docData?.orgId === "string") {
+                const normalized = normalizeSlug(String(docData.orgId));
+                if (normalized) {
+                  mapped = normalized;
+                }
+              }
+            }
+          } catch (firestoreError) {
+            console.warn("[agent] entitlement lookup failed", firestoreError);
+          }
+        }
+      }
+
       if (mapped) {
         commitOrg(mapped, { silent: true });
       } else {
         setActiveOrgId(null);
         try {
           localStorage.removeItem("activeOrgId");
+          localStorage.removeItem("active_org");
         } catch {
           // ignore storage issues
         }

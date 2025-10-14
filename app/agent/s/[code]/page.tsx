@@ -5,13 +5,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { devlog } from '@/lib/devlog';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { collection, getDocs } from 'firebase/firestore';
 import { ensureMembership } from '@/lib/membership';
-import { auth, db, watchSession } from '@/lib/firebase';
+import { auth, watchSession } from '@/lib/firebase';
 import ConsentGate from '@/components/ConsentGate';
 import ChatWindow from '@/components/ChatWindow';
 import AgentDetailsPanel from '@/components/AgentDetailsPanel';
 import TranslateBanner from '@/components/TranslateBanner';
+import { normalizeSlug } from '@/lib/slugify';
 
 export default function AgentSessionPage({ params }: { params: { code: string } }) {
   const code = params.code;
@@ -22,8 +22,18 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
   const [joinReady, setJoinReady] = useState(false);
   const lastJoinedOrgRef = useRef<string | null>(null);
 
-  const loadAcksForOrg = useCallback(async (orgId: string) => {
-    await getDocs(collection(db, 'orgs', orgId, 'ackTemplates'));
+  const loadAcksForOrg = useCallback(async (orgId: string, idToken: string) => {
+    const slug = normalizeSlug(orgId);
+    if (!slug) throw new Error('invalid_org');
+    const response = await fetch(`/api/orgs/${encodeURIComponent(slug)}/ackTemplates/list`, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${idToken}` },
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.ok) {
+      throw new Error(`ack_fetch_failed_${response.status}`);
+    }
   }, []);
 
   // Ensure membership so org reads don't 403 under rules
@@ -57,7 +67,8 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
 
   useEffect(() => {
     const orgId = session?.orgId;
-    if (!orgId) {
+    const slug = normalizeSlug(orgId);
+    if (!slug) {
       setAckError(null);
       setJoinReady(false);
       lastJoinedOrgRef.current = null;
@@ -67,7 +78,7 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
       setJoinReady(false);
       return;
     }
-    if (lastJoinedOrgRef.current === orgId) {
+    if (lastJoinedOrgRef.current === slug) {
       setJoinReady(true);
       return;
     }
@@ -82,12 +93,12 @@ export default function AgentSessionPage({ params }: { params: { code: string } 
             'content-type': 'application/json',
             authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ orgId }),
+          body: JSON.stringify({ org: slug }),
         });
         if (!res.ok) throw new Error(`join_failed_${res.status}`);
-        await loadAcksForOrg(orgId);
+        await loadAcksForOrg(slug, token);
         if (!cancelled) {
-          lastJoinedOrgRef.current = orgId;
+          lastJoinedOrgRef.current = slug;
           setAckError(null);
           setJoinReady(true);
         }

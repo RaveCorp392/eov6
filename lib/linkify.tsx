@@ -10,7 +10,8 @@ export type LinkVariant = "on-dark" | "on-light";
 
 export function linkifyText(text: string, variant: LinkVariant = "on-light"): React.ReactNode[] {
   if (!text) return [];
-  const urlRe = /(https?:\/\/[^\s<>()\[\]]+|www\.[^\s<>()\[\]]+)/gi;
+  const urlRe =
+    /(https?:\/\/[^\s<>()\[\]]+|www\.[^\s<>()\[\]]+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>()\[\]]*)?)/gi;
 
   const aClass =
     variant === "on-dark"
