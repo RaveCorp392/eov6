@@ -71,8 +71,16 @@ export async function POST(req: Request) {
           : null;
       const isOwner = Boolean(normalizedEmail && ownerEmail && normalizedEmail === ownerEmail);
       const isEntitled = Boolean(entOrgId && entOrgId === org);
+      const orgDomains: string[] = Array.isArray(orgData?.domains)
+        ? (orgData.domains as unknown[]).map((value) => String(value ?? "").toLowerCase()).filter(Boolean)
+        : [];
+      const emailDomain =
+        normalizedEmail && normalizedEmail.includes("@")
+          ? normalizedEmail.split("@").pop() ?? ""
+          : "";
+      const domainAllowed = Boolean(emailDomain && orgDomains.includes(emailDomain));
 
-      if (isOwner || isEntitled) {
+      if (isOwner || isEntitled || domainAllowed) {
         const now = Date.now();
         await memberRef.set(
           {
