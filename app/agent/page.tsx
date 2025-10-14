@@ -189,7 +189,7 @@ export default function AgentConsole() {
       alert(payload?.error || "create_failed");
       return;
     }
-    window.location.href = /agent/s/${payload.code};
+    window.location.href = `/agent/s/${payload.code}`;
   }
 
   const accountEmail = auth.currentUser?.email || "-";
@@ -250,6 +250,7 @@ export default function AgentConsole() {
     </div>
   );
 }
+
 
 
 
