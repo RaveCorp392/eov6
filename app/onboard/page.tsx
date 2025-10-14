@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { getAuth } from "firebase/auth";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -11,8 +12,10 @@ type AckTemplate = {
   id: string;
   title?: string;
   body?: string;
+  text?: string;
   required?: boolean;
   order?: number;
+  createdAt?: number;
 };
 
 export default function OnboardPage() {
@@ -21,6 +24,8 @@ export default function OnboardPage() {
   const [orgId, setOrgId] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary>({});
   const [err, setErr] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const queryOrgSlug = searchParams?.get("org");
 
   // Form state
   const [allowUploads, setAllowUploads] = useState(false);
@@ -56,6 +61,12 @@ export default function OnboardPage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (queryOrgSlug) {
+      setOrgId((prev) => prev ?? queryOrgSlug);
+    }
+  }, [queryOrgSlug]);
 
   const perSeatNote = useMemo(
     () => (translateLocked ? "(Translate Unlimited included by your plan)" : "(Optional; can be changed later)"),
@@ -293,10 +304,19 @@ function useOrgAcknowledgements(orgId: string | null) {
               (docSnap) =>
                 ({
                   id: docSnap.id,
-                  ...(docSnap.data() as Partial<AckTemplate>),
+                  ...(docSnap.data() as Partial<AckTemplate>)
                 } as AckTemplate)
             )
-            .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
+            .sort((a, b) => {
+              const orderA = Number(a.order ?? a.createdAt ?? 0);
+              const orderB = Number(b.order ?? b.createdAt ?? 0);
+              if (orderA === orderB) {
+                const nameA = (a.title || "").toLowerCase();
+                const nameB = (b.title || "").toLowerCase();
+                return nameA.localeCompare(nameB);
+              }
+              return orderA - orderB;
+            });
           setTemplates(rows);
         },
         (error) => {
@@ -333,64 +353,199 @@ function AcknowledgementsStep({ orgId }: AcknowledgementsStepProps) {
     }
   }, [templates, openId]);
 
+  const hasOrg = Boolean(orgId);
+
   return (
     <section className="rounded-2xl border p-6 space-y-4">
-      <h2 className="text-lg font-semibold">4) Review acknowledgements</h2>
+      <h2 className="text-lg font-semibold">4) Add acknowledgements</h2>
       <p className="text-sm text-zinc-600">
-        Acknowledgements are short policies callers accept before connecting. Manage them anytime in the Portal.
+        Acknowledgements are short policies callers accept before connecting. Add them now to set expectations for callers.
       </p>
 
-      {!orgId && (
+      {!hasOrg && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Create your organization to load acknowledgements.
+          Create your organization in Step 1 to start adding acknowledgements.
         </div>
       )}
 
-      {orgId && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white divide-y divide-slate-200">
-          {templates.length === 0 ? (
-            <div className="p-4 text-sm text-slate-500">No acknowledgements yet. Add them later from the Portal.</div>
-          ) : (
-            templates.map((ack) => {
-              const isOpen = openId === ack.id;
-              const label = ack.title?.trim() || ack.id;
-              const body = ack.body ?? (ack as any)?.text ?? "";
-              return (
-                <div key={ack.id} className="p-4">
-                  <button
-                    type="button"
-                    onClick={() => setOpenId(isOpen ? null : ack.id)}
-                    className="flex w-full items-center justify-between gap-3 text-left"
-                  >
-                    <span className="font-medium text-slate-800">{label}</span>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs ${
-                          ack.required ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
-                        }`}
-                      >
-                        {ack.required ? "Required" : "Optional"}
-                      </span>
-                      <span className="text-xs text-slate-500">{isOpen ? "Hide" : "Show"}</span>
+      {hasOrg && <AckCreateForm orgId={orgId} />}
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white divide-y divide-slate-200">
+        {templates.length === 0 ? (
+          <div className="p-4 text-sm text-slate-500">No acknowledgements yet. They will appear here once added.</div>
+        ) : (
+          templates.map((ack) => {
+            const isOpen = openId === ack.id;
+            const label = ack.title?.trim() || ack.id;
+            const content = ack.body ?? ack.text ?? (ack as any)?.text ?? "";
+            return (
+              <div key={ack.id} className="p-4">
+                <button
+                  type="button"
+                  onClick={() => setOpenId(isOpen ? null : ack.id)}
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                >
+                  <span className="font-medium text-slate-800">{label}</span>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        ack.required ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {ack.required ? "Required" : "Optional"}
                     </span>
-                  </button>
-                  {isOpen && (
-                    <div className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{body?.trim() || "(No content provided yet)."}</div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
+                    <span className="text-xs text-slate-500">{isOpen ? "Hide" : "Show"}</span>
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="mt-3 whitespace-pre-wrap text-sm text-slate-700">
+                    {content?.trim() || "(No content provided yet.)"}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
 
-      {orgId && templates.length > 0 && (
+      {hasOrg && templates.length > 0 && (
         <p className="text-xs text-slate-500">
-          These acknowledgements appear before each caller session. Update the list from Portal &gt; Organizations.
+          These acknowledgements appear before each caller session. Update the list anytime from Portal &gt; Organizations.
         </p>
       )}
     </section>
   );
+}
+
+type AckCreateFormProps = {
+  orgId: string | null;
+};
+
+function AckCreateForm({ orgId }: AckCreateFormProps) {
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [required, setRequired] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!orgId) {
+      setError("Create your organization first.");
+      return;
+    }
+    if (!title.trim()) {
+      setError("Title is required.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const token = await getAuth().currentUser?.getIdToken();
+      if (!token) {
+        setError("Please sign in first.");
+        return;
+      }
+      const response = await fetch(`/api/orgs/${encodeURIComponent(orgId)}/ackTemplates/add`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ title: title.trim(), text, required })
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) {
+        const errCode = String(data?.code || data?.error || response.statusText || "server_error");
+        setError(formatAckError(errCode));
+        return;
+      }
+      setTitle("");
+      setText("");
+      setRequired(false);
+      setNotice("Acknowledgement added.");
+    } catch {
+      setError(formatAckError("network_error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      {error && <div className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">Error: {error}</div>}
+      {notice && <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</div>}
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div>
+          <label className="block text-sm font-medium text-slate-700">Title</label>
+          <input
+            value={title}
+            onChange={(event) => {
+              setTitle(event.target.value);
+              setError(null);
+              setNotice(null);
+            }}
+            placeholder="Privacy acknowledgement"
+            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
+          />
+        </div>
+        <div className="flex items-end justify-end gap-3">
+          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={required}
+              onChange={(event) => {
+                setRequired(event.target.checked);
+                setError(null);
+                setNotice(null);
+              }}
+            />{" "}
+            Required
+          </label>
+          <button
+            type="submit"
+            disabled={busy || !title.trim()}
+            className="rounded-lg bg-cyan-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? "Adding..." : "Add template"}
+          </button>
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-slate-700">Text</label>
+        <textarea
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+            setError(null);
+            setNotice(null);
+          }}
+          rows={4}
+          placeholder="Summarize the policy the caller accepts..."
+          className="mt-1 w-full rounded border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
+        />
+      </div>
+    </form>
+  );
+}
+
+function formatAckError(code: string) {
+  switch (code) {
+    case "forbidden":
+      return "You do not have permission to add acknowledgements for this org.";
+    case "no_token":
+      return "Please sign in first.";
+    case "missing_title":
+      return "Title is required.";
+    case "missing_org":
+      return "Organization is required.";
+    case "network_error":
+      return "Network error. Please try again.";
+    default:
+      return code;
+  }
 }
 
 function clsx(...xs: Array<string | false | null | undefined>) {
