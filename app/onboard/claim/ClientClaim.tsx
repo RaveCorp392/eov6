@@ -89,7 +89,18 @@ export default function ClientClaim() {
       } catch {
         // ignore storage write failures
       }
-      setStatus("Claim successful — redirecting...");
+      try {
+        const joinToken = await auth.currentUser?.getIdToken(true);
+        if (joinToken) {
+          await fetch(`/api/orgs/join?org=${encodeURIComponent(resolvedOrg)}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${joinToken}` },
+          });
+        }
+      } catch (joinError) {
+        console.warn("[claim] join hook failed", joinError);
+      }
+      setStatus("Claim successful - redirecting...");
       window.location.replace(`/thanks/setup?org=${encodeURIComponent(resolvedOrg)}`);
     } catch (e: any) {
       setStatus(e?.message || "claim_failed");

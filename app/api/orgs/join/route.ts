@@ -1,50 +1,73 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getAuth } from "firebase-admin/auth";
-import { adminDb } from "@/lib/firebase-admin";
+import { adminDb, getAdminApp } from "@/lib/firebaseAdmin";
 
-function bad(error: string, status = 400) {
-  return NextResponse.json({ ok: false, error }, { status });
+export const runtime = "nodejs";
+
+const adminAuth = getAuth(getAdminApp());
+
+async function getUserFromAuthHeader(req: Request) {
+  const header = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  try {
+    const decoded = await adminAuth.verifyIdToken(match[1]);
+    return { uid: decoded.uid, email: decoded.email ?? null };
+  } catch (error) {
+    console.warn("[orgs/join] invalid bearer token", error);
+    return null;
+  }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const authz = req.headers.get("authorization") || "";
-    const idToken = authz.startsWith("Bearer ") ? authz.slice(7) : "";
-    if (!idToken) return bad("no_token", 401);
-    const decoded = await getAuth().verifyIdToken(idToken);
+    const body = await req.json().catch(() => ({}));
+    const url = new URL(req.url);
+    const org = String(body.org ?? url.searchParams.get("org") ?? "").trim();
 
-    const uid = decoded.uid || "";
-    const email = (decoded.email || "").toLowerCase().trim();
-    if (!uid || !email) return bad("no_user_email", 401);
-
-    const { orgId } = (await req.json()) as { orgId?: string };
-    if (!orgId) return bad("missing_orgId");
-
-    const db = adminDb;
-    const orgRef = db.collection("orgs").doc(orgId);
-    const orgSnap = await orgRef.get();
-    if (!orgSnap.exists) return bad("org_not_found", 404);
-
-    // must be entitled to join (owner/admin can already add; this heals self)
-    const ent = await db.collection("entitlements").doc(email).get();
-    const mapped = ent.exists ? ((ent.data() as any)?.orgId || null) : null;
-    if (mapped !== orgId) return bad("not_entitled", 403);
-
-    const memRef = orgRef.collection("members").doc(uid);
-    const memSnap = await memRef.get();
-    const now = Date.now();
-    if (!memSnap.exists) {
-      await memRef.set({ role: "viewer", email, createdAt: now, updatedAt: now }, { merge: true });
-      console.log("[api/orgs/join]", { orgId, email, path: "join", status: "created" });
-    } else {
-      await memRef.set({ updatedAt: now }, { merge: true });
-      console.log("[api/orgs/join]", { orgId, email, path: "join", status: "refreshed" });
+    if (!org) {
+      return NextResponse.json({ ok: false, code: "missing_org" }, { status: 400 });
     }
-    return NextResponse.json({ ok: true, orgId });
-  } catch (e: any) {
-    return bad(String(e?.message || e));
+
+    const user = await getUserFromAuthHeader(req);
+    if (!user?.uid) {
+      return NextResponse.json({ ok: false, code: "unauthorized" }, { status: 401 });
+    }
+
+    const memberRef = adminDb.collection("orgs").doc(org).collection("members").doc(user.uid);
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) {
+      return NextResponse.json({ ok: false, code: "not_a_member" }, { status: 403 });
+    }
+
+    const orgRef = adminDb.collection("orgs").doc(org);
+    const [orgSnap, entitlementSnap] = await Promise.all([
+      orgRef.get(),
+      user.email ? adminDb.collection("entitlements").doc(user.email.toLowerCase()).get() : null,
+    ]);
+
+    const res = NextResponse.json({
+      ok: true,
+      org: { id: org, ...(orgSnap.data() ?? {}) },
+      entitlement: entitlementSnap && entitlementSnap.exists ? entitlementSnap.data() : null,
+    });
+
+    const secureCookie = process.env.NODE_ENV === "production";
+    const cookieDomain = process.env.ACTIVE_ORG_COOKIE_DOMAIN;
+    res.cookies.set({
+      name: "active_org",
+      value: org,
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: secureCookie,
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
+    });
+
+    return res;
+  } catch (error) {
+    console.error("[orgs/join] error", error);
+    return NextResponse.json({ ok: false, code: "server_error" }, { status: 500 });
   }
 }

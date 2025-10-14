@@ -1,9 +1,11 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import AgentLandingInfo from "@/components/AgentLandingInfo";
 import { auth, db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 export default function AgentConsole() {
 
@@ -12,23 +14,116 @@ export default function AgentConsole() {
   const [translateUnlimited, setTranslateUnlimited] = useState<boolean | null>(null);
   const [draftOrgId, setDraftOrgId] = useState<string>("");
   const showSwitcher = !activeOrgId || process.env.NODE_ENV !== "production";
+  const searchParams = useSearchParams();
+  const queryOrgParam = searchParams?.get("org");
+  const lastJoinedOrgRef = useRef<string | null>(null);
+
+  const joinOrg = useCallback(
+    async (slug: string, { silent }: { silent?: boolean } = {}) => {
+      if (!slug) return false;
+      if (silent && lastJoinedOrgRef.current === slug) {
+        return true;
+      }
+      if (typeof window === "undefined") {
+        return false;
+      }
+      try {
+        let currentUser = auth.currentUser;
+        if (!currentUser) {
+          if (silent) {
+            return false;
+          }
+          try {
+            await signInWithPopup(auth, new GoogleAuthProvider());
+          } catch (popupError) {
+            console.warn("[agent] sign-in popup failed", popupError);
+            if (!silent) {
+              alert("Unable to sign in to join the organization. Please try again.");
+            }
+            return false;
+          }
+          currentUser = auth.currentUser;
+        }
+        if (!currentUser) {
+          if (!silent) {
+            alert("Unable to join organization: no signed-in user.");
+          }
+          return false;
+        }
+        const idToken = await currentUser.getIdToken(true);
+        const response = await fetch(`/api/orgs/join?org=${encodeURIComponent(slug)}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.ok) {
+          const reason = payload?.code || response.statusText || "join_failed";
+          console.warn("[agent] join failed", reason);
+          if (!silent) {
+            alert(`Unable to join organization: ${reason}`);
+          }
+          return false;
+        }
+        if (payload?.org?.name) {
+          setOrgName(payload.org.name);
+        }
+        if (payload?.org?.features) {
+          setTranslateUnlimited(Boolean(payload.org.features.translateUnlimited));
+        }
+        try {
+          localStorage.setItem("activeOrgId", slug);
+        } catch {
+          // ignore storage issues
+        }
+        lastJoinedOrgRef.current = slug;
+        return true;
+      } catch (error) {
+        console.warn("[agent] join error", error);
+        if (!silent) {
+          alert("Unable to join organization due to a network error. Please try again.");
+        }
+        return false;
+      }
+    },
+    [setOrgName, setTranslateUnlimited],
+  );
+
+  const commitOrg = useCallback(
+    (nextId: string, options: { silent?: boolean } = {}) => {
+      const trimmed = nextId.trim();
+      if (!trimmed) {
+        setActiveOrgId(null);
+        try {
+          localStorage.removeItem("activeOrgId");
+        } catch {
+          // ignore storage issues
+        }
+        lastJoinedOrgRef.current = null;
+        return;
+      }
+      setActiveOrgId(trimmed);
+      try {
+        localStorage.setItem("activeOrgId", trimmed);
+      } catch {
+        // ignore storage issues
+      }
+      void joinOrg(trimmed, options);
+    },
+    [joinOrg],
+  );
 
   // Resolve active org from ?org=, stored preference, or entitlement mapping
   useEffect(() => {
     (async () => {
       if (typeof window === "undefined") return;
-      const current = new URL(window.location.href);
-      const queryOrg = current.searchParams.get("org");
-      if (queryOrg) {
-        const trimmed = queryOrg.trim();
-        setActiveOrgId(trimmed);
-        localStorage.setItem("activeOrgId", trimmed);
+      if (queryOrgParam) {
+        commitOrg(queryOrgParam, { silent: true });
         return;
       }
 
       const stored = localStorage.getItem("activeOrgId");
       if (stored) {
-        setActiveOrgId(stored);
+        commitOrg(stored, { silent: true });
         return;
       }
 
@@ -36,11 +131,20 @@ export default function AgentConsole() {
       if (!email) return;
       const entitlement = await getDoc(doc(db, "entitlements", email));
       const mapped = entitlement.exists() ? ((entitlement.data() as any)?.orgId || null) : null;
-      setActiveOrgId(mapped);
-      if (mapped) localStorage.setItem("activeOrgId", mapped);
+      if (mapped) {
+        commitOrg(mapped, { silent: true });
+      } else {
+        setActiveOrgId(null);
+        try {
+          localStorage.removeItem("activeOrgId");
+        } catch {
+          // ignore storage issues
+        }
+        lastJoinedOrgRef.current = null;
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [queryOrgParam]);
 
   // Keep the manual org switcher input in sync
   useEffect(() => {
@@ -85,14 +189,7 @@ export default function AgentConsole() {
       alert(payload?.error || "create_failed");
       return;
     }
-    window.location.href = `/agent/s/${payload.code}`;
-  }
-
-  function commitOrg(nextId: string) {
-    const trimmed = nextId.trim();
-    setActiveOrgId(trimmed || null);
-    if (trimmed) localStorage.setItem("activeOrgId", trimmed);
-    else localStorage.removeItem("activeOrgId");
+    window.location.href = /agent/s/${payload.code};
   }
 
   const accountEmail = auth.currentUser?.email || "-";
@@ -130,7 +227,7 @@ export default function AgentConsole() {
               onChange={(e) => setDraftOrgId(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  commitOrg((e.target as HTMLInputElement).value);
+                  commitOrg((e.target as HTMLInputElement).value, { silent: false });
                 }
               }}
             />
@@ -138,7 +235,7 @@ export default function AgentConsole() {
               className="button-ghost"
               onClick={() => {
                 setDraftOrgId("");
-                commitOrg("");
+                commitOrg("", { silent: false });
               }}
             >
               Clear
@@ -153,5 +250,8 @@ export default function AgentConsole() {
     </div>
   );
 }
+
+
+
 
 
