@@ -1,57 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { auth, db, onAuthStateChanged } from "@/lib/firebase";
-import { doc, onSnapshot } from "firebase/firestore";
-
-type EntitlementsDoc = {
-  addons?: { translateUnlimited?: boolean };
-  orgId?: string;
-  orgName?: string;
-  plan?: string;
-};
-
 export default function AgentLandingInfo() {
-  const [email, setEmail] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [ent, setEnt] = useState<EntitlementsDoc | null>(null);
-  const hasUnlimited = !!ent?.addons?.translateUnlimited || ent?.plan === "translate-unlimited";
-
-  useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (u) => {
-      setEmail(u?.email || null);
-      setDisplayName(u?.displayName || null);
-    });
-    return () => unsubAuth();
-  }, []);
-
-  useEffect(() => {
-    if (!email) return;
-    const entRef = doc(db, "entitlements", email.toLowerCase());
-    const unsub = onSnapshot(entRef, (snap) => {
-      setEnt((snap.exists() ? (snap.data() as EntitlementsDoc) : null) || null);
-    });
-    return () => unsub();
-  }, [email]);
-
-  const orgName = ent?.orgName || "—";
-
   return (
     <div className="mt-6 grid gap-6">
-      {/* Who am I / where am I */}
-      <section className="rounded-xl border p-4 bg-white/80">
-        <h2 className="text-lg font-semibold">Account</h2>
-        <div className="mt-2 grid sm:grid-cols-2 gap-2 text-sm">
-          <div><span className="opacity-60 mr-1">Signed in as:</span>{displayName ? `${displayName} (${email})` : (email || "—")}</div>
-          <div><span className="opacity-60 mr-1">Organization:</span>{orgName}</div>
-          <div><span className="opacity-60 mr-1">Translate Unlimited:</span>{hasUnlimited ? "Enabled" : "Not included"}</div>
-          <div><span className="opacity-60 mr-1">Plan:</span>{ent?.plan || "—"}</div>
-        </div>
-        <p className="mt-3 text-xs text-slate-500">
-          Tip: Unlimited is also available org-wide. If your org enables it, per-message metering is skipped automatically.
-        </p>
-      </section>
-
       {/* Quick start / instructions */}
       <section className="rounded-xl border p-4 bg-white/80">
         <h2 className="text-lg font-semibold">How to run a session</h2>
