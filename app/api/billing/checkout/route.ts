@@ -30,7 +30,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, code: 'no_stripe' }, { status: 500 });
     }
 
-    const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' });
+    const stripe = new Stripe(stripeKey);
 
     // default price/URLs
     const priceId = process.env.STRIPE_PRICE_PRO_MONTHLY!;
