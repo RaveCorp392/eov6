@@ -1,8 +1,11 @@
 /* eslint-disable react/no-unescaped-entities */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PricingFAQ from "@/components/pricing/FAQ";
+import { auth, googleProvider, signInWithPopup } from "@/lib/firebase";
+import { getUtmCookie } from "@/lib/utm";
+import UtmCookieBoot from "@/app/_client/UtmCookieBoot";
 
 type BillingCycle = "monthly" | "yearly";
 type Plan = "solo" | "team5" | "enterprise" | "weekpass";
@@ -33,8 +36,143 @@ const PRICES = {
   weekpass: 500,                                                        // $5 one-time
 };
 
+function useActiveOrgSlug() {
+  const [slug, setSlug] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      const q = url.searchParams.get("org");
+      const stored = window.localStorage?.getItem("active_org") ?? "";
+      setSlug((q || stored || "").toString());
+    } catch {
+      setSlug("");
+    }
+  }, []);
+
+  return slug;
+}
+
+function TrialToggle({ defaultOn }: { defaultOn: boolean }) {
+  const [trial, setTrial] = useState(defaultOn);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const org = useActiveOrgSlug();
+
+  useEffect(() => {
+    setTrial(defaultOn);
+  }, [defaultOn]);
+
+  const trialFeatureEnabled =
+    (process.env.NEXT_PUBLIC_TRIAL_ENABLE ?? process.env.TRIAL_ENABLE ?? "0") === "1";
+
+  if (!trialFeatureEnabled) return null;
+
+  async function start(plan: "pro") {
+    setErr(null);
+    setBusy(true);
+    try {
+      if (!auth.currentUser) {
+        try {
+          await signInWithPopup(auth, googleProvider);
+        } catch {
+          // ignore popup failures; we check auth state below
+        }
+      }
+      const user = auth.currentUser;
+      if (!user?.email) {
+        setErr("sign_in_required");
+        setBusy(false);
+        return;
+      }
+
+      if (!org) {
+        setBusy(false);
+        window.location.href = "/onboard?return=/pricing&trial=1";
+        return;
+      }
+
+      const utm = getUtmCookie() || undefined;
+
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ org, email: user.email, plan, trial, utm }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok || !data?.url) {
+        setErr(data?.code || "checkout_error");
+        setBusy(false);
+        return;
+      }
+
+      window.location.href = data.url as string;
+    } catch {
+      setErr("network_error");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-12 rounded-xl border border-slate-200 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <label className="flex items-center gap-2 text-sm md:text-base">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={trial}
+            onChange={(event) => setTrial(event.target.checked)}
+            disabled={busy}
+          />
+          Start with a 30-day free trial (auto converts)
+        </label>
+        <button
+          onClick={() => void start("pro")}
+          disabled={busy}
+          className="rounded-lg bg-cyan-600 px-4 py-2 text-white transition disabled:opacity-60"
+        >
+          {busy ? "Redirecting…" : trial ? "Start Trial" : "Subscribe"}
+        </button>
+      </div>
+      {err && (
+        <div className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {err === "sign_in_required"
+            ? "Please sign in to continue."
+            : err === "checkout_error"
+              ? "Could not start checkout. Try again."
+              : err === "network_error"
+                ? "Network error. Please retry."
+                : err}
+        </div>
+      )}
+      {!org && (
+        <div className="mt-2 text-xs text-slate-500">
+          We’ll guide you through creating your org before billing.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PricingPage() {
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  const [trialDefault, setTrialDefault] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      const trialQuery = url.searchParams.get("trial") === "1";
+      const utmKeys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+      const hasUtmQuery = utmKeys.some((key) => !!url.searchParams.get(key));
+      const cookie = getUtmCookie();
+      setTrialDefault(trialQuery || hasUtmQuery || Boolean(cookie));
+    } catch {
+      setTrialDefault(false);
+    }
+  }, []);
 
   // Solo
   const [soloTranslate, setSoloTranslate] = useState(false);
@@ -86,6 +224,7 @@ export default function PricingPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
+      <UtmCookieBoot />
       <h1 className="text-3xl font-bold mb-2">Simple, honest pricing</h1>
       <p className="text-zinc-600 mb-6">Start small, add seats or Translate when you need it.</p>
 
@@ -207,6 +346,8 @@ export default function PricingPage() {
           </button>
         </div>
       </div>
+
+      <TrialToggle defaultOn={trialDefault} />
 
       <PricingFAQ />
     </div>

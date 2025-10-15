@@ -3,21 +3,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AgentLandingInfo from "@/components/AgentLandingInfo";
+import { TrialBanner } from "@/components/billing/TrialBanner";
 import { auth, db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { normalizeSlug } from "@/lib/slugify";
 
 export default function AgentConsole() {
-
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState<string>("-");
   const [translateUnlimited, setTranslateUnlimited] = useState<boolean | null>(null);
   const [draftOrgId, setDraftOrgId] = useState<string>("");
+  const [entitlement, setEntitlement] = useState<any>(null);
   const showSwitcher = !activeOrgId || process.env.NODE_ENV !== "production";
   const searchParams = useSearchParams();
   const queryOrgParam = searchParams?.get("org");
   const lastJoinedOrgRef = useRef<string | null>(null);
+  const bannerEnabled =
+    (process.env.NEXT_PUBLIC_ENTITLEMENT_BANNER_ENABLE ?? process.env.ENTITLEMENT_BANNER_ENABLE ?? "0") === "1";
+
+  useEffect(() => {
+    if (!bannerEnabled) return;
+    if (typeof window === "undefined") return;
+    try {
+      setEntitlement((window as any).__ENTITLEMENT__ ?? null);
+    } catch {
+      setEntitlement(null);
+    }
+  }, [bannerEnabled]);
 
   const joinOrg = useCallback(
     async (slug: string, { silent }: { silent?: boolean } = {}) => {
@@ -245,6 +258,12 @@ export default function AgentConsole() {
       </div>
 
       <div className="mx-auto max-w-6xl px-6 py-6 space-y-6">
+        {bannerEnabled ? (
+          <TrialBanner
+            plan={entitlement?.plan}
+            endsAt={entitlement?.trial?.endsAt ?? entitlement?.trial?.ends_at ?? null}
+          />
+        ) : null}
         <button className="button-primary" onClick={startNewSession}>
           Start a new session
         </button>
