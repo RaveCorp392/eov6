@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebase-admin';
 import { normalizeSlug } from '@/lib/slugify';
@@ -19,7 +20,11 @@ export async function POST(req: Request) {
     const body = (await req.json()) as Body;
     const org = normalizeSlug(body.org);
     const email = String(body.email || '').toLowerCase();
-    const wantTrial = !!body.trial && trialEnabled();
+    const trialFeatureEnabled = trialEnabled();
+    const wantTrial = !!body.trial && trialFeatureEnabled;
+    const cookieStore = cookies();
+    const cookieEligible = cookieStore.get('trial_eligible')?.value === 'true';
+    const trialDays = Number(process.env.TRIAL_DAYS ?? '30') || 30;
 
     if (!org || !email) {
       return NextResponse.json({ ok: false, code: 'missing_params' }, { status: 400 });
@@ -37,10 +42,16 @@ export async function POST(req: Request) {
     const successUrl = process.env.STRIPE_SUCCESS_URL!;
     const cancelUrl = process.env.STRIPE_CANCEL_URL!;
 
-    let allowTrial = false;
-    if (wantTrial) {
+    const price = await stripe.prices.retrieve(priceId);
+    const isMonthlyRecurring =
+      price.type === 'recurring' && price.recurring?.interval === 'month' && price.recurring?.interval_count === 1;
+
+    const allowTrialFromCookie = trialFeatureEnabled && cookieEligible && isMonthlyRecurring;
+
+    let allowTrial = allowTrialFromCookie;
+    if (!allowTrial && wantTrial) {
       const elig = await isTrialEligible(adminDb, org, email);
-      allowTrial = elig.ok;
+      allowTrial = elig.ok && isMonthlyRecurring;
     }
 
     const existing = await stripe.customers.list({ email, limit: 1 });
@@ -51,6 +62,23 @@ export async function POST(req: Request) {
         metadata: { org }
       }));
 
+    const subscriptionMetadata = {
+      org,
+      email,
+      trial: allowTrial ? '1' : '0'
+    };
+
+    const subscriptionData: Stripe.Checkout.SessionCreateParams.SubscriptionData = {
+      metadata: subscriptionMetadata
+    };
+
+    if (allowTrial) {
+      subscriptionData.trial_period_days = trialDays;
+      subscriptionData.trial_settings = {
+        end_behavior: { missing_payment_method: 'cancel' }
+      };
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customer.id,
@@ -58,15 +86,8 @@ export async function POST(req: Request) {
       cancel_url: cancelUrl,
       line_items: [{ price: priceId, quantity: 1 }],
       payment_method_collection: 'always',
-      subscription_data: {
-        trial_period_days: allowTrial ? 30 : undefined,
-        metadata: {
-          org,
-          email,
-          trial: allowTrial ? '1' : '0'
-        }
-      },
-      metadata: { org, email, trial: allowTrial ? '1' : '0' }
+      subscription_data: subscriptionData,
+      metadata: subscriptionMetadata
     });
 
     const now = new Date();
@@ -81,7 +102,7 @@ export async function POST(req: Request) {
             ? {
                 used: true,
                 startedAt: now,
-                endsAt: computeTrialEnd(now),
+                endsAt: computeTrialEnd(now, trialDays),
                 source: body.utm?.utm_source ? 'ads' : 'organic',
                 utm: body.utm || null
               }

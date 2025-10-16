@@ -15,10 +15,14 @@ export function trialEnabled() {
   return (process.env.TRIAL_ENABLE ?? '0') === '1';
 }
 
-/** compute end date 30d after start */
-export function computeTrialEnd(start: Date) {
+/** compute end date a configurable number of days after start (default 30) */
+export function computeTrialEnd(start: Date, days?: number) {
+  const totalDays =
+    typeof days === 'number' && !Number.isNaN(days)
+      ? days
+      : Number(process.env.TRIAL_DAYS ?? '30') || 30;
   const end = new Date(start);
-  end.setDate(end.getDate() + 30);
+  end.setDate(end.getDate() + totalDays);
   return end;
 }
 
