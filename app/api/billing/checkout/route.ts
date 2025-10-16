@@ -1,11 +1,14 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+export const runtime = 'nodejs';
+
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebase-admin';
 import { normalizeSlug } from '@/lib/slugify';
 import { isTrialEligible, computeTrialEnd, trialEnabled } from '@/lib/trial';
-
-export const runtime = 'nodejs';
 
 type Body = {
   org: string;
