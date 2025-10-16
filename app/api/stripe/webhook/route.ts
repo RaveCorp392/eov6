@@ -2,8 +2,40 @@ import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { adminDb } from "@/lib/firebase-admin";
+import { sendMailZoho } from "@/lib/mailer";
 
 export const runtime = "nodejs";
+
+async function sendFeedbackEmail(to: string, org: string) {
+  const baseCandidates = [
+    process.env.NEXT_PUBLIC_BASE_URL,
+    process.env.BASE_URL,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
+    "https://eov6.com",
+  ].filter(Boolean) as string[];
+
+  const baseUrl = baseCandidates[0]!.replace(/\/+$/, "");
+  const feedbackUrl = `${baseUrl}/trial/feedback?org=${encodeURIComponent(org)}&email=${encodeURIComponent(to)}`;
+
+  const subject = "Quick 20s feedback for EOV6";
+  const html = `
+    <p>Sorry to see you go. Could you spare 20 seconds to tell us why?</p>
+    <p><a href="${feedbackUrl}">Share quick feedback</a></p>
+  `;
+  const text = `Sorry to see you go. Could you spare 20 seconds to tell us why?\n${feedbackUrl}`;
+
+  try {
+    await sendMailZoho({
+      to,
+      subject,
+      html,
+      text,
+      from: process.env.FEEDBACK_FROM_EMAIL || undefined,
+    });
+  } catch (error) {
+    console.error("feedback mail error", error);
+  }
+}
 
 type SubscriptionWithEmail = Stripe.Subscription & {
   customer_email?: string | null;
@@ -134,6 +166,9 @@ export async function POST(req: Request) {
             customer_email: subscription.customer_email,
             metadata: subscription.metadata,
           }) ?? null;
+        const orgMeta = subscription.metadata?.org
+          ? String(subscription.metadata.org)
+          : undefined;
 
         if (email) {
           await adminDb
@@ -151,6 +186,10 @@ export async function POST(req: Request) {
               },
               { merge: true },
             );
+
+          if (orgMeta) {
+            await sendFeedbackEmail(email, orgMeta);
+          }
         }
         break;
       }
