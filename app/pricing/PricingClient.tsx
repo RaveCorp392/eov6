@@ -7,6 +7,7 @@ import PricingFAQ from "@/components/pricing/FAQ";
 import { auth, googleProvider, signInWithPopup } from "@/lib/firebase";
 import { getUtmCookie } from "@/lib/utm";
 import UtmCookieBoot from "@/app/_client/UtmCookieBoot";
+import { maybeSetTrialCookieFromUTM } from "@/lib/trialClient";
 
 type BillingCycle = "monthly" | "yearly";
 type Plan = "solo" | "team5" | "enterprise" | "weekpass";
@@ -36,6 +37,20 @@ const PRICES = {
   translateEnterprise: { monthly: 50 }, // $0.50 (monthly only)
   weekpass: 500, // $5 one-time
 };
+
+function getClientCookie(name: string) {
+  if (typeof document === "undefined") return undefined;
+  const cookies = document.cookie ? document.cookie.split(";") : [];
+  const matcher = `${name}=`;
+  const found = cookies.map((cookie) => cookie.trim()).find((cookie) => cookie.startsWith(matcher));
+  if (!found) return undefined;
+  return decodeURIComponent(found.substring(matcher.length));
+}
+
+function hasTrialCookie() {
+  const value = getClientCookie("trial_eligible");
+  return value === "1" || value === "true";
+}
 
 function useActiveOrgSlug() {
   const [slug, setSlug] = useState("");
@@ -160,19 +175,26 @@ function TrialToggle({ defaultOn }: { defaultOn: boolean }) {
 export default function PricingClient() {
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [trialDefault, setTrialDefault] = useState(false);
+  const [trialEligible, setTrialEligible] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    maybeSetTrialCookieFromUTM();
+    const cookieEligible = hasTrialCookie();
+
     try {
       const url = new URL(window.location.href);
       const trialQuery = url.searchParams.get("trial") === "1";
       const utmKeys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
       const hasUtmQuery = utmKeys.some((key) => !!url.searchParams.get(key));
       const cookie = getUtmCookie();
-      setTrialDefault(trialQuery || hasUtmQuery || Boolean(cookie));
+      setTrialDefault(trialQuery || hasUtmQuery || Boolean(cookie) || cookieEligible);
     } catch {
-      setTrialDefault(false);
+      setTrialDefault(cookieEligible);
     }
+
+    setTrialEligible(cookieEligible);
   }, []);
 
   const [soloTranslate, setSoloTranslate] = useState(false);
@@ -262,14 +284,17 @@ export default function PricingClient() {
               Include Translate (+{formatAUD(PRICES.translateSolo[cycle === "yearly" ? "yearly" : "monthly"])})
             </span>
           </label>
-          <div className="mb-4 text-lg">
+          <div className={`${trialEligible ? "mb-2" : "mb-4"} text-lg`}>
             Total: <strong>{formatAUD(soloTotal)}</strong> / {cycle === "yearly" ? "yr" : "mo"}
           </div>
+          {trialEligible && (
+            <p className="mb-4 text-xs text-zinc-500">No charge today. Cancel anytime.</p>
+          )}
           <button
             className="w-full rounded-xl bg-blue-600 py-2 text-white"
             onClick={() => postCheckout({ plan: "solo", cycle, translate: soloTranslate })}
           >
-            Start {cycle === "yearly" ? "Yearly" : "Monthly"}
+            {trialEligible ? "Start 30-day free trial" : `Start ${cycle === "yearly" ? "Yearly" : "Monthly"}`}
           </button>
         </div>
 
@@ -291,14 +316,17 @@ export default function PricingClient() {
               Include Translate (+{formatAUD(PRICES.team5Translate[cycle === "yearly" ? "yearly" : "monthly"])})
             </span>
           </label>
-          <div className="mb-4 text-lg">
+          <div className={`${trialEligible ? "mb-2" : "mb-4"} text-lg`}>
             Total: <strong>{formatAUD(teamTotal)}</strong> / {cycle === "yearly" ? "yr" : "mo"}
           </div>
+          {trialEligible && (
+            <p className="mb-4 text-xs text-zinc-500">No charge today. Cancel anytime.</p>
+          )}
           <button
             className="w-full rounded-xl bg-blue-600 py-2 text-white"
             onClick={() => postCheckout({ plan: "team5", cycle, translate: teamTranslate })}
           >
-            Start {cycle === "yearly" ? "Yearly" : "Monthly"}
+            {trialEligible ? "Start 30-day free trial" : `Start ${cycle === "yearly" ? "Yearly" : "Monthly"}`}
           </button>
         </div>
 
@@ -333,9 +361,12 @@ export default function PricingClient() {
             {enterpriseTranslate ? ` + $${enterpriseTranslatePerSeat.toFixed(2)}` : ""}
           </p>
 
-          <div className="mt-1 font-medium">
+          <div className={`mt-1 font-medium ${trialEligible ? "mb-2" : "mb-4"}`}>
             Total ({enterpriseSeatsClamped} {enterpriseSeatsClamped === 1 ? "seat" : "seats"}): {formatAUD(enterpriseTotal)} / mo
           </div>
+          {trialEligible && (
+            <p className="mb-4 text-xs text-zinc-500">No charge today. Cancel anytime.</p>
+          )}
 
           {over ? (
             <a href="/contact" className="block w-full rounded-xl bg-zinc-900 py-2 text-center text-white">

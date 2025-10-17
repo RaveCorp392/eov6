@@ -1,75 +1,86 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-const TRIAL_DAYS_DEFAULT = 30;
-const DEFAULT_SOURCES = ["ads", "paid", "sem"];
-const DEFAULT_CAMPAIGNS = ["trial"];
-const trialEnabled = (process.env.TRIAL_ENABLE ?? "0") === "1";
-const trialDays = Number(process.env.TRIAL_DAYS ?? `${TRIAL_DAYS_DEFAULT}`) || TRIAL_DAYS_DEFAULT;
-const trialCookieMaxAge = 60 * 60 * 24 * trialDays;
+function isStaticOrApiPath(p: string) {
+  return (
+    p.startsWith("/_next") ||
+    p.startsWith("/api") ||
+    p === "/favicon.ico" ||
+    p === "/robots.txt" ||
+    p === "/sitemap.xml" ||
+    p.startsWith("/images") ||
+    p.startsWith("/fonts")
+  );
+}
 
-const toLowerSet = (list: string[]) => new Set(list.map((item) => item.trim().toLowerCase()).filter(Boolean));
+function isAgentPaths(p: string) {
+  return p === "/agent" || p.startsWith("/agent") || p.startsWith("/s/");
+}
 
-const parseCsv = (input: string | undefined, fallback: string[]) => {
-  if (!input) return toLowerSet(fallback);
-  return toLowerSet(input.split(","));
-};
+export function middleware(request: NextRequest) {
+  const url = request.nextUrl;
+  const pathname = url.pathname;
+  const searchParams = url.searchParams;
 
-const allowedSources = parseCsv(process.env.TRIAL_ALLOW_SOURCES, DEFAULT_SOURCES);
-const allowedCampaigns = parseCsv(process.env.TRIAL_ALLOW_CAMPAIGNS, DEFAULT_CAMPAIGNS);
+  // Always skip static, API, and agent/session areas
+  if (isStaticOrApiPath(pathname) || isAgentPaths(pathname)) {
+    return NextResponse.next();
+  }
 
-const hasFileExtension = (pathname: string) => /\.[^/]+$/.test(pathname);
-
-export function middleware(req: NextRequest) {
-  const { nextUrl } = req;
-  const host = req.headers.get("host") || "";
-  const pathname = nextUrl.pathname;
-
-  let response: NextResponse | null = null;
-
+  const host = request.headers.get("host") || "";
   if (host.startsWith("agent.") && pathname === "/") {
-    const rewriteUrl = nextUrl.clone();
+    const rewriteUrl = url.clone();
     rewriteUrl.pathname = "/agent";
-    response = NextResponse.rewrite(rewriteUrl);
+    return NextResponse.rewrite(rewriteUrl);
   }
 
-  if (!trialEnabled) {
-    return response ?? NextResponse.next();
+  // Feature toggle
+  if (!process.env.TRIAL_ENABLE) {
+    return NextResponse.next();
   }
 
-  if (pathname.startsWith("/api") || pathname.startsWith("/_next") || pathname.startsWith("/assets")) {
-    return response ?? NextResponse.next();
+  // Eligibility via query params / UTM
+  const fromBypass = searchParams.get("bypass_trial_redirect") === "1";
+  const fromTrialFlag = searchParams.get("trial") === "1";
+  const src = (searchParams.get("utm_source") || "").toLowerCase();
+  const camp = (searchParams.get("utm_campaign") || "").toLowerCase();
+
+  const allowedSrc = (process.env.TRIAL_ALLOW_SOURCES || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const allowedCamp = (process.env.TRIAL_ALLOW_CAMPAIGNS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  const fromAllowedUtm =
+    (allowedSrc.length && allowedSrc.includes(src)) ||
+    (allowedCamp.length && allowedCamp.includes(camp));
+
+  const eligible = fromTrialFlag || fromAllowedUtm;
+  if (!eligible) {
+    return NextResponse.next();
   }
 
-  if (hasFileExtension(pathname)) {
-    return response ?? NextResponse.next();
+  // Set cookie
+  const days = Number(process.env.TRIAL_DAYS || "30");
+  const maxAge = days * 24 * 60 * 60;
+
+  // Redirect only when landing on "/"
+  if (pathname === "/" && !fromBypass) {
+    const res = NextResponse.redirect(new URL("/pricing", request.url), { status: 307 });
+    res.cookies.set("trial_eligible", "1", { path: "/", sameSite: "lax", httpOnly: false, maxAge });
+    res.headers.set("x-mw", "trial-redirect"); // debug header
+    return res;
   }
 
-  const searchParams = nextUrl.searchParams;
-  const hasTrialFlag = searchParams.get("trial") === "1";
-  const source = searchParams.get("utm_source")?.toLowerCase();
-  const campaign = searchParams.get("utm_campaign")?.toLowerCase();
-
-  const sourceAllowed = source ? allowedSources.has(source) : false;
-  const campaignAllowed = campaign ? allowedCampaigns.has(campaign) : false;
-
-  if (!hasTrialFlag && !sourceAllowed && !campaignAllowed) {
-    return response ?? NextResponse.next();
-  }
-
-  const res = response ?? NextResponse.next();
-  res.cookies.set({
-    name: "trial_eligible",
-    value: "true",
-    maxAge: trialCookieMaxAge,
-    path: "/",
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-  });
-
+  // Otherwise just set cookie and continue
+  const res = NextResponse.next();
+  res.cookies.set("trial_eligible", "1", { path: "/", sameSite: "lax", httpOnly: false, maxAge });
+  res.headers.set("x-mw", "trial-pass"); // debug header
   return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/(.*)"],
 };

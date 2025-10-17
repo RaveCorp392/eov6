@@ -23,7 +23,8 @@ export default function TrialBanner() {
   if (!trialEnabled) return null;
 
   const cookieStore = cookies();
-  const eligible = cookieStore.get("trial_eligible")?.value === "true";
+  const trialCookie = cookieStore.get("trial_eligible")?.value;
+  const eligible = trialCookie === "1" || trialCookie === "true";
   const dismissed = cookieStore.get("trial_dismissed")?.value === "1";
 
   if (!eligible || dismissed) return null;
@@ -36,7 +37,7 @@ export default function TrialBanner() {
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/how-it-works#trial"
+            href="/how-it-works/trial"
             className="rounded border border-emerald-300 px-3 py-1 text-sm font-medium text-emerald-900 transition hover:bg-emerald-100"
           >
             How it works
